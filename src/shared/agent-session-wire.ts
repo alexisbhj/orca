@@ -18,7 +18,8 @@ import type { AgentSessionConversationCommand } from './agent-session-conversati
 import type { AgentSessionContextUsage } from './agent-session-context-usage'
 import type {
   AgentChatPermissionMode,
-  AgentSessionPermissionModes
+  AgentSessionPermissionModes,
+  AgentSessionPermissionFact
 } from './agent-chat-permission-mode'
 // ─── Structured agent-session wire contract ─────────────────────────────────
 // The shapes `agentSession.*` accepts and publishes. Phase 2 builds provider
@@ -181,6 +182,7 @@ type AgentSessionFrameFields = {
   hostNow?: number
   /** Host-owned permission intent; omitted by older hosts, null before a choice is known. */
   permissionMode?: AgentChatPermissionMode | null
+  permissionRevision?: number
 } & AgentSessionQueuePublicationFields
 
 export type AgentSessionSubscribeEvent =
@@ -376,6 +378,7 @@ export type AgentSessionPromptResult = {
 }
 
 export type AgentSessionOptionResult = {
+  permissionFact?: AgentSessionPermissionFact
   key: string
   value: string
   /** Full effective next-turn values when the provider reconciled related options. */

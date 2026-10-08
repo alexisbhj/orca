@@ -15,6 +15,7 @@ import type { QueuePublication } from './structured-agent-session-queued-publica
 export type SubscriberFieldState = {
   sessionId: string
   commands?: AgentSessionSlashCommand[] | null
+  permissionRevision?: number
   permissionMode?: AgentChatPermissionMode | null
   /** The last queue publication actually SENT. */
   queuePublication?: QueuePublication
@@ -23,6 +24,7 @@ export type SubscriberFieldState = {
 }
 
 export type SubscriberFieldHooks = {
+  readPermissionRevision?: (sessionId: string) => number
   readPermissionMode?: (sessionId: string) => AgentChatPermissionMode | null
   readCommands?: (sessionId: string) => AgentSessionSlashCommand[] | undefined
   readQueuePublication?: (sessionId: string) => QueuePublication | undefined
@@ -32,6 +34,7 @@ export type SubscriberFieldHooks = {
 
 export type SubscriberFrame = {
   frame: AgentSessionSubscribeEvent
+  permissionRevision: number | undefined
   permissionMode: AgentChatPermissionMode | null | undefined
   commands: AgentSessionSlashCommand[] | null
   attachedQueued: boolean
@@ -53,10 +56,13 @@ export function buildSubscriberFrame(
   withholdQueued: boolean
 ): SubscriberFrame {
   const permissionMode = hooks.readPermissionMode?.(subscriber.sessionId)
+  const permissionRevision = hooks.readPermissionRevision?.(subscriber.sessionId)
   const includePermission =
     permissionMode !== undefined &&
     event.type !== 'end' &&
-    (event.type !== 'batch' || permissionMode !== subscriber.permissionMode)
+    (event.type !== 'batch' ||
+      permissionMode !== subscriber.permissionMode ||
+      permissionRevision !== subscriber.permissionRevision)
   const commands = hooks.readCommands?.(subscriber.sessionId) ?? null
   const includeCommands =
     hooks.readCommands !== undefined &&
@@ -73,7 +79,9 @@ export function buildSubscriberFrame(
   return {
     frame: {
       ...event,
-      ...(includePermission ? { permissionMode } : {}),
+      ...(includePermission
+        ? { permissionMode, ...(permissionRevision !== undefined ? { permissionRevision } : {}) }
+        : {}),
       ...(includeCommands ? { commands: commands ?? null } : {}),
       ...(attachedQueued && queued
         ? {
@@ -86,6 +94,7 @@ export function buildSubscriberFrame(
     },
     commands,
     permissionMode,
+    permissionRevision,
     attachedQueued,
     queued,
     backgroundTasks:

@@ -13,11 +13,12 @@ import {
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
-  agentChatPermissionModes,
-  agentChatPermissionModeSupported,
-  agentChatLaunchPermissionMode,
-  type AgentSessionPermissionModes
+  agentChatPermissionModeSupported
 } from '../../../shared/agent-chat-permission-mode'
+import {
+  readStructuredAgentSessionPermissionFact,
+  restingPermissionModes
+} from './structured-agent-session-permission-fact'
 import { decodeStructuredAgentSessionOptionValue } from '../../../shared/structured-agent-session-option-codec'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import { journalOpenReadRefusal } from '../agent-session-journal/journal-open-failure'
@@ -32,20 +33,6 @@ type RestingOptions = Pick<
   AgentSessionOptionsResult,
   'models' | 'fastModeSupport' | 'current' | 'permissionModes'
 >
-
-/** Resting chats offer the agent's modes; startup narrows unsupported intent. */
-function restingPermissionModes(
-  record: AgentSessionRecord,
-  defaultPermissionMode: StructuredAgentSessionHostDeps['defaultPermissionMode']
-): AgentSessionPermissionModes | null {
-  const supported = agentChatPermissionModes(record.provider)
-  const fallback = defaultPermissionMode?.(record.provider)
-  const current =
-    record.options?.permissionMode !== undefined || fallback !== undefined
-      ? agentChatLaunchPermissionMode(record.provider, record.options, fallback)
-      : null
-  return supported && current ? { current, supported } : null
-}
 
 /** The at-rest rules of the record's agent, as this runtime registered it; null for any other. */
 function restingOptionRules(
@@ -201,8 +188,21 @@ export async function readStructuredAgentSessionOptions(
   const phase = store.getRecord(sessionId)?.rewind?.phase
   const agent = session.params.provider
   const capabilities = agents.capabilities(agent)
+  const fact = options.permissionModes
+    ? readStructuredAgentSessionPermissionFact(context.deps, sessionId)
+    : undefined
   return {
     ...options,
+    ...(options.permissionModes && fact
+      ? {
+          permissionModes: {
+            ...options.permissionModes,
+            current: fact.mode ?? options.permissionModes.current,
+            fence: fact.fence,
+            revision: fact.revision
+          }
+        }
+      : {}),
     rewind:
       phase === 'prepared' || phase === 'provider-succeeded'
         ? { supported: false, reason: 'outcome-unknown' }

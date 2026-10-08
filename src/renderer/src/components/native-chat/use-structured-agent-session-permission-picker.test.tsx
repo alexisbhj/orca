@@ -131,10 +131,15 @@ describe('the structured chat permission picker', () => {
       await result.current.optionSurface.permissionPicker?.setMode('bypass')
     })
 
-    expect(calls).toHaveBeenCalledWith('agentSession.setOption', 'agentSession.setOption', {
-      key: 'permissionMode',
-      value: 'bypass'
-    })
+    expect(calls).toHaveBeenCalledWith(
+      'agentSession.setOption',
+      'agentSession.setOption',
+      {
+        key: 'permissionMode',
+        value: 'bypass'
+      },
+      1
+    )
     expect(result.current.optionSurface.permissionPicker?.current).toBe('bypass')
     // The next chat starts where the setting points, not where this chat was moved.
     expect(mocks.enqueue).not.toHaveBeenCalled()

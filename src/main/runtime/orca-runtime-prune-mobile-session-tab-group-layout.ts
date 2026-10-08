@@ -24,6 +24,7 @@ import { buildRuntimeMobileAgentStatus } from './runtime-mobile-agent-status-bui
 import { FIRST_PANE_ID } from '../../shared/pane-key'
 import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable-pane-id'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
+import { readStructuredAgentSessionPermissionFact } from '../native-chat/agent-session-wire/structured-agent-session-permission-fact'
 import { seedStructuredConversationTabPermissions } from './structured-conversation-tab-permission-seed'
 import { replaceConversationInSnapshot } from './structured-conversation-tab-replacement'
 import { structuredWorkerHandleAgentStatus } from './orchestration/structured-worker-group-addressing'
@@ -90,8 +91,10 @@ export class OrcaRuntimeWithPruneMobileSessionTabGroupLayout extends OrcaRuntime
       const record = host?.deps?.store?.getRecord(sessionId)
       return record?.location.workspaceId === snapshot.worktree ? record.conversationName : null
     })
-    snapshot = seedStructuredConversationTabPermissions(snapshot, (id) =>
-      host?.deps?.store?.getRecord(id)
+    snapshot = seedStructuredConversationTabPermissions(
+      snapshot,
+      (id) => host?.deps?.store?.getRecord(id),
+      (id) => (host ? readStructuredAgentSessionPermissionFact(host.deps, id) : undefined)
     )
     return projectRuntimeMobileSessionTabs(snapshot, this.getMobileSessionProjectionHost())
   }

@@ -21,7 +21,8 @@ import {
 export type MobileStructuredAgentMutate = <TValue>(
   method: string,
   fingerprintMethod: string,
-  fields: Record<string, unknown>
+  fields: Record<string, unknown>,
+  permissionFence?: number | null
 ) => Promise<StructuredAgentSessionMutationResult<TValue>>
 
 export function useMobileStructuredAgentMutate(args: {
@@ -32,20 +33,17 @@ export function useMobileStructuredAgentMutate(args: {
   permissionSeed?: AgentSessionPermissionSeed
   onSendError: (message: string) => void
 }): MobileStructuredAgentMutate {
-  const { client, enabled, onSendError, sessionId, stateRef, permissionSeed } = args
-  const permissionFence = permissionSeed?.fence
+  const { client, enabled, onSendError, sessionId, stateRef } = args
   return useCallback(
     async <TValue>(
       method: string,
       fingerprintMethod: string,
-      fields: Record<string, unknown>
+      fields: Record<string, unknown>,
+      admittedPermissionFence?: number | null
     ): Promise<StructuredAgentSessionMutationResult<TValue>> => {
       const current = stateRef.current
       const targetFence =
-        current.fence ??
-        (method === 'agentSession.setOption' && fields.key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
-          ? (permissionFence ?? null)
-          : null)
+        admittedPermissionFence !== undefined ? admittedPermissionFence : current.fence
       if (!client || !sessionId || !enabled || targetFence === null) {
         return { status: 'rejected' }
       }
@@ -61,7 +59,7 @@ export function useMobileStructuredAgentMutate(args: {
         return {
           status: 'accepted',
           value: result.value,
-          sameFence: (stateRef.current.fence ?? permissionFence) === targetFence
+          sameFence: admittedPermissionFence !== undefined || stateRef.current.fence === targetFence
         }
       }
       if (result.status === 'unknown') {
@@ -80,6 +78,6 @@ export function useMobileStructuredAgentMutate(args: {
       onSendError(result.message)
       return { status: 'rejected' }
     },
-    [client, enabled, onSendError, permissionFence, sessionId, stateRef]
+    [client, enabled, onSendError, sessionId, stateRef]
   )
 }

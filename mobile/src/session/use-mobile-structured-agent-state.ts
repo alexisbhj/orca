@@ -31,11 +31,7 @@ import {
   type MobileQueuedMessageFeed,
   type MobileQueuePause
 } from './mobile-structured-queued-message-feed'
-import {
-  withMobileStructuredPermissionPublication,
-  type MobileStructuredPublishedState,
-  type MobileStructuredPermissionPublication
-} from './mobile-structured-permission-publication'
+import type { SessionPermissionPublication } from '../../../src/shared/agent-session-permission-reducer'
 
 type QueuedFeed = { messages: MobileQueuedMessageFeed; pause: MobileQueuePause }
 const NO_QUEUED_FEED: QueuedFeed = { messages: null, pause: null }
@@ -57,7 +53,7 @@ export function useMobileStructuredAgentState(args: {
 }): {
   state: StructuredAgentSessionState
   stateRef: { readonly current: StructuredAgentSessionState }
-  permissionPublication?: MobileStructuredPermissionPublication
+  permissionPublication?: SessionPermissionPublication
   /** Host-held queued drafts from the live stream; null until the host claims any. */
   queuedMessages: MobileQueuedMessageFeed
   /** The whole queue's pause, published with the drafts. */
@@ -68,11 +64,11 @@ export function useMobileStructuredAgentState(args: {
   const { client, connected, enabled, sessionId, sessionKey } = args
   // Keep a bounded cache so offline tab switches select the right transcript
   // synchronously without growing for the lifetime of the app.
-  const [sessionStates, setSessionStates] = useState<Map<string, MobileStructuredPublishedState>>(
+  const [sessionStates, setSessionStates] = useState<Map<string, StructuredAgentSessionState>>(
     () => new Map()
   )
   const [queuedBySession, setQueuedBySession] = useState<Map<string, QueuedFeed>>(() => new Map())
-  const state: MobileStructuredPublishedState =
+  const state: StructuredAgentSessionState =
     enabled && sessionKey
       ? (sessionStates.get(sessionKey) ?? EMPTY_STRUCTURED_AGENT_SESSION)
       : EMPTY_STRUCTURED_AGENT_SESSION
@@ -95,11 +91,7 @@ export function useMobileStructuredAgentState(args: {
       }
       setSessionStates((current) => {
         const previous = current.get(sessionKey) ?? EMPTY_STRUCTURED_AGENT_SESSION
-        const next = withMobileStructuredPermissionPublication(
-          previous,
-          reduceStructuredAgentSession(previous, action, Date.now()),
-          action
-        )
+        const next = reduceStructuredAgentSession(previous, action, Date.now())
         if (next === previous) {
           return current
         }

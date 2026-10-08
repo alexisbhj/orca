@@ -42,7 +42,8 @@ export type StructuredAgentSessionMutationResult<TValue> =
 export type StructuredAgentSessionMutate = <TValue>(
   method: string,
   fingerprintMethod: string,
-  fields: Record<string, unknown>
+  fields: Record<string, unknown>,
+  permissionFence?: number | null
 ) => Promise<StructuredAgentSessionMutationResult<TValue>>
 
 class AgentSessionRpcResponseError extends Error {

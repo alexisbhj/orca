@@ -1,3 +1,4 @@
+import type { useAgentSessionPermissionState } from '../../../../shared/use-agent-session-permission-state'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AgentSessionConversationCommand } from '../../../../shared/agent-session-conversation-command'
 import type { AgentSessionOptionsResult } from '../../../../shared/agent-session-wire'
@@ -30,6 +31,7 @@ export function useStructuredAgentSessionOptionState(args: {
   readsBeforeStart: boolean
   turnId: string | null
   permissionMode?: string | null
+  permissionState?: ReturnType<typeof useAgentSessionPermissionState>
   unloadedTurnRevisions: number | undefined
 }) {
   const {
@@ -42,8 +44,11 @@ export function useStructuredAgentSessionOptionState(args: {
     readsBeforeStart,
     sessionId,
     target,
-    turnId
+    turnId,
+    permissionState
   } = args
+  const beginPermissionRead = permissionState?.begin
+  const confirmPermissionRead = permissionState?.confirmRead
   const [conversationSupport, setConversationSupport] = useState<{
     sessionId: string
     commands: readonly AgentSessionConversationCommand[]
@@ -106,11 +111,15 @@ export function useStructuredAgentSessionOptionState(args: {
     const runner = createCoalescedPollRunner(async () => {
       const readGeneration = optionMutationGeneration.current
       const read = ++optionReadGeneration.current
+      const permissionRead = beginPermissionRead?.()
       const result = await callStructuredAgentSession<AgentSessionOptionsResult>(
         target,
         'agentSession.options',
         { sessionId }
       )
+      if (permissionRead) {
+        confirmPermissionRead?.(permissionRead, result.permissionModes)
+      }
       if (!stale && optionMutationGeneration.current === readGeneration) {
         setConversationSupport({
           sessionId,
@@ -144,17 +153,23 @@ export function useStructuredAgentSessionOptionState(args: {
     target,
     args.permissionMode,
     turnId,
-    updateOptionState
+    updateOptionState,
+    beginPermissionRead,
+    confirmPermissionRead
   ])
 
   // A write's own read; `isCurrent` drops it once the picked record or mutation moved on.
   const refreshOptionsAfterWrite = useCallback(
     (targetRecord: StructuredAgentSessionOptionState['record'], isCurrent: () => boolean) => {
       const read = ++optionReadGeneration.current
+      const permissionRead = beginPermissionRead?.()
       void callStructuredAgentSession<AgentSessionOptionsResult>(target, 'agentSession.options', {
         sessionId
       })
         .then((refreshed) => {
+          if (permissionRead) {
+            confirmPermissionRead?.(permissionRead, refreshed.permissionModes)
+          }
           if (isCurrent() && optionReadGeneration.current === read) {
             updateOptionState((latest) =>
               latest.record === targetRecord && optionCatalog
@@ -165,7 +180,14 @@ export function useStructuredAgentSessionOptionState(args: {
         })
         .catch(() => {})
     },
-    [optionCatalog, sessionId, target, updateOptionState]
+    [
+      optionCatalog,
+      sessionId,
+      target,
+      updateOptionState,
+      beginPermissionRead,
+      confirmPermissionRead
+    ]
   )
 
   // Reads share the session's host queue with sends and interrupts, so a burst of

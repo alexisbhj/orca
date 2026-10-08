@@ -121,7 +121,8 @@ function emitCaughtUp(
     (port.hooks.readCommands(subscriber.sessionId) ?? null) !== subscriber.commands
   const permissionChanged =
     port.hooks.readPermissionMode !== undefined &&
-    port.hooks.readPermissionMode(subscriber.sessionId) !== subscriber.permissionMode
+    (port.hooks.readPermissionMode(subscriber.sessionId) !== subscriber.permissionMode ||
+      port.hooks.readPermissionRevision?.(subscriber.sessionId) !== subscriber.permissionRevision)
   const queuedChanged = subscriberQueuedMessagesChanged(port.hooks, subscriber)
   if (
     emitCheckpoint ||

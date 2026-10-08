@@ -75,10 +75,19 @@ export type AgentSessionPermissionModes = {
   /** Retained chat intent; capability confirmation may narrow it before a turn. */
   current: AgentChatPermissionMode
   supported: readonly AgentChatPermissionMode[]
+  fence?: number
+  revision?: number
 }
 
 /** The host's permission intent and fence when it publishes a chat tab. */
-export type AgentSessionPermissionSeed = { mode: AgentChatPermissionMode; fence: number }
+export type AgentSessionPermissionFact = {
+  mode: AgentChatPermissionMode | null
+  fence: number
+  revision?: number
+}
+export type AgentSessionPermissionSeed = AgentSessionPermissionFact & {
+  mode: AgentChatPermissionMode
+}
 
 /** Unknown host modes hide the picker rather than granting guessed access. */
 export function parseAgentSessionPermissionModes(

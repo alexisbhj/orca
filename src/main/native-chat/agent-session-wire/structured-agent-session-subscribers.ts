@@ -40,6 +40,7 @@ export type Subscriber = {
   fence: number
   commands?: AgentSessionSlashCommand[] | null
   permissionMode?: SubscriberFieldState['permissionMode']
+  permissionRevision?: number
   /** The last draft list actually SENT — never advanced on a page that withheld
    *  it, or the final replacement would be suppressed by the identity dedup. */
   queuePublication?: QueuePublication
@@ -48,6 +49,7 @@ export type Subscriber = {
 }
 
 export type AgentSessionSubscribersHooks = {
+  readPermissionRevision?: SubscriberFieldHooks['readPermissionRevision']
   readPermissionMode?: SubscriberFieldHooks['readPermissionMode']
   readCommands?: (sessionId: string) => AgentSessionSlashCommand[] | undefined
   /** Revision-stable per emit: an unchanged list keeps its reference, so token
@@ -262,6 +264,7 @@ export class AgentSessionSubscribers {
       subscriber.emit(built.frame)
       subscriber.commands = built.commands
       subscriber.permissionMode = built.permissionMode
+      subscriber.permissionRevision = built.permissionRevision
       if (built.attachedQueued) {
         subscriber.queuePublication = built.queued
       }

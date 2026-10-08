@@ -1,7 +1,7 @@
 import type { RpcClient } from '../transport/rpc-client'
 import type { StructuredAgentSessionMutate } from './mobile-structured-agent-session-rpc'
 import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
-import type { MobileStructuredPermissionPublication } from './mobile-structured-permission-publication'
+import type { SessionPermissionPublication } from '../../../src/shared/agent-session-permission-reducer'
 
 import type { AgentSessionConversationCommand } from '../../../src/shared/agent-session-conversation-command'
 import type {
@@ -33,9 +33,10 @@ export type MobileStructuredAgentOptionsArgs = {
   connected?: boolean
   turnId?: string | null
   providerPhase?: string | null
+  permissionRevision?: number
   permissionMode?: string | null
   permissionSeed?: AgentSessionPermissionSeed
-  permissionPublication?: MobileStructuredPermissionPublication
+  permissionPublication?: SessionPermissionPublication
   unloadedTurnRevisions?: number
   mutate: StructuredAgentSessionMutate
 }

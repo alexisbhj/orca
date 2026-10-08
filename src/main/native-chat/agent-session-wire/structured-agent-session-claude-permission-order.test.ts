@@ -248,6 +248,7 @@ it.each([false, true])(
     if (lostReply) {
       control.mockRejectedValueOnce(new ClaudeControlRequestTimeoutError('set_permission_mode'))
     }
+    const previousRevision = store.permissionRevision(SESSION)
     const fields = { key: 'model', value: 'unsupported' }
     expect(
       await host.setOption(CALLER, {
@@ -256,15 +257,22 @@ it.each([false, true])(
       })
     ).toMatchObject({
       ok: true,
-      value: { options: { model: 'unsupported', permissionMode: 'ask' } }
+      value: {
+        options: { model: 'unsupported', permissionMode: 'ask' },
+        permissionFact: { mode: 'ask', revision: previousRevision + 1 }
+      }
     })
     expect(store.getRecord(SESSION)?.options?.permissionMode).toBe('ask')
-    expect((await host.readOptions(SESSION)).permissionModes).toEqual({
+    expect((await host.readOptions(SESSION)).permissionModes).toMatchObject({
       current: 'ask',
-      supported: ['ask', 'accept-edits', 'bypass']
+      supported: ['ask', 'accept-edits', 'bypass'],
+      revision: previousRevision + 1
     })
     for (const received of events) {
-      expect(received.at(-1)).toMatchObject({ permissionMode: 'ask' })
+      expect(received.at(-1)).toMatchObject({
+        permissionMode: 'ask',
+        permissionRevision: previousRevision + 1
+      })
     }
     await sendMessage()
     await vi.waitFor(() => expect(claude.connections[0].sent).toHaveLength(1))

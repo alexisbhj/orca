@@ -30,6 +30,7 @@ import {
   agentSessionThrownFailure,
   type AgentSessionWriteFailure
 } from '../../../shared/agent-session-write-failure'
+import type { AgentSessionPermissionFact } from '../../../shared/agent-chat-permission-mode'
 import type { RuntimeClientTarget } from '@/runtime/runtime-client-target'
 
 /** The options a launch starts with, replaced whole so readers can compare by identity. */
@@ -41,7 +42,11 @@ export type StructuredLaunchSelection = {
 }
 
 export type StructuredLaunchOptionOutcome =
-  | { kind: 'accepted'; options: Readonly<Record<string, string>> }
+  | {
+      kind: 'accepted'
+      options: Readonly<Record<string, string>>
+      permissionFact?: AgentSessionPermissionFact
+    }
   | { kind: 'refused'; failure: AgentSessionWriteFailure }
   | { kind: 'superseded' }
 
@@ -125,7 +130,11 @@ async function setLaunchOption(
       ...fields
     })
     return result.ok
-      ? { kind: 'accepted', options: result.value.options ?? { [key]: value } }
+      ? {
+          kind: 'accepted',
+          options: result.value.options ?? { [key]: value },
+          permissionFact: result.value.permissionFact
+        }
       : { kind: 'refused', failure: agentSessionRefusalFailure(result.refusal) }
   } catch (error) {
     return {

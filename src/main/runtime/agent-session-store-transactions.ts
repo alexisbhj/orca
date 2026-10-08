@@ -7,6 +7,7 @@
 // a BEGIN, which `runJournalTransaction` does not support. The queue also keeps the FIFO order and
 // the async boundary every awaiting caller was written against.
 
+import { AgentSessionPermissionRevisions } from './agent-session-permission-revisions'
 import type { JournalHostDatabase } from '../native-chat/agent-session-journal/journal-host-database'
 import type { JournalOperationReceipt } from '../native-chat/agent-session-journal/journal-row-writer'
 import { journalOpenRefusalError } from '../native-chat/agent-session-journal/journal-open-failure'
@@ -79,6 +80,7 @@ type StagedStoreTransaction<T> = {
 }
 
 export class AgentSessionStoreTransactions {
+  readonly permissionRevisions = new AgentSessionPermissionRevisions()
   private queue: Promise<unknown> = Promise.resolve()
   private published: AgentSessionStoreState
 
@@ -172,6 +174,7 @@ export class AgentSessionStoreTransactions {
       writes,
       adopt: () => {
         if (writes) {
+          this.permissionRevisions.commit(published.records, draft.records, writes.records.upsert)
           freezeRows(draft, writes)
           this.published = draft
         }

@@ -2,6 +2,7 @@
  *  journal database. */
 
 import { agentSessionRefusalError } from '../../shared/agent-session-wire-refusals'
+import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import {
   commitConversationClearRecord,
   commitConversationCommandRecord,
@@ -115,8 +116,10 @@ export class AgentSessionRecordStore {
     return this.transactions.readOnly
   }
 
-  getRecord = (sessionId: string): AgentSessionRecord | null =>
-    this.state.records.get(sessionId) ?? null
+  getRecord = (id: string): AgentSessionRecord | null => this.state.records.get(id) ?? null
+
+  permissionRevision = (id: string, mode?: AgentChatPermissionMode | null): number =>
+    this.transactions.permissionRevisions.read(id, mode)
 
   listRecords = (): AgentSessionRecord[] => [...this.state.records.values()]
 
@@ -310,9 +313,8 @@ export class AgentSessionRecordStore {
     claimAfter: ClaimAfterAdmission
   ) => this.transact((draft) => admitAndClaimAgentSessionOperationInto(draft, args, claimAfter))
 
-  async recordOperationOutcome(args: AgentSessionOperationSettlement): Promise<void> {
-    await this.transact((draft) => settleAgentSessionOperationInto(draft, args))
-  }
+  recordOperationOutcome = (args: AgentSessionOperationSettlement): Promise<void> =>
+    this.transact((draft) => settleAgentSessionOperationInto(draft, args))
 
   /** The same settlement, committed by the journal write that makes it true. It changes only the
    *  ledger, so no record listener is owed. */
@@ -322,9 +324,8 @@ export class AgentSessionRecordStore {
   replaceSessionOptions = (args: AgentSessionOptionsReplacement): Promise<AgentSessionRecord> =>
     this.mutate(args.sessionId, (record) => replaceAgentSessionRecordOptions(record, args))
 
-  async retireClaimKey(keyId: string, now: number): Promise<void> {
-    await this.transact((draft) => retireAgentSessionClaimKey(draft, keyId, now))
-  }
+  retireClaimKey = (keyId: string, now: number): Promise<void> =>
+    this.transact((draft) => retireAgentSessionClaimKey(draft, keyId, now))
 
   private async mutate(
     sessionId: string,
