@@ -198,7 +198,8 @@ export async function readStructuredAgentSessionOptions(
             ...permissionModes,
             current: fact.mode ?? permissionModes.current,
             fence: fact.fence,
-            revision: fact.revision
+            revision: fact.revision,
+            ...(fact.defaultRevision !== undefined ? { defaultRevision: fact.defaultRevision } : {})
           }
         }
       : {}),

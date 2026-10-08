@@ -123,7 +123,8 @@ function emitCaughtUp(
   const permissionChanged =
     permission !== undefined &&
     (permission.mode !== subscriber.permissionMode ||
-      permission.revision !== subscriber.permissionRevision)
+      permission.revision !== subscriber.permissionRevision ||
+      permission.defaultRevision !== subscriber.permissionDefaultRevision)
   const queuedChanged = subscriberQueuedMessagesChanged(port.hooks, subscriber)
   if (
     emitCheckpoint ||

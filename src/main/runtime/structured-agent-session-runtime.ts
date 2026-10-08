@@ -121,6 +121,7 @@ export type StructuredAgentSessionRuntimeDeps = {
   resolveClaudeAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
   /** The host chat default for a session without its own choice. */
   resolveDefaultPermissionMode?: (agent: 'claude' | 'codex') => AgentChatPermissionMode
+  resolveDefaultPermissionRevision?: () => number
   /** The same setting for a protocol-driven (ACP) agent: whether it runs with full access. */
   resolveAgentFullAccess?: (agent: string) => boolean
   /** The user's per-agent environment overlay, for agents with no lane-specific resolver. */
@@ -299,7 +300,7 @@ async function installOnJournal(
   const adapter = new StructuredAgentSessionAdapterRouter(agents, async () => {
     await Promise.all(registrations.map((registration) => registration.adapter.closeAll()))
   })
-  const { resolveDefaultPermissionMode } = deps
+  const { resolveDefaultPermissionMode, resolveDefaultPermissionRevision } = deps
   host = new StructuredAgentSessionHost({
     store,
     adapter,
@@ -319,6 +320,9 @@ async function installOnJournal(
           defaultPermissionMode: (agent: string) =>
             agent === 'claude' || agent === 'codex' ? resolveDefaultPermissionMode(agent) : null
         }
+      : {}),
+    ...(resolveDefaultPermissionRevision
+      ? { defaultPermissionRevision: resolveDefaultPermissionRevision }
       : {}),
     ...(deps.onSessionTabHidden ? { onSessionTabHidden: deps.onSessionTabHidden } : {}),
     ...(await modelCatalogHostDeps({ store, agents, deps, envResolvers }))

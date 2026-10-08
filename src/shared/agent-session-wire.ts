@@ -17,7 +17,7 @@ export * from './agent-session-turn-completion-wire'
 import type { AgentSessionConversationCommand } from './agent-session-conversation-command'
 import type { AgentSessionContextUsage } from './agent-session-context-usage'
 import type {
-  AgentChatPermissionMode,
+  AgentSessionPermissionFrameFields,
   AgentSessionPermissionModes,
   AgentSessionPermissionFact
 } from './agent-chat-permission-mode'
@@ -180,10 +180,8 @@ export type AgentSessionJournalBatch = {
  *  rides beside its `queuedMessages`. */
 type AgentSessionFrameFields = {
   hostNow?: number
-  /** Host-owned permission intent; omitted by older hosts, null before a choice is known. */
-  permissionMode?: AgentChatPermissionMode | null
-  permissionRevision?: number
-} & AgentSessionQueuePublicationFields
+} & AgentSessionPermissionFrameFields &
+  AgentSessionQueuePublicationFields
 
 export type AgentSessionSubscribeEvent =
   | ({

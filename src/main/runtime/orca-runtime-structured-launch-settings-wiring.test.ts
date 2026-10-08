@@ -37,6 +37,14 @@ describe('execution host structured launch settings wiring', () => {
     settings.agentDefaultArgs = { claude: '--model second', codex: '' }
     expect(await deps?.resolveLaunchArgs?.('claude')).toEqual(['--model', 'second'])
     expect(await deps?.resolveLaunchArgs?.('codex')).toEqual([])
+    settings.nativeChatPermissionMode = 'ask'
+    settings.nativeChatPermissionRevision = 3
+    expect(deps?.resolveDefaultPermissionMode?.('claude')).toBe('ask')
+    expect(deps?.resolveDefaultPermissionRevision?.()).toBe(3)
+    settings.nativeChatPermissionMode = 'bypass'
+    settings.nativeChatPermissionRevision = 4
+    expect(deps?.resolveDefaultPermissionMode?.('codex')).toBe('bypass')
+    expect(deps?.resolveDefaultPermissionRevision?.()).toBe(4)
     const notRunnable = expect.objectContaining({ reason: 'agentCommandNotRunnable' })
     settings.agentCmdOverrides = { claude: 'wrapper --arg' }
     expect(() => deps?.resolveClaudeCommand?.()).toThrow(notRunnable)

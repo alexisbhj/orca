@@ -170,7 +170,8 @@ function mobileSessionTabEqual(
         Boolean(a.permissionSeed) === Boolean(b.permissionSeed) &&
         a.permissionSeed?.mode === b.permissionSeed?.mode &&
         a.permissionSeed?.fence === b.permissionSeed?.fence &&
-        a.permissionSeed?.revision === b.permissionSeed?.revision
+        a.permissionSeed?.revision === b.permissionSeed?.revision &&
+        a.permissionSeed?.defaultRevision === b.permissionSeed?.defaultRevision
       )
   }
 }

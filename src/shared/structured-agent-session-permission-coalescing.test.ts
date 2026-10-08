@@ -141,3 +141,24 @@ it('uses the revision of the selected mode without keeping metadata from another
   expect(events[0]).not.toHaveProperty('permissionRevision')
   coalescer.dispose()
 })
+
+it('keeps inherited order with its mode and clears it when coalescing an explicit pick', () => {
+  const events: AgentSessionSubscribeEvent[] = []
+  const coalescer = createStructuredAgentSessionEventCoalescer((event) => events.push(event))
+  const inherited = { ...frame('ask', 0), permissionDefaultRevision: 4 }
+  coalescer.push(inherited)
+  coalescer.push(frame())
+  coalescer.flush()
+  expect(events[0]).toMatchObject({
+    permissionMode: 'ask',
+    permissionRevision: 0,
+    permissionDefaultRevision: 4
+  })
+  coalescer.push(inherited)
+  coalescer.push(frame('bypass', 1))
+  coalescer.push(frame())
+  coalescer.flush()
+  expect(events[1]).toMatchObject({ permissionMode: 'bypass', permissionRevision: 1 })
+  expect(events[1]).not.toHaveProperty('permissionDefaultRevision')
+  coalescer.dispose()
+})

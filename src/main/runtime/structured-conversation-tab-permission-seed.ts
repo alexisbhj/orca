@@ -26,7 +26,10 @@ export function seedStructuredConversationTabPermissions(
             permissionSeed: {
               mode,
               fence: fact?.fence ?? record.lease.runtimeFence,
-              ...(fact ? { revision: fact.revision } : {})
+              ...(fact ? { revision: fact.revision } : {}),
+              ...(fact?.defaultRevision !== undefined
+                ? { defaultRevision: fact.defaultRevision }
+                : {})
             }
           }
         : tab

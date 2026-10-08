@@ -32,7 +32,10 @@ export function restingPermissionModes(
 
 /** Permission metadata is optional; its failure never blocks transcript delivery. */
 export function readStructuredAgentSessionPermissionFact(
-  deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'defaultPermissionMode' | 'logger'>,
+  deps: Pick<
+    StructuredAgentSessionHostDeps,
+    'store' | 'defaultPermissionMode' | 'defaultPermissionRevision' | 'logger'
+  >,
   sessionId: string
 ): AgentSessionPermissionFact | undefined {
   try {
@@ -46,7 +49,10 @@ export function readStructuredAgentSessionPermissionFact(
       : {
           mode: permission?.current ?? null,
           fence: record.lease.runtimeFence,
-          revision: deps.store.permissionRevision(sessionId)
+          revision: deps.store.permissionRevision(sessionId),
+          ...(record.options?.permissionMode === undefined && deps.defaultPermissionRevision
+            ? { defaultRevision: deps.defaultPermissionRevision() }
+            : {})
         }
   } catch (error) {
     deps.logger.warn('reading chat permissions failed', {

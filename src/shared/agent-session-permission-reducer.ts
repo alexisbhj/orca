@@ -17,6 +17,7 @@ export type SessionPermissionPublication = {
   mode: AgentChatPermissionMode | null
   fence: number | null
   revision?: number
+  defaultRevision?: number
 }
 export type SessionPermissionState = {
   fact: SessionPermissionPublication | null
@@ -35,6 +36,32 @@ export const EMPTY_SESSION_PERMISSION: SessionPermissionState = {
   pending: null
 }
 
+function conflictingPermissionOrder(
+  previous: SessionPermissionPublication,
+  fact: SessionPermissionPublication
+): boolean {
+  if (fact.revision === undefined) {
+    return true
+  }
+  if (fact.revision !== previous.revision) {
+    return previous.revision !== undefined && fact.revision < previous.revision
+  }
+  if (fact.defaultRevision !== undefined && previous.defaultRevision === undefined) {
+    return true
+  }
+  if (previous.defaultRevision !== undefined && fact.defaultRevision === undefined) {
+    return false
+  }
+  if (fact.defaultRevision !== previous.defaultRevision) {
+    return (
+      fact.defaultRevision !== undefined &&
+      previous.defaultRevision !== undefined &&
+      fact.defaultRevision < previous.defaultRevision
+    )
+  }
+  return fact.mode !== previous.mode
+}
+
 function admit(
   state: SessionPermissionState,
   fact: SessionPermissionPublication,
@@ -49,11 +76,7 @@ function admit(
         return state
       }
     } else if (previous.revision !== undefined || fact.revision !== undefined) {
-      if (
-        fact.revision === undefined ||
-        (previous.revision !== undefined && fact.revision < previous.revision) ||
-        (fact.revision === previous.revision && fact.mode !== previous.mode)
-      ) {
+      if (conflictingPermissionOrder(previous, fact)) {
         return state
       }
     } else if (generation < state.confirmedGeneration || (seed && previous !== state.seed)) {
@@ -119,7 +142,10 @@ export function confirmSessionPermissionRead(
       ? {
           fence: 'fence' in modes && typeof modes.fence === 'number' ? modes.fence : request.fence,
           revision:
-            'revision' in modes && typeof modes.revision === 'number' ? modes.revision : undefined
+            'revision' in modes && typeof modes.revision === 'number' ? modes.revision : undefined,
+          ...('defaultRevision' in modes && typeof modes.defaultRevision === 'number'
+            ? { defaultRevision: modes.defaultRevision }
+            : {})
         }
       : { fence: request.fence }
   return admit(
@@ -162,7 +188,14 @@ export function readSessionPermissionPublication(
 ): SessionPermissionPublication | undefined {
   return event.type !== 'end' &&
     (event.permissionMode === null || isAgentChatPermissionMode(event.permissionMode))
-    ? { mode: event.permissionMode, fence, revision: event.permissionRevision }
+    ? {
+        mode: event.permissionMode,
+        fence,
+        revision: event.permissionRevision,
+        ...(event.permissionDefaultRevision !== undefined
+          ? { defaultRevision: event.permissionDefaultRevision }
+          : {})
+      }
     : previous
 }
 

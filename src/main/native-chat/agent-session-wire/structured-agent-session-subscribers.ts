@@ -41,6 +41,7 @@ export type Subscriber = {
   commands?: AgentSessionSlashCommand[] | null
   permissionMode?: SubscriberFieldState['permissionMode']
   permissionRevision?: number
+  permissionDefaultRevision?: number
   /** The last draft list actually SENT — never advanced on a page that withheld
    *  it, or the final replacement would be suppressed by the identity dedup. */
   queuePublication?: QueuePublication
@@ -264,6 +265,7 @@ export class AgentSessionSubscribers {
       subscriber.commands = built.commands
       subscriber.permissionMode = built.permissionMode
       subscriber.permissionRevision = built.permissionRevision
+      subscriber.permissionDefaultRevision = built.permissionDefaultRevision
       if (built.attachedQueued) {
         subscriber.queuePublication = built.queued
       }

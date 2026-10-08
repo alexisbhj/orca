@@ -161,6 +161,7 @@ export type StructuredAgentSessionHostDeps = {
   statusSink?: StructuredAgentSessionStatusSink
   /** The execution host chat default; null for agents without chat permissions. */
   defaultPermissionMode?: (agent: string) => AgentChatPermissionMode | null
+  defaultPermissionRevision?: () => number
   /** Host model catalog surface; absent means every catalog read answers `unknown`. */
   modelCatalog?: AgentModelCatalogService
 }

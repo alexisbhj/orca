@@ -116,6 +116,7 @@ export type PermissionProbeProps = {
   client: RpcClient
   permissionSeed?: AgentSessionPermissionSeed
   open?: boolean
+  connected?: boolean
   sessionKey?: string
   sessionId?: string
 }
@@ -129,7 +130,7 @@ export function usePermissionComposition(props: PermissionProbeProps) {
     client,
     sessionId,
     enabled,
-    connected: true,
+    connected: props.connected ?? true,
     sourceIdentity: sessionKey,
     permissionSeed,
     hostSupport: null,

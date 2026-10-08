@@ -238,6 +238,7 @@ export type GlobalSettings = NativeChatGlobalSettings & {
   nativeChatSessionOptions?: PersistedNativeChatSessionOptions
   /** Default for new structured chats on this host. */
   nativeChatPermissionMode?: AgentChatPermissionMode
+  nativeChatPermissionRevision?: number
   /** Extra launcher rows for the worktree "Open in" submenu. VS Code is always shown first. */
   openInApplications?: OpenInApplication[]
   /** Deprecated: migration/backward-compat only. Use PersistedUIState.rightSidebarOpen. */
