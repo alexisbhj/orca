@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { StructuredOptionsController } from './mobile-structured-options-controller'
+import type {
+  MobileStructuredAgentOptionsArgs,
+  StructuredOptionsController
+} from './mobile-structured-options-controller'
 import type { AgentSessionConversationCommand } from '../../../src/shared/agent-session-conversation-command'
 import { getAgentSessionOptionCatalog } from '../../../src/shared/agent-session-option-catalog'
-import type {
-  AgentSessionOptionResult,
-  AgentSessionOptionsResult
-} from '../../../src/shared/agent-session-wire'
+import type { AgentSessionOptionResult } from '../../../src/shared/agent-session-wire'
 import type {
   SessionOptionsSurface,
   SessionOptionValue
@@ -20,34 +20,16 @@ import {
   type StructuredAgentSessionOptionState
 } from '../../../src/shared/structured-agent-session-options'
 import { structuredAgentSessionOptionPicks } from '../../../src/shared/structured-agent-session-option-picks'
-import type { RpcClient } from '../transport/rpc-client'
-import {
-  callAgentSession,
-  type StructuredAgentSessionMutate
-} from './mobile-structured-agent-session-rpc'
 import { persistMobileStructuredOptionPicks } from './mobile-native-chat-session-option-persistence'
 import { encodeStructuredAgentSessionOptionValue } from '../../../src/shared/structured-agent-session-option-codec'
-import {
-  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
-  type AgentSessionPermissionSeed
-} from '../../../src/shared/agent-chat-permission-mode'
+import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileNativeChatPermissionPickerState } from './MobileNativeChatPermissionPicker'
-import { seedMobileStructuredPermissionState } from './mobile-structured-permission-seed'
+import { useMobileStructuredPermissionState } from './use-mobile-structured-permission-state'
+import { readMobileStructuredOptions } from './mobile-structured-options-read'
 
-export function useMobileStructuredAgentOptions(args: {
-  agent: string | null
-  client: RpcClient | null
-  sessionId: string | null
-  enabled: boolean
-  fence: number | null
-  connected?: boolean
-  turnId?: string | null
-  providerPhase?: string | null
-  permissionMode?: string | null
-  permissionSeed?: AgentSessionPermissionSeed
-  unloadedTurnRevisions?: number
-  mutate: StructuredAgentSessionMutate
-}): StructuredOptionsController {
+export function useMobileStructuredAgentOptions(
+  args: MobileStructuredAgentOptionsArgs
+): StructuredOptionsController {
   const {
     agent,
     client,
@@ -89,11 +71,11 @@ export function useMobileStructuredAgentOptions(args: {
     () => (agent === 'claude' || agent === 'codex' ? getAgentSessionOptionCatalog(agent) : null),
     [agent]
   )
-  const seedPermissionMode = args.permissionSeed?.mode
+  const { permission, begin, confirmRead, confirmWrite } = useMobileStructuredPermissionState(args)
   const permissionView = useCallback(
     (current: StructuredAgentSessionOptionState) =>
-      seedMobileStructuredPermissionState(current, seedPermissionMode),
-    [seedPermissionMode]
+      current.permission === permission ? current : { ...current, permission },
+    [permission]
   )
 
   useEffect(() => {
@@ -103,7 +85,7 @@ export function useMobileStructuredAgentOptions(args: {
     optionStateRef.current = next
     activeOptionRecordRef.current = next.record
     setOptionState(next)
-  }, [agent, enabled, fence, sessionId])
+  }, [agent, enabled, fence, sessionId, args.sessionKey])
 
   useEffect(() => {
     if (!client || !sessionId || !enabled || !connected || !optionCatalog) {
@@ -111,23 +93,22 @@ export function useMobileStructuredAgentOptions(args: {
     }
     let stale = false
     const readGeneration = optionMutationGeneration.current
-    const readSequence = ++optionReadGeneration.current
-    void callAgentSession<AgentSessionOptionsResult>(client, 'agentSession.options', { sessionId })
-      .then((result) => {
-        if (
-          !stale &&
-          optionReadGeneration.current === readSequence &&
-          optionMutationGeneration.current === readGeneration
-        ) {
-          setConversationSupport({ sessionId, commands: result.conversationCommands ?? [] })
-          updateOptionState((current) =>
-            current.record === activeOptionRecordRef.current
-              ? applyStructuredAgentSessionOptions(current, optionCatalog, result)
-              : current
-          )
-        }
-      })
-      .catch(() => undefined)
+    const permissionRead = begin()
+    readMobileStructuredOptions({
+      client,
+      sessionId,
+      generation: optionReadGeneration,
+      isCurrent: () => !stale && optionMutationGeneration.current === readGeneration,
+      onResult: (result) => {
+        confirmRead(permissionRead, result.permissionModes)
+        setConversationSupport({ sessionId, commands: result.conversationCommands ?? [] })
+        updateOptionState((current) =>
+          current.record === activeOptionRecordRef.current
+            ? applyStructuredAgentSessionOptions(current, optionCatalog, result)
+            : current
+        )
+      }
+    })
     return () => {
       stale = true
     }
@@ -142,6 +123,9 @@ export function useMobileStructuredAgentOptions(args: {
     providerPhase,
     permissionMode,
     unloadedTurnRevisions,
+    args.sessionKey,
+    begin,
+    confirmRead,
     updateOptionState
   ])
 
@@ -166,22 +150,24 @@ export function useMobileStructuredAgentOptions(args: {
       }
       const targetRecord = currentState.record
       const mutationGeneration = ++optionMutationGeneration.current
+      const permissionWrite = begin()
       const isCurrent = (): boolean =>
         activeOptionRecordRef.current === targetRecord &&
         optionMutationGeneration.current === mutationGeneration
       const refreshOptions = (): void => {
-        const readSequence = ++optionReadGeneration.current
-        void callAgentSession<AgentSessionOptionsResult>(client, 'agentSession.options', {
-          sessionId
+        const permissionRead = begin()
+        readMobileStructuredOptions({
+          client,
+          sessionId,
+          generation: optionReadGeneration,
+          isCurrent,
+          onResult: (refreshed) => {
+            confirmRead(permissionRead, refreshed.permissionModes)
+            updateOptionState((latest) =>
+              applyStructuredAgentSessionOptions(latest, optionCatalog, refreshed)
+            )
+          }
         })
-          .then((refreshed) => {
-            if (isCurrent() && optionReadGeneration.current === readSequence) {
-              updateOptionState((latest) =>
-                applyStructuredAgentSessionOptions(latest, optionCatalog, refreshed)
-              )
-            }
-          })
-          .catch(() => undefined)
       }
       pendingOptionRef.current = id
       updateOptionState((current) => ({ ...current, pendingId: id }))
@@ -191,6 +177,13 @@ export function useMobileStructuredAgentOptions(args: {
           'agentSession.setOption',
           { key: id, value: encoded }
         )
+        if (result.status === 'accepted' && result.sameFence) {
+          confirmWrite(
+            permissionWrite,
+            result.value.options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID] ??
+              (id === AGENT_CHAT_PERMISSION_MODE_OPTION_ID ? result.value.value : undefined)
+          )
+        }
         if (!isCurrent()) {
           return (
             result.status === 'accepted' ||
@@ -245,7 +238,18 @@ export function useMobileStructuredAgentOptions(args: {
         }
       }
     },
-    [agent, client, mutate, optionCatalog, permissionView, sessionId, updateOptionState]
+    [
+      agent,
+      client,
+      mutate,
+      optionCatalog,
+      permissionView,
+      sessionId,
+      updateOptionState,
+      begin,
+      confirmRead,
+      confirmWrite
+    ]
   )
 
   const invokeStructuredOption = useCallback(
@@ -277,7 +281,6 @@ export function useMobileStructuredAgentOptions(args: {
     [optionSnapshot, setOption]
   )
 
-  const permission = permissionView(optionState).permission
   const permissionPicker = useMemo<MobileNativeChatPermissionPickerState | null>(
     () =>
       permission

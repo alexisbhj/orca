@@ -1,3 +1,8 @@
+import type { RpcClient } from '../transport/rpc-client'
+import type { StructuredAgentSessionMutate } from './mobile-structured-agent-session-rpc'
+import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
+import type { MobileStructuredPermissionPublication } from './mobile-structured-permission-publication'
+
 import type { AgentSessionConversationCommand } from '../../../src/shared/agent-session-conversation-command'
 import type {
   SessionOptionDescriptor,
@@ -16,4 +21,21 @@ export type StructuredOptionsController = {
   pendingOptionId: string | null
   setStructuredOption: (id: string, value: SessionOptionValue) => Promise<boolean>
   invokeStructuredOption: (id: string) => Promise<boolean>
+}
+
+export type MobileStructuredAgentOptionsArgs = {
+  agent: string | null
+  client: RpcClient | null
+  sessionId: string | null
+  sessionKey?: string
+  enabled: boolean
+  fence: number | null
+  connected?: boolean
+  turnId?: string | null
+  providerPhase?: string | null
+  permissionMode?: string | null
+  permissionSeed?: AgentSessionPermissionSeed
+  permissionPublication?: MobileStructuredPermissionPublication
+  unloadedTurnRevisions?: number
+  mutate: StructuredAgentSessionMutate
 }

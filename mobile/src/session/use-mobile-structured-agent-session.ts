@@ -86,8 +86,15 @@ export function useMobileStructuredAgentSession(args: {
   // Against a host that predates the quiet repeated Stop, a Stop of a turn still being stopped joins it.
   const inFlightStopsRef = useRef(new Map<string, Promise<boolean>>())
   const stateArgs = { client, sessionId, sessionKey, enabled, connected }
-  const { state, stateRef, queuedMessages, queuePause, loadingOlder, loadEarlier } =
-    useMobileStructuredAgentState(stateArgs)
+  const {
+    state,
+    stateRef,
+    permissionPublication,
+    queuedMessages,
+    queuePause,
+    loadingOlder,
+    loadEarlier
+  } = useMobileStructuredAgentState(stateArgs)
   useMobileStructuredSendOperationReconciliation(state.submissions, queuedMessages)
 
   const mutate = useMobileStructuredAgentMutate({
@@ -109,12 +116,14 @@ export function useMobileStructuredAgentSession(args: {
     agent,
     client,
     sessionId,
+    sessionKey,
     enabled,
     fence: state.fence,
     connected,
     turnId: runningStructuredAgentSessionTurnId(state),
     providerPhase,
     permissionMode: state.permissionMode,
+    permissionPublication,
     permissionSeed: args.permissionSeed,
     unloadedTurnRevisions: state.unloadedTurnRevisions,
     mutate

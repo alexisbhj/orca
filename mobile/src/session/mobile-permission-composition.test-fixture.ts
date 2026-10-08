@@ -1,0 +1,151 @@
+import { vi } from 'vitest'
+import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
+import type { AgentSessionSubscribeEvent } from '../../../src/shared/agent-session-wire'
+import type { RpcClient } from '../transport/rpc-client'
+import type { RpcResponse } from '../transport/types'
+import { useMobileStructuredAgentSession } from './use-mobile-structured-agent-session'
+import { useMobileNativeChatSessionOptionController } from './use-mobile-native-chat-session-option-controller'
+
+function success(result: unknown): RpcResponse {
+  return { id: 'r', ok: true, result, _meta: { runtimeId: 'host' } }
+}
+
+export function permissionHost() {
+  const replies: ((reply: RpcResponse) => void)[] = []
+  const failures: ((error: Error) => void)[] = []
+  let stream: (event: unknown) => void = () => {
+    throw new Error('No subscription')
+  }
+  let hold: (reply: RpcResponse) => void = () => {}
+  const holdReply = new Promise<RpcResponse>((resolve) => {
+    hold = resolve
+  })
+  const sendRequest = vi.fn(async (method: string, params: unknown) => {
+    if (method === 'agentSession.options') {
+      return new Promise<RpcResponse>((resolve, reject) => {
+        replies.push(resolve)
+        failures.push(reject)
+      })
+    }
+    if (method === 'agentSession.hold') {
+      return holdReply
+    }
+    if (method === 'agentSession.setOption') {
+      const value =
+        typeof params === 'object' && params !== null && 'value' in params
+          ? params.value
+          : undefined
+      return success({ ok: true, value: { key: 'permissionMode', value } })
+    }
+    return success({})
+  })
+  const client: RpcClient = {
+    sendRequest,
+    subscribe: (_method, _params, callback) => {
+      stream = callback
+      return () => {}
+    },
+    updateTerminalSubscriptionViewport: () => {},
+    getState: () => 'connected',
+    getReconnectAttempt: () => 0,
+    getLastConnectedAt: () => null,
+    onStateChange: () => () => {},
+    notifyForeground: () => {},
+    close: () => {}
+  }
+  return {
+    client,
+    sendRequest,
+    replies,
+    failures,
+    attach: () => hold(success({})),
+    publish: (event: AgentSessionSubscribeEvent) => stream(event),
+    failReads: () => failures.forEach((reject) => reject(new Error('Host unavailable')))
+  }
+}
+
+export function permissionSnapshot(
+  mode: AgentSessionPermissionSeed['mode'],
+  fence = 7
+): AgentSessionSubscribeEvent {
+  return {
+    type: 'snapshot',
+    sessionId: 'chat',
+    fence,
+    permissionMode: mode,
+    page: {
+      sessionId: 'chat',
+      epoch: 'epoch',
+      direction: 'tail',
+      fence,
+      items: [],
+      removedItemIds: [],
+      submissions: [],
+      hasOlder: false,
+      hasNewer: false,
+      window: { oldest: null, newest: null, nextCursor: { epoch: 'epoch', sequence: 0 } },
+      liveCursor: { epoch: 'epoch', sequence: 0 }
+    }
+  }
+}
+
+export function permissionOptions(mode: string): RpcResponse {
+  return success({
+    models: [{ id: 'm', label: 'M', isDefault: true, efforts: [] }],
+    current: { model: 'm' },
+    permissionModes: { current: mode, supported: ['ask', 'auto', 'bypass'] }
+  })
+}
+
+export function permissionBatch(
+  mode: AgentSessionPermissionSeed['mode'],
+  sequence = 0
+): AgentSessionSubscribeEvent {
+  return {
+    type: 'batch',
+    sessionId: 'chat',
+    fence: 7,
+    permissionMode: mode,
+    batch: { cursor: { epoch: 'epoch', sequence }, items: [], removedItemIds: [], submissions: [] }
+  }
+}
+
+export type PermissionProbeProps = {
+  agent: string
+  client: RpcClient
+  permissionSeed?: AgentSessionPermissionSeed
+  open?: boolean
+  sessionKey?: string
+}
+
+export function usePermissionComposition(props: PermissionProbeProps) {
+  const { agent, client, permissionSeed, open = true, sessionKey = 'host:chat' } = props
+  const enabled = open
+  const sessionId = open ? 'chat' : null
+  const structured = useMobileStructuredAgentSession({
+    agent,
+    client,
+    sessionId,
+    enabled,
+    connected: true,
+    sourceIdentity: sessionKey,
+    permissionSeed,
+    hostSupport: null,
+    onSendError: () => {}
+  })
+  const { nativeChatSessionOptions } = useMobileNativeChatSessionOptionController({
+    client,
+    agent,
+    activeChatStructured: enabled,
+    activeSessionTabId: sessionId,
+    dispatchCommand: async () => 'rejected',
+    hostId: 'host',
+    worktreeId: 'folder:workspace',
+    isTabChatView: () => true,
+    isWorking: false,
+    reportedModel: null,
+    structured,
+    toggleTabChatView: () => {}
+  })
+  return { structured, nativeChatSessionOptions }
+}
