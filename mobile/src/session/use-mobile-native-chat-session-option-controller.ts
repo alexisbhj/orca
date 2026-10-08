@@ -84,7 +84,7 @@ export function useMobileNativeChatSessionOptionController(args: {
   })
   const structuredController = useMemo<MobileNativeChatSessionOptionsController | null>(
     () =>
-      activeChatStructured && structuredSnapshot.length > 0
+      activeChatStructured && (structuredSnapshot.length > 0 || structured.permissionPicker)
         ? {
             snapshot: structuredSnapshot,
             optionPickerRequest: structured.optionPickerRequest,
@@ -102,7 +102,8 @@ export function useMobileNativeChatSessionOptionController(args: {
       structuredPendingId,
       structuredSnapshot,
       structured.conversationCommands,
-      structured.optionPickerRequest
+      structured.optionPickerRequest,
+      structured.permissionPicker
     ]
   )
   const nativeChatSessionOptions = useMemo<MobileNativeChatSessionOptionPickersProps | null>(
