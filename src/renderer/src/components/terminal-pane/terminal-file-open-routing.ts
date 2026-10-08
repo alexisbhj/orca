@@ -126,7 +126,11 @@ export function openDetectedFilePath(
     )
 
     if (!openWithSystemDefault) {
-      const worktreeRootLink = resolveKnownWorktreeRootPathLink(mappedFilePath)
+      const worktreeRootLink = resolveKnownWorktreeRootPathLink(
+        mappedFilePath,
+        useAppStore.getState(),
+        fileContext
+      )
       if (worktreeRootLink) {
         // Why: root workspace switching must work for SSH/runtime paths without
         // local auth/stat, while still coalescing provider + fallback clicks.
@@ -134,7 +138,9 @@ export function openDetectedFilePath(
         if (requestId !== latestOpenDetectedFilePathRequestId) {
           return
         }
-        activateAndRevealWorktree(worktreeRootLink.id)
+        activateAndRevealWorktree(worktreeRootLink.id, {
+          executionHostId: worktreeRootLink.executionHostId
+        })
         return
       }
     }

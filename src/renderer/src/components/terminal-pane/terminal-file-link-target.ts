@@ -1,3 +1,4 @@
+import { useAppStore } from '@/store'
 import {
   isPathInsideWorktree,
   resolveTerminalFileLink,
@@ -60,15 +61,17 @@ export function resolveFileLinkTarget(
     host.worktreePath,
     terminalLinkWslDistro(host.wslDistro, host.runtimeEnvironmentId)
   )
-  const isKnownWorktreeRoot = Boolean(resolveKnownWorktreeRootPathLink(absolutePath))
-  if (/[\\/]$/.test(parsed.pathText) && !isKnownWorktreeRoot) {
-    return null
-  }
   const fileContext = getTerminalFileContext(
     host.worktreeId,
     host.worktreePath,
     host.runtimeEnvironmentId
   )
+  const isKnownWorktreeRoot = Boolean(
+    resolveKnownWorktreeRootPathLink(absolutePath, useAppStore.getState(), fileContext)
+  )
+  if (/[\\/]$/.test(parsed.pathText) && !isKnownWorktreeRoot) {
+    return null
+  }
   const isRemoteRuntimePath = isRemoteRuntimeFileOperation(fileContext, absolutePath)
   return {
     absolutePath,
