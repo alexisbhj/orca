@@ -7,6 +7,8 @@ import type { ClaudeSession } from './claude-structured-session-state'
 import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import { claudeStructuredSpawnOptions } from './claude-structured-spawn-options'
 import { CLAUDE_STRUCTURED_BASE_OPTIONS } from './claude-structured-launch-resolution'
+import { prepareClaudePermissionMode } from './claude-structured-permission-application'
+import { ClaudeControlRequestTimeoutError } from './claude-agent-sdk-control-requests'
 
 function permissionSession(launchPermissionMode?: AgentChatPermissionMode) {
   const session = sessionFor()
@@ -43,7 +45,7 @@ describe('a Claude chat permission-mode write', () => {
     expect(s.setPermissionMode).not.toHaveBeenCalled()
     expect(claudeStructuredSessionOptionsFrom(s.session, null).permissionModes).toEqual({
       current: 'bypass',
-      supported: ['ask', 'accept-edits', 'bypass']
+      supported: ['ask', 'accept-edits', 'auto', 'bypass']
     })
   })
 
@@ -72,6 +74,55 @@ describe('a Claude chat permission-mode write', () => {
 })
 
 describe('a Claude chat permission mode across a restart', () => {
+  it('retains Ask after a lost narrowing reply and reconciles before another turn', async () => {
+    const s = permissionSession('ask')
+    Object.assign(s.session.connection, {
+      setModel: async () => undefined,
+      supportedModels: async () => [{ value: 'opus' }]
+    })
+    await s.write('auto')
+    s.setPermissionMode.mockRejectedValueOnce(
+      new ClaudeControlRequestTimeoutError('set_permission_mode')
+    )
+    const options = await setClaudeStructuredOption(s.session, { key: 'model', value: 'opus' }, 50)
+    expect(options).toMatchObject({ model: 'opus', permissionMode: 'ask' })
+    expect(s.session.appliedPermissionMode).toBeUndefined()
+    await prepareClaudePermissionMode(s.session, 50)
+    expect(s.session.appliedPermissionMode).toBe('ask')
+    expect(s.setPermissionMode.mock.calls.map(([mode]) => mode)).toEqual([
+      'auto',
+      'default',
+      'default'
+    ])
+  })
+  it.each([false, true])(
+    'narrows Auto to Ask when switching to a model without Auto (Fast %s)',
+    async (fast) => {
+      const s = permissionSession('ask')
+      Object.assign(s.session.connection, {
+        setModel: async () => undefined,
+        supportedModels: async () => [{ value: 'opus', supportsFastMode: false }],
+        applyFlagSettings: async () => undefined
+      })
+      await s.write('auto')
+      if (fast) {
+        s.session.options.set('fastMode', 'true')
+      }
+      const options = await setClaudeStructuredOption(
+        s.session,
+        { key: 'model', value: 'opus' },
+        50
+      )
+      expect(options).toMatchObject({ model: 'opus', permissionMode: 'ask' })
+      expect(s.setPermissionMode.mock.calls.map(([mode]) => mode)).toEqual(['auto', 'default'])
+      expect(
+        claudeStructuredSessionOptionsFrom(s.session, [{ value: 'opus' }]).permissionModes
+      ).toEqual({
+        current: 'ask',
+        supported: ['ask', 'accept-edits', 'bypass']
+      })
+    }
+  )
   it.each([
     ['ask', 'default'],
     ['accept-edits', 'acceptEdits'],

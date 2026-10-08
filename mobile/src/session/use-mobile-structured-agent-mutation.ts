@@ -3,7 +3,10 @@
 // session's error channel.
 
 import { useCallback } from 'react'
-import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
+import {
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  type AgentSessionPermissionSeed
+} from '../../../src/shared/agent-chat-permission-mode'
 import {
   agentSessionWriteNoticeEnglish,
   agentSessionWriteNoticeParts
@@ -26,9 +29,11 @@ export function useMobileStructuredAgentMutate(args: {
   sessionId: string | null
   enabled: boolean
   stateRef: { readonly current: StructuredAgentSessionState }
+  permissionSeed?: AgentSessionPermissionSeed
   onSendError: (message: string) => void
 }): MobileStructuredAgentMutate {
-  const { client, enabled, onSendError, sessionId, stateRef } = args
+  const { client, enabled, onSendError, sessionId, stateRef, permissionSeed } = args
+  const permissionFence = permissionSeed?.fence
   return useCallback(
     async <TValue>(
       method: string,
@@ -36,10 +41,14 @@ export function useMobileStructuredAgentMutate(args: {
       fields: Record<string, unknown>
     ): Promise<StructuredAgentSessionMutationResult<TValue>> => {
       const current = stateRef.current
-      if (!client || !sessionId || !enabled || current.fence === null) {
+      const targetFence =
+        current.fence ??
+        (method === 'agentSession.setOption' && fields.key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID
+          ? (permissionFence ?? null)
+          : null)
+      if (!client || !sessionId || !enabled || targetFence === null) {
         return { status: 'rejected' }
       }
-      const targetFence = current.fence
       const result = await requestStructuredAgentSessionMutation<TValue>({
         client,
         method,
@@ -52,7 +61,7 @@ export function useMobileStructuredAgentMutate(args: {
         return {
           status: 'accepted',
           value: result.value,
-          sameFence: stateRef.current.fence === targetFence
+          sameFence: (stateRef.current.fence ?? permissionFence) === targetFence
         }
       }
       if (result.status === 'unknown') {
@@ -71,6 +80,6 @@ export function useMobileStructuredAgentMutate(args: {
       onSendError(result.message)
       return { status: 'rejected' }
     },
-    [client, enabled, onSendError, sessionId, stateRef]
+    [client, enabled, onSendError, permissionFence, sessionId, stateRef]
   )
 }

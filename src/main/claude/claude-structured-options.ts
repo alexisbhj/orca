@@ -14,6 +14,7 @@ import type { ClaudeSession } from './claude-structured-session-state'
 import { decodeStructuredAgentSessionOptionValue } from '../../shared/structured-agent-session-option-codec'
 import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../shared/agent-chat-permission-mode'
 import { setClaudePermissionModeOption } from './claude-structured-permission-option'
+import { matchListedModel } from './claude-structured-model-catalog'
 
 const OPTION_ORDER = ['model', 'effort', 'fastMode', AGENT_CHAT_PERMISSION_MODE_OPTION_ID] as const
 
@@ -183,7 +184,6 @@ export async function setClaudeStructuredOption(
       session.confirmedOptions.delete('fastMode')
       // The requested model is already accepted; a cleanup failure cannot reject that write.
       await session.connection.applyFlagSettings({ fastMode: false }, { timeoutMs }).catch(() => {})
-      return Object.fromEntries(session.options)
     }
   } catch (error) {
     if (error instanceof ClaudeControlRequestError) {
@@ -238,6 +238,10 @@ export async function setClaudeStructuredOption(
   if (input.key === 'model') {
     session.confirmedOptions.delete('effort')
     session.confirmedOptions.delete('fastMode')
+    const model = matchListedModel(listed, input.value)
+    if (session.options.get('permissionMode') === 'auto' && model?.supportsAutoMode !== true) {
+      return setClaudePermissionModeOption(session, 'ask', timeoutMs, input.signal, true)
+    }
   }
   return Object.fromEntries(session.options)
 }

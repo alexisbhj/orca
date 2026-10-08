@@ -73,10 +73,10 @@ describe('claudePermissionModeWrite', () => {
 })
 
 describe('claudePermissionModesFor', () => {
-  it('offers Approve for me only when the model is listed with auto support', () => {
+  it('offers Approve for me until a listed model rules it out', () => {
     expect(claudePermissionModesFor(state('accept-edits'), undefined)).toEqual({
       current: 'accept-edits',
-      supported: ['ask', 'accept-edits', 'bypass']
+      supported: ['ask', 'accept-edits', 'auto', 'bypass']
     })
     expect(claudePermissionModesFor(state(), { supportsAutoMode: true }).supported).toEqual([
       'ask',
@@ -97,10 +97,10 @@ describe('claudePermissionModesFor', () => {
     ])
   })
 
-  it('keeps a stored auto pick listed so the pill still names it', () => {
+  it('names retained Auto intent while withholding a known unsupported selection', () => {
     expect(claudePermissionModesFor(state('auto'), { supportsAutoMode: false })).toEqual({
       current: 'auto',
-      supported: ['ask', 'accept-edits', 'auto', 'bypass']
+      supported: ['ask', 'accept-edits', 'bypass']
     })
   })
 

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
 import { storedAgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
+import type { AgentSessionSubscribeEvent } from '../../../shared/agent-session-wire'
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk'
 import { ClaudeControlRequestTimeoutError } from '../../claude/claude-agent-sdk-control-requests'
 import { claudeStructuredPermissionOptions } from '../../claude/claude-structured-permission-mode'
@@ -229,3 +230,47 @@ it('Stop cancels reconciliation and a waiting permission write without either re
   await vi.waitFor(() => expect(held.setPermissionMode).toHaveBeenCalledTimes(2))
   expect(store.getRecord(SESSION)?.options?.permissionMode).toBe('bypass')
 })
+
+it.each([false, true])(
+  'persists and publishes Ask to every client after an unsupported model switch (lost reply %s)',
+  async (lostReply) => {
+    claude.routes.list_models = () => [{ value: 'unsupported' }]
+    await pick('auto')
+    const events: AgentSessionSubscribeEvent[][] = [[], []]
+    for (const [index, received] of events.entries()) {
+      await host.subscribe({
+        id: String(index),
+        sessionId: SESSION,
+        emit: (event) => received.push(event)
+      })
+    }
+    const control = vi.spyOn(claude.connections[0], 'setPermissionMode')
+    if (lostReply) {
+      control.mockRejectedValueOnce(new ClaudeControlRequestTimeoutError('set_permission_mode'))
+    }
+    const fields = { key: 'model', value: 'unsupported' }
+    expect(
+      await host.setOption(CALLER, {
+        envelope: envelope('agentSession.setOption', fields),
+        ...fields
+      })
+    ).toMatchObject({
+      ok: true,
+      value: { options: { model: 'unsupported', permissionMode: 'ask' } }
+    })
+    expect(store.getRecord(SESSION)?.options?.permissionMode).toBe('ask')
+    expect((await host.readOptions(SESSION)).permissionModes).toEqual({
+      current: 'ask',
+      supported: ['ask', 'accept-edits', 'bypass']
+    })
+    for (const received of events) {
+      expect(received.at(-1)).toMatchObject({ permissionMode: 'ask' })
+    }
+    await sendMessage()
+    await vi.waitFor(() => expect(claude.connections[0].sent).toHaveLength(1))
+    expect(adapter['sessions'].get(SESSION)?.appliedPermissionMode).toBe('ask')
+    expect(control.mock.calls.map(([mode]) => mode)).toEqual(
+      lostReply ? ['default', 'default'] : ['default']
+    )
+  }
+)

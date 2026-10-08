@@ -11,7 +11,8 @@ export function setClaudePermissionModeOption(
   session: ClaudeSession,
   value: string,
   timeoutMs: number | undefined,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  narrowToAsk = false
 ): Promise<Readonly<Record<string, string>>> {
   const written = serializeClaudePermissionApplication(session, async (apply) => {
     throwIfSignalAborted(signal)
@@ -25,10 +26,19 @@ export function setClaudePermissionModeOption(
     if (modelWasConfirmed) {
       session.reportedModelMutation = mutation
     }
+    // Unsupported Auto must stay narrowed even if the control answer is lost.
+    if (narrowToAsk) {
+      session.options.set(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, 'ask')
+      session.confirmedOptions.delete(AGENT_CHAT_PERMISSION_MODE_OPTION_ID)
+    }
     if (permission.kind === 'live') {
       try {
         await apply(permission.mode, timeoutMs)
       } catch (error) {
+        if (narrowToAsk) {
+          console.warn('[native-chat] Claude permission narrowing needs reconciliation', error)
+          return Object.fromEntries(session.options)
+        }
         if (error instanceof ClaudeControlRequestError) {
           throw new AgentSessionOptionRejectedError(error)
         }

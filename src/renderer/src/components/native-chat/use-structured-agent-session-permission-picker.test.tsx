@@ -162,13 +162,21 @@ describe('the structured chat permission picker', () => {
     unmount()
   })
 
-  it('locks the picker while published but not yet attached', () => {
+  it('accepts a pick while published but not yet attached', async () => {
+    mocks.hold.mockReturnValue(
+      Promise.resolve({ kind: 'accepted', options: { permissionMode: 'auto' } })
+    )
     mocks.call.mockImplementation(() => new Promise(() => {}))
     const { result, unmount } = render(
       { transportEnabled: true, fence: null, seed: { permissionMode: 'ask' } },
       mutateReplying({}).mutate
     )
-    expect(result.current.optionSurface.permissionPicker?.disabled).toBe(true)
+    expect(result.current.optionSurface.permissionPicker?.disabled).toBe(false)
+    await act(async () => {
+      expect(await result.current.optionSurface.permissionPicker?.setMode('auto')).toBe(true)
+    })
+    expect(mocks.hold).toHaveBeenCalledWith('session-1', 'permissionMode', 'auto', LOCAL_TARGET)
+    expect(result.current.optionSurface.permissionPicker?.current).toBe('auto')
     unmount()
   })
 })
@@ -191,18 +199,19 @@ it('reconciles an idle host mode update without a local pick', async () => {
   unmount()
 })
 
-it('rejects provisional Auto before the launch can hold an unsupported choice', async () => {
+it('holds provisional Auto before capability discovery', async () => {
   mocks.call.mockImplementation(() => new Promise(() => {}))
   mocks.hold.mockClear()
+  mocks.hold.mockReturnValue(new Promise(() => {}))
   const { result, unmount } = render(
     { transportEnabled: false, fence: null, seed: { permissionMode: 'ask' } },
     mutateReplying({}).mutate
   )
-  expect(result.current.optionSurface.permissionPicker?.supported).not.toContain('auto')
+  expect(result.current.optionSurface.permissionPicker?.supported).toContain('auto')
   await act(async () => {
-    expect(await result.current.setStructuredOption('permissionMode', 'auto')).toBe(false)
+    expect(await result.current.setStructuredOption('permissionMode', 'auto')).toBe(true)
   })
-  expect(mocks.hold).not.toHaveBeenCalled()
+  expect(mocks.hold).toHaveBeenCalledWith('session-1', 'permissionMode', 'auto')
   unmount()
 })
 

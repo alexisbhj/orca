@@ -107,7 +107,7 @@ describe('commitAgentSessionPermissionMode', () => {
   it('stands the agent list in for a seed before any report', () => {
     expect(commitAgentSessionPermissionMode(null, 'codex', 'bypass')).toEqual({
       current: 'bypass',
-      supported: ['ask', 'bypass']
+      supported: ['ask', 'auto', 'bypass']
     })
     expect(commitAgentSessionPermissionMode(null, 'codex', 'accept-edits')).toBeNull()
     expect(commitAgentSessionPermissionMode(null, 'claude', 'nonsense')).toBeNull()

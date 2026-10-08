@@ -96,6 +96,7 @@ export function useMobileNativeChatController(args: {
       resolvedAgent: activeChatResolution?.agent ?? null,
       transcriptPath: activeChatResolution?.transcriptPath ?? null,
       sessionId: activeChatSessionId,
+      permissionSeed: activeSessionTab?.permissionSeed,
       sourceIdentity,
       callerIdentity: deviceTokenRef.current ?? '',
       enabled: showNativeChat,

@@ -9,7 +9,7 @@ import {
 } from './structured-agent-session-options-read'
 
 it.each(['claude', 'codex'])(
-  'withholds Auto at rest for %s until the child reports permission support',
+  'offers and persists Auto at rest for %s before capability discovery',
   async (provider) => {
     const saved = {
       ...record({ chain: [] }),
@@ -30,7 +30,7 @@ it.each(['claude', 'codex'])(
       }
     }
     const read = await readStructuredAgentSessionOptionsAtRest(deps, saved.sessionId)
-    expect(read.permissionModes?.supported).not.toContain('auto')
+    expect(read.permissionModes?.supported).toContain('auto')
     const persistOptions = vi.fn(async () => {})
     const picked = await recordStructuredAgentSessionOptionIntent(
       deps,
@@ -41,8 +41,8 @@ it.each(['claude', 'codex'])(
       },
       { key: 'permissionMode', value: 'auto' }
     )
-    expect(picked.ok).toBe(false)
-    expect(persistOptions).not.toHaveBeenCalled()
+    expect(picked.ok).toBe(true)
+    expect(persistOptions).toHaveBeenCalledWith({ model: 'm', permissionMode: 'auto' })
   }
 )
 

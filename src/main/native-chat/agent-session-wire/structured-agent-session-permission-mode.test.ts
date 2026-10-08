@@ -77,14 +77,14 @@ describe('a chat permission mode at rest', () => {
     ).resolves.toMatchObject({
       permissionModes: {
         current: 'accept-edits',
-        supported: ['ask', 'accept-edits', 'bypass']
+        supported: ['ask', 'accept-edits', 'auto', 'bypass']
       }
     })
   })
 
   it('reports where the setting starts a chat that never chose', async () => {
     await expect(restingRead(record('codex'), () => 'bypass')).resolves.toMatchObject({
-      permissionModes: { current: 'bypass', supported: ['ask', 'bypass'] }
+      permissionModes: { current: 'bypass', supported: ['ask', 'auto', 'bypass'] }
     })
   })
 
@@ -231,7 +231,7 @@ describe('relaunching a child the chat outgrew before a send', () => {
   })
 })
 
-it('refuses an unsupported held Auto choice at rest', async () => {
+it('persists a held Auto choice at rest for runtime capability narrowing', async () => {
   const value = record('codex', { permissionMode: 'ask' })
   const persistOptions = vi.fn(async () => {})
   const result = await recordStructuredAgentSessionOptionIntent(
@@ -242,8 +242,8 @@ it('refuses an unsupported held Auto choice at rest', async () => {
     { sessionId: SESSION, persistOptions, publish: () => {} },
     { key: 'permissionMode', value: 'auto' }
   )
-  expect(result.ok).toBe(false)
-  expect(persistOptions).not.toHaveBeenCalled()
+  expect(result.ok).toBe(true)
+  expect(persistOptions).toHaveBeenCalledWith({ permissionMode: 'auto' })
 })
 
 it('translates a resting legacy user-reviewer write into Ask and drops the saved reviewer', async () => {

@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
 import type { RpcClient } from '../transport/rpc-client'
 import type { ConnectionState } from '../transport/types'
 import type { StructuredAgentSessionHostSupport } from './mobile-structured-agent-session-host-support'
@@ -15,6 +16,7 @@ export function useMobileNativeChatSessionLane({
   resolvedAgent,
   transcriptPath,
   sessionId,
+  permissionSeed,
   sourceIdentity,
   callerIdentity,
   hostSupport,
@@ -32,6 +34,7 @@ export function useMobileNativeChatSessionLane({
   resolvedAgent: string | null
   transcriptPath: string | null
   sessionId: string | null
+  permissionSeed?: AgentSessionPermissionSeed
   sourceIdentity: Parameters<typeof useMobileNativeChatSession>[0]['sourceIdentity']
   callerIdentity: string
   hostSupport: StructuredAgentSessionHostSupport | null
@@ -61,6 +64,7 @@ export function useMobileNativeChatSessionLane({
   const structuredSession = useMobileStructuredAgentSession({
     client,
     sessionId: structured ? sessionId : null,
+    permissionSeed: structured ? permissionSeed : undefined,
     sourceIdentity,
     callerIdentity,
     hostSupport,

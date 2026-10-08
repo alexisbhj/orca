@@ -33,13 +33,12 @@ type RestingOptions = Pick<
   'models' | 'fastModeSupport' | 'current' | 'permissionModes'
 >
 
-/** A resting record holds intent, not evidence of its next child's reviewer support. */
+/** Resting chats offer the agent's modes; startup narrows unsupported intent. */
 function restingPermissionModes(
   record: AgentSessionRecord,
   defaultPermissionMode: StructuredAgentSessionHostDeps['defaultPermissionMode']
 ): AgentSessionPermissionModes | null {
-  const support = { autoReview: false }
-  const supported = agentChatPermissionModes(record.provider, support)
+  const supported = agentChatPermissionModes(record.provider)
   const fallback = defaultPermissionMode?.(record.provider)
   const current =
     record.options?.permissionMode !== undefined || fallback !== undefined
@@ -132,17 +131,11 @@ export async function recordStructuredAgentSessionOptionIntent(
       )
     }
   }
-  const supported =
-    record && input.key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID && input.value === 'auto'
-      ? (await readStructuredAgentSessionOptionsAtRest(deps, ctx.sessionId)).permissionModes
-          ?.supported
-      : undefined
   if (
     !record ||
     !rules?.acceptsKey(input.key) ||
     (input.key === AGENT_CHAT_PERMISSION_MODE_OPTION_ID &&
-      (!agentChatPermissionModeSupported(record.provider, input.value) ||
-        (input.value === 'auto' && !supported?.includes('auto'))))
+      !agentChatPermissionModeSupported(record.provider, input.value))
   ) {
     return {
       ok: false,

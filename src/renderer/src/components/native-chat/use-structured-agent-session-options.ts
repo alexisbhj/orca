@@ -62,7 +62,7 @@ export function useStructuredAgentSessionOptions(args: {
   } = args
   const launchSeedOptions = launch?.seedOptions
   const held = launch?.heldOptions ?? NO_HELD_OPTIONS
-  // Published but not attached: the launch no longer holds picks and there is no fence to send one.
+  // Model picks wait for attachment; permissions can use the host receipt first.
   const acceptsPicks = !transportEnabled || fence !== null
   const optionCatalog = useMemo(() => structuredAgentSessionSeedCatalog(agent), [agent])
   const identity = `${agent}:${sessionId}`
@@ -129,11 +129,24 @@ export function useStructuredAgentSessionOptions(args: {
       pendingOptionRef.current = id
       updateOptionState((current) => ({ ...current, pendingId: id }))
       try {
-        const result = await mutate<AgentSessionOptionResult>(
-          'agentSession.setOption',
-          'agentSession.setOption',
-          { key: id, value: encoded }
-        )
+        const heldPick =
+          fence === null
+            ? holdStructuredAgentSessionLaunchOption(sessionId, id, encoded, target)
+            : null
+        const outcome = heldPick ? await heldPick : null
+        if (outcome?.kind === 'refused') {
+          toast.error(agentSessionWriteFailureText(outcome.failure, 'option'))
+        }
+        const result =
+          fence === null
+            ? outcome?.kind === 'accepted'
+              ? { options: outcome.options }
+              : null
+            : await mutate<AgentSessionOptionResult>(
+                'agentSession.setOption',
+                'agentSession.setOption',
+                { key: id, value: encoded }
+              )
         if (result && isCurrent()) {
           const committed = result.options ?? { [id]: encoded }
           updateOptionState((current) =>
@@ -165,6 +178,7 @@ export function useStructuredAgentSessionOptions(args: {
     },
     [
       activeOptionRecordRef,
+      fence,
       launchSeedOptions,
       mutate,
       optionMutationGeneration,
@@ -172,6 +186,8 @@ export function useStructuredAgentSessionOptions(args: {
       pendingOptionRef,
       refreshOptionsAfterWrite,
       rememberOptionPicks,
+      sessionId,
+      target,
       updateOptionState
     ]
   )
@@ -212,7 +228,7 @@ export function useStructuredAgentSessionOptions(args: {
       ) {
         return false
       }
-      if (!transportEnabled || fence === null) {
+      if (!transportEnabled) {
         // No fence yet: the launch holds it and applies it before anything else is sent.
         const applied = holdStructuredAgentSessionLaunchOption(sessionId, id, encoded)
         void applied?.then((outcome) => settleLaunchOptionPick(id, outcome))
@@ -224,7 +240,6 @@ export function useStructuredAgentSessionOptions(args: {
       return sendStructuredOption(id, encoded)
     },
     [
-      fence,
       held,
       launchSeedOptions,
       optionCatalog,
@@ -266,12 +281,11 @@ export function useStructuredAgentSessionOptions(args: {
             current: permissionModes.current,
             supported: permissionModes.supported,
             pending: optionState.pendingId === AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
-            // Published but not attached: nothing can carry a pick until the fence arrives.
-            disabled: !acceptsPicks || optionState.pendingId !== null,
+            disabled: optionState.pendingId !== null,
             setMode: (mode) => setStructuredOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
           }
         : null,
-    [acceptsPicks, agent, optionState.pendingId, permissionModes, setStructuredOption]
+    [agent, optionState.pendingId, permissionModes, setStructuredOption]
   )
   const optionSurface = useMemo<StructuredSessionOptionsSurface>(
     () => ({

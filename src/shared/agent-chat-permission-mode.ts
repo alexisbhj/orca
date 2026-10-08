@@ -16,7 +16,7 @@ export function isAgentChatPermissionMode(value: unknown): value is AgentChatPer
   return AGENT_CHAT_PERMISSION_MODES.some((mode) => mode === value)
 }
 
-/** Unknown reviewer support stays provisional until the child reports it. */
+/** Unknown reviewer support offers Auto; only a known refusal removes it. */
 export type AgentChatPermissionModeSupport = { autoReview?: boolean }
 
 /** Only Claude and Codex expose chat permissions; unsupported reviewer modes are withheld. */
@@ -77,6 +77,9 @@ export type AgentSessionPermissionModes = {
   supported: readonly AgentChatPermissionMode[]
 }
 
+/** The host's permission intent and fence when it publishes a chat tab. */
+export type AgentSessionPermissionSeed = { mode: AgentChatPermissionMode; fence: number }
+
 /** Unknown host modes hide the picker rather than granting guessed access. */
 export function parseAgentSessionPermissionModes(
   value: unknown
@@ -104,7 +107,7 @@ export function commitAgentSessionPermissionMode(
   if (!agentChatPermissionModeSupported(agent, value)) {
     return null
   }
-  const supported = agentChatPermissionModes(agent, { autoReview: false })
+  const supported = agentChatPermissionModes(agent)
   if (!supported) {
     return null
   }

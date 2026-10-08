@@ -14,7 +14,7 @@ import {
 } from './structured-agent-session-options-read'
 
 it.each(['claude', 'codex'] as const)(
-  'shows stopped %s Auto intent without offering it, then resumes an explicit Ask pick',
+  'offers stopped %s Auto intent, then resumes an explicit Ask pick',
   async (provider) => {
     const saved = {
       ...record({ chain: [] }),
@@ -34,7 +34,7 @@ it.each(['claude', 'codex'] as const)(
     }
     const read = await readStructuredAgentSessionOptionsAtRest(deps, saved.sessionId)
     expect(read.permissionModes?.current).toBe('auto')
-    expect(read.permissionModes?.supported).not.toContain('auto')
+    expect(read.permissionModes?.supported).toContain('auto')
     expect(parseAgentSessionPermissionModes(read.permissionModes)).toEqual(read.permissionModes)
     const picked = await recordStructuredAgentSessionOptionIntent(
       deps,

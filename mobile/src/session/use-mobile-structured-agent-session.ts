@@ -1,4 +1,5 @@
 import type { StructuredMobileSession } from './mobile-structured-session-controller'
+import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileNativeChatVisualSource } from './mobile-native-chat-visual-read'
 import { useCallback, useMemo, useRef } from 'react'
 import { encodeNativeChatTranscriptIdentity } from '../../../src/shared/native-chat-transcript-retention'
@@ -46,6 +47,7 @@ import { useMobileStructuredBackgroundTasks } from './use-mobile-structured-back
 export function useMobileStructuredAgentSession(args: {
   client: RpcClient | null
   sessionId: string | null
+  permissionSeed?: AgentSessionPermissionSeed
   /** Host/workspace scope used to keep same provider ids isolated. */
   sourceIdentity?: string
   /** Authenticated identity the host keys mutation admission under. */
@@ -93,7 +95,8 @@ export function useMobileStructuredAgentSession(args: {
     sessionId,
     enabled,
     stateRef,
-    onSendError
+    onSendError,
+    permissionSeed: args.permissionSeed
   })
 
   const hostStatusArgs = {
@@ -112,6 +115,7 @@ export function useMobileStructuredAgentSession(args: {
     turnId: runningStructuredAgentSessionTurnId(state),
     providerPhase,
     permissionMode: state.permissionMode,
+    permissionSeed: args.permissionSeed,
     unloadedTurnRevisions: state.unloadedTurnRevisions,
     mutate
   })

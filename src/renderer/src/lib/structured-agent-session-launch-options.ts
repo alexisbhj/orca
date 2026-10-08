@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type {
   AgentSessionMutationResult,
+  AgentSessionHistoryResult,
   AgentSessionOptionResult
 } from '../../../shared/agent-session-wire'
 import {
@@ -58,17 +59,20 @@ function repliesFor(state: StructuredLaunchState): Map<string, OptionReply> {
 }
 
 /**
- * Records a pick made while the launch has no fence to send it against. Null once the launch
- * has published or is gone: the pick then goes through the session like any other.
+ * Holds pre-create picks; after publication, the host supplies the fence before the same write.
  */
 export function holdStructuredAgentSessionLaunchOption(
   sessionId: string,
   id: string,
-  encoded: string
+  encoded: string,
+  publishedTarget?: RuntimeClientTarget
 ): Promise<StructuredLaunchOptionOutcome> | null {
   const state = getStructuredLaunchStateBySessionId(sessionId)
-  if (!state || state.cancelled || state.callers.outcome === 'published') {
+  if (state?.cancelled) {
     return null
+  }
+  if (!state || state.callers.outcome === 'published') {
+    return publishedTarget ? setLaunchOption(publishedTarget, sessionId, null, id, encoded) : null
   }
   const replies = repliesFor(state)
   const { held } = state.selection
@@ -88,12 +92,23 @@ export function holdStructuredAgentSessionLaunchOption(
 async function setLaunchOption(
   target: RuntimeClientTarget,
   sessionId: string,
-  fence: number,
+  fence: number | null,
   key: string,
   value: string
 ): Promise<StructuredLaunchOptionOutcome> {
   const fields = { key, value }
   try {
+    if (fence === null) {
+      const history = await callStructuredAgentSession<AgentSessionHistoryResult>(
+        target,
+        'agentSession.history',
+        { sessionId, direction: 'tail', limit: 1 }
+      )
+      fence = history.page.fence ?? (!history.ok ? history.fence : undefined) ?? null
+      if (fence === null) {
+        throw new Error('structured session fence publication unavailable')
+      }
+    }
     const result = await callStructuredAgentSession<
       AgentSessionMutationResult<AgentSessionOptionResult>
     >(target, 'agentSession.setOption', {

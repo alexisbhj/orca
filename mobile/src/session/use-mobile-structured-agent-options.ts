@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { StructuredOptionsController } from './mobile-structured-options-controller'
 import type { AgentSessionConversationCommand } from '../../../src/shared/agent-session-conversation-command'
 import { getAgentSessionOptionCatalog } from '../../../src/shared/agent-session-option-catalog'
 import type {
@@ -6,7 +7,6 @@ import type {
   AgentSessionOptionsResult
 } from '../../../src/shared/agent-session-wire'
 import type {
-  SessionOptionDescriptor,
   SessionOptionsSurface,
   SessionOptionValue
 } from '../../../src/shared/native-chat-session-options'
@@ -27,20 +27,12 @@ import {
 } from './mobile-structured-agent-session-rpc'
 import { persistMobileStructuredOptionPicks } from './mobile-native-chat-session-option-persistence'
 import { encodeStructuredAgentSessionOptionValue } from '../../../src/shared/structured-agent-session-option-codec'
-import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../src/shared/agent-chat-permission-mode'
+import {
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  type AgentSessionPermissionSeed
+} from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileNativeChatPermissionPickerState } from './MobileNativeChatPermissionPicker'
-
-type StructuredOptionsController = {
-  /** Null where the host offers no permission picker for this chat. */
-  permissionPicker: MobileNativeChatPermissionPickerState | null
-  optionPickerRequest: { id: string; sequence: number } | null
-  conversationCommands: readonly AgentSessionConversationCommand[]
-  optionSnapshot: SessionOptionDescriptor[]
-  optionSurface: SessionOptionsSurface
-  pendingOptionId: string | null
-  setStructuredOption: (id: string, value: SessionOptionValue) => Promise<boolean>
-  invokeStructuredOption: (id: string) => Promise<boolean>
-}
+import { seedMobileStructuredPermissionState } from './mobile-structured-permission-seed'
 
 export function useMobileStructuredAgentOptions(args: {
   agent: string | null
@@ -52,6 +44,7 @@ export function useMobileStructuredAgentOptions(args: {
   turnId?: string | null
   providerPhase?: string | null
   permissionMode?: string | null
+  permissionSeed?: AgentSessionPermissionSeed
   unloadedTurnRevisions?: number
   mutate: StructuredAgentSessionMutate
 }): StructuredOptionsController {
@@ -95,6 +88,12 @@ export function useMobileStructuredAgentOptions(args: {
   const optionCatalog = useMemo(
     () => (agent === 'claude' || agent === 'codex' ? getAgentSessionOptionCatalog(agent) : null),
     [agent]
+  )
+  const seedPermissionMode = args.permissionSeed?.mode
+  const permissionView = useCallback(
+    (current: StructuredAgentSessionOptionState) =>
+      seedMobileStructuredPermissionState(current, seedPermissionMode),
+    [seedPermissionMode]
   )
 
   useEffect(() => {
@@ -153,7 +152,7 @@ export function useMobileStructuredAgentOptions(args: {
 
   const setStructuredOption = useCallback(
     async (id: string, value: SessionOptionValue): Promise<boolean> => {
-      const currentState = optionStateRef.current
+      const currentState = permissionView(optionStateRef.current)
       const encoded = encodeStructuredAgentSessionOptionValue(id, value)
       if (
         pendingOptionRef.current !== null ||
@@ -202,7 +201,7 @@ export function useMobileStructuredAgentOptions(args: {
           const committed = result.value.options ?? { [id]: encoded }
           updateOptionState((current) =>
             current.record === targetRecord && result.sameFence
-              ? commitStructuredAgentSessionOptionValues(current, committed)
+              ? commitStructuredAgentSessionOptionValues(permissionView(current), committed)
               : current
           )
           // Only accepted per-model picks become the next chat's default.
@@ -246,7 +245,7 @@ export function useMobileStructuredAgentOptions(args: {
         }
       }
     },
-    [agent, client, mutate, optionCatalog, sessionId, updateOptionState]
+    [agent, client, mutate, optionCatalog, permissionView, sessionId, updateOptionState]
   )
 
   const invokeStructuredOption = useCallback(
@@ -278,18 +277,18 @@ export function useMobileStructuredAgentOptions(args: {
     [optionSnapshot, setOption]
   )
 
+  const permission = permissionView(optionState).permission
   const permissionPicker = useMemo<MobileNativeChatPermissionPickerState | null>(
     () =>
-      optionState.permission
+      permission
         ? {
             provider: agent,
-            current: optionState.permission.current,
-            supported: optionState.permission.supported,
+            ...permission,
             pending: optionState.pendingId !== null,
             setMode: (mode) => setStructuredOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
           }
         : null,
-    [agent, optionState.pendingId, optionState.permission, setStructuredOption]
+    [agent, optionState.pendingId, permission, setStructuredOption]
   )
 
   return {
