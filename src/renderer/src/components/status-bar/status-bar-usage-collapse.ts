@@ -2,6 +2,8 @@ export type UsageChipMeasure = {
   provider: string
   width: number
   urgent: boolean
+  /** The chip renders a percentage, so the leading unit label covers it. */
+  percentage: boolean
   collapsed: boolean
 }
 
@@ -48,7 +50,7 @@ export function pickCollapsedUsageChips(
   return collapsed
 }
 
-/** Reads the `data-usage-*` markers the status bar renders on its usage chips and "+N" chip. */
+/** Reads the `data-usage-*` markers the status bar renders on its usage chips, unit label, and "+N" chip. */
 export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
   if (!usage) {
     return {
@@ -68,6 +70,7 @@ export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
     provider: element.dataset.usageChip ?? '',
     width: element.getBoundingClientRect().width,
     urgent: element.dataset.usageUrgent === 'true',
+    percentage: element.dataset.usagePercentage === 'true',
     collapsed: element.dataset.usageCollapsed === 'true'
   }))
   const more = usage.querySelector<HTMLElement>('[data-usage-more]')
@@ -76,12 +79,23 @@ export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
   const collapsedWidth = chips
     .filter((chip) => chip.collapsed)
     .reduce((sum, chip) => sum + chip.width + chipGap, 0)
-  const naturalWidth = renderedWidth + collapsedWidth - (moreInRow ? moreChipWidth + chipGap : 0)
+  // Why: the unit label stays mounted while collapsed, so count it like a collapsed chip.
+  const unit = usage.querySelector<HTMLElement>('[data-usage-unit]')
+  const unitWidth = unit ? unit.getBoundingClientRect().width + chipGap : 0
+  const unitCollapsed = unit?.dataset.usageCollapsed === 'true'
+  const naturalWidth =
+    renderedWidth +
+    collapsedWidth -
+    (moreInRow ? moreChipWidth + chipGap : 0) +
+    (unitCollapsed ? unitWidth : 0)
   const calmChips = chips.filter((chip) => !chip.urgent)
+  // Pinned keeps the label only when an urgent chip it labels stays in the row.
+  const pinnedUnitWidth = chips.some((chip) => chip.urgent && chip.percentage) ? 0 : unitWidth
   const pinnedWidth =
     naturalWidth -
     calmChips.reduce((sum, chip) => sum + chip.width + chipGap, 0) +
-    (calmChips.length > 0 ? moreChipWidth + chipGap : 0)
+    (calmChips.length > 0 ? moreChipWidth + chipGap : 0) -
+    pinnedUnitWidth
   return {
     naturalWidth,
     pinnedWidth,

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { pickCollapsedUsageChips } from './status-bar-usage-collapse'
+// @vitest-environment happy-dom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { measureUsageRow, pickCollapsedUsageChips } from './status-bar-usage-collapse'
 
 const GAP = 12
 const MORE = 20
@@ -42,5 +43,101 @@ describe('pickCollapsedUsageChips', () => {
   it('drops urgent agents from the end of the roster too', () => {
     const allUrgent = chips.map((chip) => ({ ...chip, urgent: true }))
     expect(pickCollapsedUsageChips(allUrgent, 10, MORE, GAP)).toEqual(['cursor'])
+  })
+})
+
+describe('measureUsageRow unit label', () => {
+  const UNIT = 30
+  const CHIP = 60
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  // Collapsed items are out of the flow, so the row is narrower by their width and gap.
+  function renderRow(options: {
+    unitCollapsed: boolean
+    moreInRow: boolean
+    chips: { provider: string; urgent: boolean; percentage: boolean; collapsed: boolean }[]
+  }): HTMLElement {
+    const usage = document.createElement('div')
+    const row = document.createElement('div')
+    row.style.columnGap = `${GAP}px`
+    usage.append(row)
+    document.body.append(usage)
+    const unit = document.createElement('span')
+    unit.dataset.usageUnit = ''
+    unit.dataset.usageCollapsed = String(options.unitCollapsed)
+    row.append(unit)
+    const more = document.createElement('span')
+    more.dataset.usageMore = ''
+    more.dataset.usageCollapsed = String(!options.moreInRow)
+    const widths = new Map<Element, number>([
+      [unit, UNIT],
+      [more, MORE]
+    ])
+    for (const chip of options.chips) {
+      const element = document.createElement('span')
+      element.dataset.usageChip = chip.provider
+      element.dataset.usageUrgent = String(chip.urgent)
+      element.dataset.usagePercentage = String(chip.percentage)
+      element.dataset.usageCollapsed = String(chip.collapsed)
+      row.append(element)
+      widths.set(element, CHIP)
+    }
+    row.append(more)
+    const inRow = [...widths]
+      .filter(([element]) => element.getAttribute('data-usage-collapsed') !== 'true')
+      .map(([, width]) => width)
+    widths.set(
+      usage,
+      inRow.reduce((sum, width) => sum + width, 0) + Math.max(0, inRow.length - 1) * GAP
+    )
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      return new DOMRect(0, 0, widths.get(this) ?? 0, 16)
+    })
+    return usage
+  }
+
+  it('keeps the natural width when the label collapses with its chips', () => {
+    const chips = [
+      { provider: 'codex', urgent: false, percentage: true, collapsed: false },
+      { provider: 'gemini', urgent: false, percentage: true, collapsed: false }
+    ]
+    const shown = measureUsageRow(renderRow({ unitCollapsed: false, moreInRow: false, chips }))
+    const collapsed = measureUsageRow(
+      renderRow({
+        unitCollapsed: true,
+        moreInRow: true,
+        chips: chips.map((chip) => ({ ...chip, collapsed: true }))
+      })
+    )
+    expect(collapsed.renderedWidth).toBe(MORE)
+    expect(collapsed.naturalWidth).toBe(shown.naturalWidth)
+    expect(shown.chips.map((chip) => chip.percentage)).toEqual([true, true])
+  })
+
+  it('drops the label from the pinned width unless an urgent chip shows a percentage', () => {
+    const calm = [
+      { provider: 'codex', urgent: false, percentage: true, collapsed: false },
+      { provider: 'gemini', urgent: true, percentage: false, collapsed: false }
+    ]
+    const withoutUrgentPercentage = measureUsageRow(
+      renderRow({ unitCollapsed: false, moreInRow: false, chips: calm })
+    )
+    // Natural minus the calm chip and the label, plus the "+N" chip that replaces it.
+    expect(withoutUrgentPercentage.pinnedWidth).toBe(
+      withoutUrgentPercentage.naturalWidth - (CHIP + GAP) - (UNIT + GAP) + (MORE + GAP)
+    )
+    const urgent = calm.map((chip) => ({ ...chip, percentage: true }))
+    const withUrgentPercentage = measureUsageRow(
+      renderRow({ unitCollapsed: false, moreInRow: false, chips: urgent })
+    )
+    expect(withUrgentPercentage.pinnedWidth).toBe(
+      withUrgentPercentage.naturalWidth - (CHIP + GAP) + (MORE + GAP)
+    )
   })
 })

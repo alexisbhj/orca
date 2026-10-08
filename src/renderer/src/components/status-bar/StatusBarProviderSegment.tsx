@@ -18,7 +18,7 @@ import {
 } from './tooltip'
 import { getTightestUsageSection, getUsageHeadlineSection } from './UsageRosterPanel'
 import { formatRateLimitWindowChipLabel } from '@/lib/window-label-formatter'
-import { formatUsagePercentageLabel } from './usage-percentage-label'
+import { formatBareUsagePercentage, formatUsagePercentageLabel } from './usage-percentage-label'
 import { translate } from '@/i18n/i18n'
 import { isCursorUsageBucket } from '../../../../shared/cursor-usage-buckets'
 
@@ -55,7 +55,7 @@ function WindowLabel({
 }): React.JSX.Element {
   return (
     <span className="tabular-nums">
-      {formatUsagePercentageLabel(w.usedPercent, display)}
+      {formatBareUsagePercentage(w.usedPercent, display)}
       {showLabel ? ` ${label}` : ''}
     </span>
   )
@@ -173,7 +173,10 @@ const STATUS_BAR_BUCKET_NAMES = new Set(['Flash', 'Pro', '1.5 Pro'])
  * there is no list to allow. Cursor stays name-matched on purpose — a pool Orca does not recognise
  * is filtered so the segment can fall back to the plan total instead of showing an unlabelled row.
  */
-function isVisibleStatusBarBucket(name: string, provider: ProviderRateLimits['provider']): boolean {
+export function isVisibleStatusBarBucket(
+  name: string,
+  provider: ProviderRateLimits['provider']
+): boolean {
   if (provider === 'antigravity') {
     return true
   }
@@ -203,7 +206,7 @@ function VerboseProviderUsage({
           <React.Fragment key={bucket.name}>
             {index > 0 ? <span className="text-muted-foreground">·</span> : null}
             <span className="tabular-nums">
-              {bucket.name} {formatUsagePercentageLabel(bucket.usedPercent, display)}
+              {bucket.name} {formatBareUsagePercentage(bucket.usedPercent, display)}
             </span>
           </React.Fragment>
         ))}

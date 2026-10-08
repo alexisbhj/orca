@@ -56,7 +56,7 @@ describe('Cursor compact usage headline', () => {
       const segment = renderToStaticMarkup(
         <ProviderSegment p={p} compact={false} mode="compact" display={display} />
       )
-      expect(segment).toContain(`${shown}% ${display === 'used' ? 'used' : 'left'} Cursor Models`)
+      expect(segment).toContain(`>${shown}% Cursor Models<`)
       const row = renderToStaticMarkup(
         <UsageRow
           p={p}
@@ -82,6 +82,8 @@ describe('Cursor compact usage headline', () => {
       expect(getUsageHeadlineSection(p)?.label).toBe('Cursor Models')
       const overflow = renderToStaticMarkup(<UsageOverflowChip hidden={[p]} display="used" />)
       expect(overflow).toContain('data-tone="urgent"')
+      // The "+N" title is read on its own, so it keeps the sentence label.
+      expect(overflow).toMatch(/title="[^"]*% used"/)
       expect(
         pickCollapsedUsageChips(
           [
@@ -135,8 +137,8 @@ describe('Cursor compact usage headline', () => {
     const detailed = renderToStaticMarkup(
       <ProviderSegment p={cursorPools(7, 18)} compact={false} mode="verbose" display="used" />
     )
-    expect(detailed).toContain('Cursor Models 7% used')
-    expect(detailed).toContain('Other Models 18% used')
+    expect(detailed).toContain('>Cursor Models 7%<')
+    expect(detailed).toContain('>Other Models 18%<')
     const legacy: ProviderRateLimits = { ...cursorPools(0, 0), buckets: [], monthly: windowAt(44) }
     expect(getUsageHeadlineSection(legacy)?.window.usedPercent).toBe(44)
     const noPrimary: ProviderRateLimits = {
