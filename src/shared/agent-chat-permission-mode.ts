@@ -77,7 +77,6 @@ export type AgentSessionPermissionModes = {
   supported: readonly AgentChatPermissionMode[]
   fence?: number
   revision?: number
-  defaultRevision?: number
 }
 
 /** The host's permission intent and fence when it publishes a chat tab. */
@@ -85,13 +84,10 @@ export type AgentSessionPermissionFact = {
   mode: AgentChatPermissionMode | null
   fence: number
   revision?: number
-  /** Present only for inherited intent; saved intent outranks it at the same chat revision. */
-  defaultRevision?: number
 }
 export type AgentSessionPermissionFrameFields = {
   permissionMode?: AgentChatPermissionMode | null
   permissionRevision?: number
-  permissionDefaultRevision?: number
 }
 export type AgentSessionPermissionSeed = AgentSessionPermissionFact & {
   mode: AgentChatPermissionMode

@@ -29,8 +29,7 @@ it.each(['claude', 'codex'] as const)(
       store: { getRecord: () => saved, pinLaunchDirectory: vi.fn() },
       agents: {
         definition: () => (provider === 'claude' ? CLAUDE_STRUCTURED_AGENT : CODEX_STRUCTURED_AGENT)
-      },
-      defaultPermissionMode: () => 'bypass' as const
+      }
     }
     const read = await readStructuredAgentSessionOptionsAtRest(deps, saved.sessionId)
     expect(read.permissionModes?.current).toBe('auto')
@@ -60,8 +59,7 @@ it.each(['claude', 'codex'] as const)(
       resolveAuthPolicy: () => ({ stripAuthEnv: false }),
       resolveCommand: () => provider,
       resolveLaunchArgs: () => [],
-      resolveWorkspacePath: async () => process.cwd(),
-      resolveDefaultPermissionMode: () => 'bypass' as const
+      resolveWorkspacePath: async () => process.cwd()
     }
     if (provider === 'claude') {
       const launch = await createClaudeStructuredLaunchResolver(launchDeps)({ identity })
@@ -85,15 +83,14 @@ it.each(['claude', 'codex'] as const)(
   }
 )
 
-it('derives a missing canonical mode from the current default at rest', async () => {
+it('derives a fixed mode from the legacy reviewer at rest', async () => {
   const saved = { ...record({ chain: [] }), options: { approvalsReviewer: 'user' } }
   const read = await readStructuredAgentSessionOptionsAtRest(
     {
       store: { getRecord: () => saved },
-      agents: { definition: () => CODEX_STRUCTURED_AGENT },
-      defaultPermissionMode: () => 'bypass'
+      agents: { definition: () => CODEX_STRUCTURED_AGENT }
     },
     saved.sessionId
   )
-  expect(read.permissionModes?.current).toBe('bypass')
+  expect(read.permissionModes?.current).toBe('ask')
 })

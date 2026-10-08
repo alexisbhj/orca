@@ -43,7 +43,7 @@ function restingOptionRules(
 }
 
 export async function readStructuredAgentSessionOptionsAtRest(
-  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog' | 'defaultPermissionMode'> &
+  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog'> &
     Partial<Pick<StructuredAgentSessionHostDeps, 'logger'>> & {
       store: Pick<AgentSessionRecordStore, 'getRecord'>
       agents: Pick<StructuredAgentRegistry, 'definition'>
@@ -78,7 +78,7 @@ export async function readStructuredAgentSessionOptionsAtRest(
     (rules?.effortDefaultsToModel
       ? models.find((entry) => entry.id === model)?.defaultEffort
       : undefined)
-  const permissionModes = restingPermissionModes(record, deps.defaultPermissionMode, deps.logger)
+  const permissionModes = restingPermissionModes(record, deps.logger)
   return {
     models: listed ? structuredAgentSessionOptionModels(listed, model, (row) => row) : [],
     ...(permissionModes ? { permissionModes } : {}),
@@ -95,7 +95,7 @@ export async function readStructuredAgentSessionOptionsAtRest(
 
 /** Records a pick for the next start. Only a key the provider would accept is kept. */
 export async function recordStructuredAgentSessionOptionIntent(
-  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog' | 'defaultPermissionMode'> & {
+  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog'> & {
     store: Pick<AgentSessionRecordStore, 'getRecord'>
     agents: Pick<StructuredAgentRegistry, 'definition'>
   },
@@ -198,8 +198,7 @@ export async function readStructuredAgentSessionOptions(
             ...permissionModes,
             current: fact.mode ?? permissionModes.current,
             fence: fact.fence,
-            revision: fact.revision,
-            ...(fact.defaultRevision !== undefined ? { defaultRevision: fact.defaultRevision } : {})
+            revision: fact.revision
           }
         }
       : {}),

@@ -41,7 +41,7 @@ it.each([
     await host.start()
     expect(await host.storedIntent()).toMatchObject({
       options: { permissionMode: initial },
-      permissionRevision: 1
+      permissionRevision: 0
     })
     host.updateSettings({ nativeChatPermissionMode: initial === 'ask' ? 'bypass' : 'ask' })
     const event = await host.snapshot()
@@ -79,15 +79,14 @@ it.each([
       { initialProps: transcript.permissionPublication }
     )
     try {
-      expect(host.fact()).toEqual({ mode: initial, fence: 8, revision: 1 })
+      expect(host.fact()).toEqual({ mode: initial, fence: 8, revision: 0 })
       expect(result.current.optionSurface.permissionPicker?.current).toBe(initial)
       await act(async () => replies.splice(0).forEach((reply) => reply(before)))
       expect(result.current.optionSurface.permissionPicker?.current).toBe(initial)
       rerender({
         mode: initial === 'ask' ? 'bypass' : 'ask',
         fence: 8,
-        revision: 0,
-        defaultRevision: 100
+        revision: 0
       })
       expect(result.current.optionSurface.permissionPicker?.current).toBe(initial)
       await host.send()
@@ -96,7 +95,7 @@ it.each([
       expect(host.controls()).toEqual([])
       expect((await host.readOptions()).permissionModes).toMatchObject({
         current: initial,
-        revision: 1
+        revision: 0
       })
     } finally {
       unmount()

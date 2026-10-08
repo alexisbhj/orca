@@ -39,7 +39,6 @@ import { CLAUDE_STRUCTURED_AGENT } from './claude-structured-agent-definition'
 import { claudeSessionIdForOrcaSession } from './claude-structured-session-id'
 
 import { claudeStructuredPermissionOptions } from './claude-structured-permission-mode'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import * as chatPermission from '../../shared/agent-chat-permission-mode'
 
 export { claudeSessionIdForOrcaSession }
@@ -119,8 +118,6 @@ export type ClaudeStructuredLaunchResolverDeps = {
    * inherit a guess. Build it with claudeStructuredAuthPolicyForSettings.
    */
   resolveAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
-  /** The host default for a chat without a saved choice. */
-  resolveDefaultPermissionMode?: () => Promise<AgentChatPermissionMode> | AgentChatPermissionMode
   /** The host's chat attachment store: files a client attached live there, outside the workspace,
    *  and the agent reads them without asking. */
   attachmentDirectory?: string
@@ -219,7 +216,7 @@ export function createClaudeStructuredLaunchResolver(
     const permissionMode = chatPermission.agentChatLaunchPermissionMode(
       'claude',
       record.options,
-      await deps.resolveDefaultPermissionMode?.()
+      undefined
     )
     const permission = claudeStructuredPermissionOptions(
       permissionMode === 'auto' ? 'ask' : permissionMode

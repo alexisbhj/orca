@@ -180,7 +180,6 @@ async function runAttachUnderAbort(
         }
       },
       authority: {
-        defaultPermissionMode: context.deps.defaultPermissionMode,
         ...(launchDirectory ? { launchDirectory } : {}),
         spawnToken: () => context.deps.mintSpawnToken?.() ?? randomUUID(),
         claimKeyId: context.deps.claimKeyId,

@@ -155,33 +155,28 @@ describe('legacy approvals reviewer retirement', () => {
 })
 
 it.each([
-  ['auto_review', 'ask', 'auto'],
-  ['user', 'auto', 'ask'],
-  ['user', 'bypass', 'ask']
-] as const)(
-  'migrates saved %s before launch with a %s default',
-  async (reviewer, defaultMode, expected) => {
-    const saved = record({ chain: [] })
-    saved.options = { approvalsReviewer: reviewer }
-    const launch = await createCodexStructuredLaunchResolver({
-      store: { getRecord: () => saved, pinLaunchDirectory: vi.fn() },
-      resolveCommand: () => 'codex',
-      resolveLaunchArgs: () => [],
-      resolveWorkspacePath: async () => process.cwd(),
-      resolveDefaultPermissionMode: () => defaultMode
-    })({
-      identity: {
-        sessionId: saved.sessionId,
-        workspaceId: saved.location.workspaceId,
-        hostId: 'local',
-        agent: 'codex',
-        providerHandle: null
-      }
-    })
-    expect(launch.permissionMode).toBe(expected)
-    expect(launch.permissionPolicy).toMatchObject({ approvalsReviewer: reviewer })
-    expect(Object.fromEntries(restoredCodexSessionOptions(saved.options))).toEqual({
-      permissionMode: expected
-    })
-  }
-)
+  ['auto_review', 'auto'],
+  ['user', 'ask']
+] as const)('normalizes saved %s before launch to %s', async (reviewer, expected) => {
+  const saved = record({ chain: [] })
+  saved.options = { approvalsReviewer: reviewer }
+  const launch = await createCodexStructuredLaunchResolver({
+    store: { getRecord: () => saved, pinLaunchDirectory: vi.fn() },
+    resolveCommand: () => 'codex',
+    resolveLaunchArgs: () => [],
+    resolveWorkspacePath: async () => process.cwd()
+  })({
+    identity: {
+      sessionId: saved.sessionId,
+      workspaceId: saved.location.workspaceId,
+      hostId: 'local',
+      agent: 'codex',
+      providerHandle: null
+    }
+  })
+  expect(launch.permissionMode).toBe(expected)
+  expect(launch.permissionPolicy).toMatchObject({ approvalsReviewer: reviewer })
+  expect(Object.fromEntries(restoredCodexSessionOptions(saved.options))).toEqual({
+    permissionMode: expected
+  })
+})

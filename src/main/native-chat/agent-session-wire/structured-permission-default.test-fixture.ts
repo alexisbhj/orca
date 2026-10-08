@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDefaultPersistedState } from '../../../shared/constants'
 import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
-import { nativeChatPermissionDefaultRevision } from '../../../shared/native-chat-permission-default'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
 import type { PermissionDefaultHost } from '../../../shared/agent-session-permission-default.test-fixture'
 import type {
@@ -20,7 +19,6 @@ import {
   closeTestJournalHostDatabase,
   openTestJournalHostDatabase
 } from '../agent-session-journal/journal-host-database-test-support'
-import { agentChatPermissionModeForSettings } from '../agent-chat-permission-mode-setting'
 import { claudeAndCodexAgents } from './structured-agent-session-adapter-router-test-support'
 import { StructuredAgentSessionHost } from './structured-agent-session-host'
 import { recordingStructuredAgentSessionLogger } from './structured-agent-session-logger-test-support'
@@ -29,7 +27,8 @@ import { record } from './structured-agent-session-restart-resume-test-harness'
 
 export async function permissionDefaultHost(
   agent: 'claude' | 'codex',
-  initial: AgentChatPermissionMode
+  initial: AgentChatPermissionMode,
+  savedOptions: Record<string, string> = { permissionMode: initial }
 ): Promise<PermissionDefaultHost> {
   const root = await mkdtemp(join(tmpdir(), 'orca-permission-default-'))
   const state = getDefaultPersistedState(root)
@@ -48,7 +47,7 @@ export async function permissionDefaultHost(
     ...record({ chain: [] }),
     provider: agent,
     location: { ...record().location, workspaceKind: 'folder' as const },
-    options: {},
+    options: savedOptions,
     lease: { ...record().lease, runtimeFence: 7 }
   }
   await seedTestAgentSessionRecordStore(root, { records: [saved] })
@@ -63,8 +62,6 @@ export async function permissionDefaultHost(
         throw new Error('Provider execution forbidden')
       },
       logger: recordingStructuredAgentSessionLogger().logger,
-      defaultPermissionMode: () => agentChatPermissionModeForSettings(agent, state.settings),
-      defaultPermissionRevision: () => nativeChatPermissionDefaultRevision(state.settings),
       idleSweep: { intervalMs: 3_600_000 }
     })
     await host.reconcileRestartLeases()
@@ -74,9 +71,9 @@ export async function permissionDefaultHost(
   let operation = 0
   const database = () => openTestJournalHostDatabase(root).db
   const refuseWrites = () =>
-    database().exec(`CREATE TRIGGER reject_inherited_read_write
+    database().exec(`CREATE TRIGGER reject_permission_read_write
     BEFORE UPDATE ON agent_session_records BEGIN SELECT RAISE(ABORT, 'record write refused'); END`)
-  const permitWrites = () => database().exec('DROP TRIGGER IF EXISTS reject_inherited_read_write')
+  const permitWrites = () => database().exec('DROP TRIGGER IF EXISTS reject_permission_read_write')
   const frames: AgentSessionSubscribeEvent[] = []
   const subscribe = () =>
     host.subscribe({

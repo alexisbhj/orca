@@ -46,9 +46,6 @@ function mergeBatch(
           permissionMode: permission.permissionMode,
           ...(permission.permissionRevision !== undefined
             ? { permissionRevision: permission.permissionRevision }
-            : {}),
-          ...(permission.permissionDefaultRevision !== undefined
-            ? { permissionDefaultRevision: permission.permissionDefaultRevision }
             : {})
         }
       : {}),

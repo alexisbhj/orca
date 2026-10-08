@@ -124,16 +124,12 @@ function nativeChatVisualsFor(deps: StructuredAgentSessionRuntimeDeps): {
 
 function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredAgentRuntimeAdapter {
   const { deps, store, followUps, host } = context
-  const { resolveDefaultPermissionMode } = deps
   return new CodexStructuredSessionAdapter({
     resolveLaunch: createCodexStructuredLaunchResolver({
       store,
       resolveWorkspacePath: deps.resolveWorkspacePath,
       resolveEnvironment: context.environment.resolveCodexEnvironment,
       resolveLaunchArgs: () => deps.resolveLaunchArgs('codex'),
-      ...(resolveDefaultPermissionMode
-        ? { resolveDefaultPermissionMode: () => resolveDefaultPermissionMode('codex') }
-        : {}),
       ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {}),
       ...nativeChatVisualsFor(deps)
     }),
@@ -158,7 +154,6 @@ function createClaudeAdapter(
   context: StructuredAgentAdapterContext
 ): StructuredAgentRuntimeAdapter {
   const { deps, store, followUps, host } = context
-  const { resolveDefaultPermissionMode } = deps
   return createStructuredClaudeRuntimeAdapter({
     store,
     resolveWorkspacePath: deps.resolveWorkspacePath,
@@ -169,9 +164,6 @@ function createClaudeAdapter(
     resolveClaudeInheritedEnv: context.environment.resolveClaudeInheritedEnv,
     resolveClaudeLaunchArgs: () => deps.resolveLaunchArgs('claude'),
     resolveClaudeAuthPolicy: deps.resolveClaudeAuthPolicy,
-    ...(resolveDefaultPermissionMode
-      ? { resolveClaudeDefaultPermissionMode: () => resolveDefaultPermissionMode('claude') }
-      : {}),
     attachmentDirectory: agentSessionAttachmentStoreRoot(deps.stateDirectory),
     onLifecycleEvent: context.deliverLifecycle,
     logger: deps.logger,

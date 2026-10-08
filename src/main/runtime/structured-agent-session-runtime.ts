@@ -21,7 +21,6 @@ import {
   type InstalledRuntime
 } from './structured-agent-session-runtime-teardown'
 import { AgentSessionRecoveryCapsule } from './agent-session-recovery-capsule'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import type { StructuredAgentCommandSettings } from '../native-chat/structured-agent-command-resolution'
 import type { CodexStructuredSessionAdapterDeps } from '../codex/codex-structured-session-adapter'
 import type { ClaudeStructuredSessionAdapterDeps } from '../claude/claude-structured-session-adapter'
@@ -119,9 +118,6 @@ export type StructuredAgentSessionRuntimeDeps = {
   resolveClaudeLaunchEnv?: () => Promise<Record<string, string>> | Record<string, string>
   /** Required, and asserted at install time — an absent policy must not degrade to a guess. */
   resolveClaudeAuthPolicy: () => Promise<ClaudeStructuredAuthPolicy> | ClaudeStructuredAuthPolicy
-  /** The host chat default for a session without its own choice. */
-  resolveDefaultPermissionMode?: (agent: 'claude' | 'codex') => AgentChatPermissionMode
-  resolveDefaultPermissionRevision?: () => number
   /** The same setting for a protocol-driven (ACP) agent: whether it runs with full access. */
   resolveAgentFullAccess?: (agent: string) => boolean
   /** The user's per-agent environment overlay, for agents with no lane-specific resolver. */
@@ -300,7 +296,6 @@ async function installOnJournal(
   const adapter = new StructuredAgentSessionAdapterRouter(agents, async () => {
     await Promise.all(registrations.map((registration) => registration.adapter.closeAll()))
   })
-  const { resolveDefaultPermissionMode, resolveDefaultPermissionRevision } = deps
   host = new StructuredAgentSessionHost({
     store,
     adapter,
@@ -315,15 +310,6 @@ async function installOnJournal(
     ...(deps.onSessionStatusChanged ? { onSessionStatusChanged: deps.onSessionStatusChanged } : {}),
     ...(deps.statusSink ? { statusSink: deps.statusSink } : {}),
     ...(deps.hasOpenDispatch ? { hasOpenDispatch: deps.hasOpenDispatch } : {}),
-    ...(resolveDefaultPermissionMode
-      ? {
-          defaultPermissionMode: (agent: string) =>
-            agent === 'claude' || agent === 'codex' ? resolveDefaultPermissionMode(agent) : null
-        }
-      : {}),
-    ...(resolveDefaultPermissionRevision
-      ? { defaultPermissionRevision: resolveDefaultPermissionRevision }
-      : {}),
     ...(deps.onSessionTabHidden ? { onSessionTabHidden: deps.onSessionTabHidden } : {}),
     ...(await modelCatalogHostDeps({ store, agents, deps, envResolvers }))
   })

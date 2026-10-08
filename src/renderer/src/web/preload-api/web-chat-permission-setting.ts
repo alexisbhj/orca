@@ -1,12 +1,10 @@
-import {
-  isAgentChatPermissionMode,
-  type AgentChatPermissionMode
-} from '../../../../shared/agent-chat-permission-mode'
+import { isAgentChatPermissionMode } from '../../../../shared/agent-chat-permission-mode'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { StoredWebRuntimeEnvironment } from '../web-runtime-environment'
 import { requireActiveEnvironmentOrNull } from './web-runtime-session'
+import { HostChatPermissionSetting } from '../../runtime/host-chat-permission-setting'
 
-let hostSetting: { owner: string; mode: AgentChatPermissionMode } | null = null
+const hostSetting = new HostChatPermissionSetting()
 
 function owner(environment: StoredWebRuntimeEnvironment | null): string | null {
   return environment
@@ -14,16 +12,23 @@ function owner(environment: StoredWebRuntimeEnvironment | null): string | null {
     : null
 }
 
+export function beginWebChatPermissionRead() {
+  const requestedOwner = webChatPermissionOwner()
+  return requestedOwner ? hostSetting.beginRead(requestedOwner) : null
+}
+
 export function captureWebChatPermissionSetting(
-  requestedOwner: string | null,
-  settings: Partial<GlobalSettings>
+  read: ReturnType<typeof beginWebChatPermissionRead>,
+  settings: Partial<GlobalSettings>,
+  confirmedWrite = false
 ): void {
-  if (!requestedOwner || requestedOwner !== webChatPermissionOwner()) {
-    return
+  if (read && read.owner === webChatPermissionOwner()) {
+    if (confirmedWrite) {
+      hostSetting.captureWrite(read.owner, settings)
+    } else {
+      hostSetting.captureRead(read, settings)
+    }
   }
-  hostSetting = isAgentChatPermissionMode(settings.nativeChatPermissionMode)
-    ? { owner: requestedOwner, mode: settings.nativeChatPermissionMode }
-    : null
 }
 
 export function webChatPermissionOwner(): string | null {
@@ -32,16 +37,17 @@ export function webChatPermissionOwner(): string | null {
 
 /** Browser persistence cannot attest to an execution host's permission default. */
 export function settingsForWebChatPermissionOwner(settings: GlobalSettings): GlobalSettings {
+  const currentOwner = webChatPermissionOwner()
   return {
     ...settings,
-    nativeChatPermissionMode:
-      hostSetting?.owner === webChatPermissionOwner() ? hostSetting?.mode : undefined,
-    nativeChatPermissionRevision: undefined
+    nativeChatPermissionMode: currentOwner ? hostSetting.value(currentOwner) : undefined
   }
 }
 
 export function webChatPermissionUpdate(updates: Partial<GlobalSettings>): Partial<GlobalSettings> {
-  return hostSetting?.owner === webChatPermissionOwner() &&
+  const currentOwner = webChatPermissionOwner()
+  return currentOwner &&
+    hostSetting.value(currentOwner) !== undefined &&
     isAgentChatPermissionMode(updates.nativeChatPermissionMode)
     ? { nativeChatPermissionMode: updates.nativeChatPermissionMode }
     : {}

@@ -40,7 +40,7 @@ it.each([
   ['codex', 'ask'],
   ['codex', 'bypass']
 ] as const)(
-  'updates desktop %s inherited %s through reads, publications and reconnect',
+  'retains desktop %s saved %s through reads, publications and reconnect',
   async (agent, initial) => {
     const host = await fixture.permissionDefaultHost(agent, initial)
     const other = initial === 'ask' ? 'bypass' : 'ask'
@@ -110,17 +110,17 @@ it.each([
       expect(replies.length).toBeGreaterThan(0)
       host.changeDefault(other)
       await host.publish()
-      expect(host.frames).toHaveLength(2)
+      expect(host.frames).toHaveLength(1)
       await host.publish()
-      expect(host.frames).toHaveLength(2)
-      expect(host.fact()).toEqual({ mode: other, fence: 7, revision: 0, defaultRevision: 1 })
+      expect(host.frames).toHaveLength(1)
+      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0 })
       publish(host.frames.at(-1))
-      expect(show()).toBe(other)
+      expect(show()).toBe(initial)
       await act(async () => replies.splice(0).forEach((reply) => reply(oldOptions)))
-      expect(show()).toBe(other)
+      expect(show()).toBe(initial)
       publish(host.frames[0])
-      expect(show()).toBe(other)
-      const inherited = await host.readOptions()
+      expect(show()).toBe(initial)
+      const oldOptionsAfterDefault = await host.readOptions()
       host.changeDefault(initial)
       rerender({ ...props, publication: transcript.permissionPublication, turnId: 'refresh' })
       expect(replies.length).toBeGreaterThan(0)
@@ -128,7 +128,7 @@ it.each([
       await act(async () => replies.splice(0).forEach((reply) => reply(latestOptions)))
       expect(show()).toBe(initial)
       expect(await host.storedIntent()).toEqual(before)
-      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0, defaultRevision: 2 })
+      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0 })
       rerender({ ...props, publication: transcript.permissionPublication, connected: false })
       await host.restart()
       rerender({ ...props, publication: reduce(await host.snapshot()) })
@@ -146,7 +146,7 @@ it.each([
       host.changeDefault(initial)
       publish(host.frames[0])
       rerender({ ...props, publication: transcript.permissionPublication, turnId: 'explicit' })
-      await act(async () => replies.splice(0).forEach((reply) => reply(inherited)))
+      await act(async () => replies.splice(0).forEach((reply) => reply(oldOptionsAfterDefault)))
       expect(show()).toBe(other)
       await host.restart()
       publish(await host.snapshot())

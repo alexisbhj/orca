@@ -99,7 +99,6 @@ it.each(['claude', 'codex'] as const)(
       claimKeyId: 'key-1',
       mintSpawnToken: () => 'stand-in-token',
       logger: log.logger,
-      defaultPermissionMode: () => mode,
       idleSweep: { intervalMs: 3_600_000 },
       now: () => HOST_TEST_NOW
     })
@@ -125,7 +124,7 @@ it.each(['claude', 'codex'] as const)(
       })
       mode = 'bypass'
       expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
-        current: 'bypass',
+        current: 'ask',
         revision: 4
       })
       expect((await readPersistedTestAgentSessionStore(root)).records[saved.sessionId]).toEqual(
@@ -154,13 +153,13 @@ it.each(['claude', 'codex'] as const)(
         saved.sessionId
       ]
       expect(acquiredIntent).toMatchObject({
-        options: { permissionMode: 'bypass' },
-        permissionRevision: 5
+        options: {},
+        permissionRevision: 4
       })
       refuseWrites()
       expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
-        current: 'bypass',
-        revision: 5
+        current: 'ask',
+        revision: 4
       })
       expect((await readPersistedTestAgentSessionStore(root)).records[saved.sessionId]).toEqual(
         acquiredIntent
@@ -219,7 +218,7 @@ it.each(['claude', 'codex'] as const)(
       failFact.mockRestore()
       permitWrites()
       await append(3)
-      expect(second.at(-1)).toMatchObject({ permissionMode: 'bypass', permissionRevision: 5 })
+      expect(second.at(-1)).toMatchObject({ permissionMode: 'ask', permissionRevision: 4 })
       expect(second.at(-1)).toMatchObject({ type: 'batch', batch: { items: [expect.any(Object)] } })
     } finally {
       await host.flushAllStreamedEvents()

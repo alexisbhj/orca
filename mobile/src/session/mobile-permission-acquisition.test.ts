@@ -34,7 +34,7 @@ it.each([
     await host.start()
     expect(await host.storedIntent()).toMatchObject({
       options: { permissionMode: initial },
-      permissionRevision: 1
+      permissionRevision: 0
     })
     host.updateSettings({ nativeChatPermissionMode: initial === 'ask' ? 'bypass' : 'ask' })
     const wire = permissionHost()
@@ -56,7 +56,7 @@ it.each([
       })
       await act(async () => wire.attach())
       await act(async () => wire.publish(await host.snapshot()))
-      expect(host.fact()).toEqual({ mode: initial, fence: 8, revision: 1 })
+      expect(host.fact()).toEqual({ mode: initial, fence: 8, revision: 0 })
       expect(show()).toBe(initial)
       await act(async () =>
         wire.replies.splice(0).forEach((reply) => reply({ id: 'r', ok: true, result: before }))
@@ -68,7 +68,7 @@ it.each([
       expect(host.controls()).toEqual([])
       expect((await host.readOptions()).permissionModes).toMatchObject({
         current: initial,
-        revision: 1
+        revision: 0
       })
       expect(show()).toBe(host.launchMode())
     } finally {

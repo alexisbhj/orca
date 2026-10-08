@@ -1,6 +1,5 @@
 import { expect, it, vi } from 'vitest'
 import { getDefaultPersistedState } from '../../../shared/constants'
-import { nativeChatPermissionDefaultRevision } from '../../../shared/native-chat-permission-default'
 import { normalizeLoadedProfileState } from '../loading-store/normalize-loaded-profile-state'
 import { prepareLoadedProfileSettings } from '../loading-store/prepare-loaded-profile-settings'
 import { prepareLoadedTerminalSettings } from '../loading-store/prepare-loaded-terminal-settings'
@@ -17,7 +16,7 @@ function operations(): SettingsMutationOperations {
 }
 
 it.each(['ask', 'bypass'] as const)(
-  'orders each change away from %s in the same saved settings',
+  'saves each change away from %s and retains it after loading',
   (initial) => {
     const ops = operations()
     ops.state.settings.nativeChatPermissionMode = initial
@@ -26,17 +25,15 @@ it.each(['ask', 'bypass'] as const)(
     const other = initial === 'ask' ? 'bypass' : 'ask'
     updateSettings(ops, { nativeChatPermissionMode: other }, { notifyListeners: true })
     expect(saved[0]).toMatchObject({
-      nativeChatPermissionMode: other,
-      nativeChatPermissionRevision: 1
+      nativeChatPermissionMode: other
     })
     expect(ops.notifySettingsChanged).toHaveBeenCalledWith(
-      { nativeChatPermissionMode: other, nativeChatPermissionRevision: 1 },
+      { nativeChatPermissionMode: other },
       undefined
     )
     updateSettings(ops, { nativeChatPermissionMode: initial })
     expect(saved[1]).toMatchObject({
-      nativeChatPermissionMode: initial,
-      nativeChatPermissionRevision: 2
+      nativeChatPermissionMode: initial
     })
     const persisted = { ...ops.state, settings: saved[1] }
     const loaded = normalizeLoadedProfileState(
@@ -47,35 +44,6 @@ it.each(['ask', 'bypass'] as const)(
     )
     ops.state = loaded
     updateSettings(ops, { nativeChatPermissionMode: other })
-    expect(ops.state.settings.nativeChatPermissionRevision).toBe(3)
+    expect(ops.state.settings.nativeChatPermissionMode).toBe(other)
   }
 )
-
-it('ignores client revisions and does not advance an unchanged default or unrelated settings', () => {
-  const ops = operations()
-  ops.state.settings.nativeChatPermissionRevision = 4
-  updateSettings(ops, { nativeChatPermissionRevision: 100, theme: 'dark' })
-  updateSettings(ops, { nativeChatPermissionMode: 'bypass', nativeChatPermissionRevision: 0 })
-  expect(ops.state.settings.nativeChatPermissionRevision).toBe(4)
-  updateSettings(ops, { nativeChatPermissionMode: 'ask', nativeChatPermissionRevision: 100 })
-  expect(ops.state.settings.nativeChatPermissionRevision).toBe(5)
-})
-
-it('refuses exhausted order before changing or scheduling either saved field', () => {
-  const ops = operations()
-  ops.state.settings.nativeChatPermissionRevision = Number.MAX_SAFE_INTEGER
-  const before = structuredClone(ops.state.settings)
-  expect(() => updateSettings(ops, { nativeChatPermissionMode: 'ask' })).toThrow(
-    'native_chat_permission_revision_exhausted'
-  )
-  expect(ops.state.settings).toEqual(before)
-  expect(ops.scheduleSave).not.toHaveBeenCalled()
-})
-
-it('reads absent or malformed default order as zero without mutating settings', () => {
-  for (const revision of [undefined, -1, 1.5, Number.NaN, Infinity]) {
-    const settings = { nativeChatPermissionRevision: revision }
-    expect(nativeChatPermissionDefaultRevision(settings)).toBe(0)
-    expect(settings.nativeChatPermissionRevision).toBe(revision)
-  }
-})

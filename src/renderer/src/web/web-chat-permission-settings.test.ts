@@ -47,8 +47,7 @@ it.each([
     globals.storage.setItem(
       'orca.web.settings.v1',
       JSON.stringify({
-        nativeChatPermissionMode: initial === 'ask' ? 'bypass' : 'ask',
-        nativeChatPermissionRevision: 999
+        nativeChatPermissionMode: initial === 'ask' ? 'bypass' : 'ask'
       })
     )
     writeStoredRuntimeEnvironment(globals.storage)
@@ -62,14 +61,12 @@ it.each([
       expect((await api.get()).nativeChatPermissionMode).toBe(initial)
       const requested = initial === 'ask' ? 'bypass' : 'ask'
       const updates = {
-        nativeChatPermissionMode: requested,
-        nativeChatPermissionRevision: 100
+        nativeChatPermissionMode: requested
       } as const
       expect((await api.set(updates)).nativeChatPermissionMode).toBe(requested)
       expect((await api.get()).nativeChatPermissionMode).toBe(requested)
       expect(host.settings()).toMatchObject({
-        nativeChatPermissionMode: requested,
-        nativeChatPermissionRevision: 1
+        nativeChatPermissionMode: requested
       })
       expect(calls.filter((call) => call.method === 'settings.update')).toEqual([
         { method: 'settings.update', params: { nativeChatPermissionMode: requested } }

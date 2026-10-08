@@ -13,6 +13,7 @@ export type PermissionDefaultHost = PermissionRestartHost & {
 export type PermissionDefaultFixture = {
   permissionDefaultHost: (
     agent: 'claude' | 'codex',
-    initial: AgentChatPermissionMode
+    initial: AgentChatPermissionMode,
+    savedOptions?: Record<string, string>
   ) => Promise<PermissionDefaultHost>
 }

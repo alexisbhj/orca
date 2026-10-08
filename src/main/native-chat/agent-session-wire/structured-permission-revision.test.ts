@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentSessionSubscribeEvent } from '../../../shared/agent-session-wire'
@@ -22,9 +21,8 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
   'publishes %s host revisions on seed, options, mutation and stream surfaces',
   async (variant) => {
     const provider = variant.startsWith('claude') ? 'claude' : 'codex'
-    const initialMode = 'ask'
-    const inheritedDefault = variant.endsWith('-default')
-    let defaultMode: AgentChatPermissionMode = 'ask'
+    const initialMode = variant === 'codex-legacy' ? 'auto' : 'ask'
+    const legacyWithoutMode = variant.endsWith('-default')
     const root = await mkdtemp(join(tmpdir(), 'orca-permission-revisions-'))
     const unused = async (): Promise<never> => {
       throw new Error('No provider execution expected')
@@ -39,7 +37,7 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
     const saved: AgentSessionRecord = {
       ...record({ chain: [] }),
       provider,
-      options: inheritedDefault
+      options: legacyWithoutMode
         ? {}
         : variant === 'codex-legacy'
           ? { approvalsReviewer: 'auto_review' }
@@ -55,7 +53,6 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
       claimKeyId: 'key-1',
       mintSpawnToken: () => 'unused',
       logger: recordingStructuredAgentSessionLogger().logger,
-      defaultPermissionMode: () => defaultMode,
       now: () => 1_700_000_000_000,
       idleSweep: { intervalMs: 3_600_000 }
     })
@@ -74,15 +71,14 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
         permissionRevision: initialRevision,
         fence: 1
       })
-      if (inheritedDefault) {
-        defaultMode = 'bypass'
+      if (legacyWithoutMode) {
         expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
-          current: 'bypass',
+          current: 'ask',
           fence: 1,
           revision: initialRevision
         })
         expect(readStructuredAgentSessionPermissionFact(host.deps, saved.sessionId)).toEqual({
-          mode: 'bypass',
+          mode: 'ask',
           fence: 1,
           revision: initialRevision
         })

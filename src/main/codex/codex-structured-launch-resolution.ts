@@ -15,7 +15,6 @@ import type { AgentSessionRecordStore } from '../runtime/agent-session-record-st
 import { resolveAgentSessionLaunchDirectory } from '../runtime/agent-session-launch-directory'
 import type { CodexStructuredLaunch } from './codex-structured-session-adapter'
 import { codexStructuredPermissionPolicy } from './codex-structured-permission-policy'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import { codexChatPermissionOptions } from './codex-structured-permission-mode'
 import { agentChatLaunchPermissionMode } from '../../shared/agent-chat-permission-mode'
 import { resolvePinnedCodexRolloutProof } from './codex-pinned-rollout-proof'
@@ -34,8 +33,6 @@ export type CodexStructuredLaunchResolverDeps = {
   /** Fresh shell/configured environment for this spawn; never written to the session record. */
   resolveEnvironment?: () => Promise<NodeJS.ProcessEnv>
   resolveRollout?: typeof resolvePinnedCodexRolloutProof
-  /** The host chat default; absent means Ask. */
-  resolveDefaultPermissionMode?: () => AgentChatPermissionMode
   /** This chat's visuals folder and skill; absent or null ⇒ the chat gets neither. */
   prepareVisuals?: PrepareNativeChatVisuals
 }
@@ -95,7 +92,7 @@ export function createCodexStructuredLaunchResolver(
     const permissionMode = agentChatLaunchPermissionMode(
       'codex',
       codexChatPermissionOptions(record.options),
-      deps.resolveDefaultPermissionMode?.()
+      undefined
     )
     const head = agentSessionProviderHandleChainHead(record.providerHandleChain)
     // A Codex record's chain holds only Codex handles; the attach admission refuses anything else.

@@ -9,7 +9,6 @@ import {
 import type { PermissionAcquisitionHost } from '../../../shared/agent-session-permission-acquisition.test-fixture'
 import type { AgentSessionSubscribeEvent } from '../../../shared/agent-session-wire'
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
-import { nativeChatPermissionDefaultRevision } from '../../../shared/native-chat-permission-default'
 import { updateSettings } from '../../persistence/applying-settings/settings-update'
 import { RuntimeClientSettingsController } from '../../runtime/runtime-client-settings'
 import {
@@ -57,7 +56,7 @@ export async function permissionAcquisitionHost(
       path: join(root, 'account')
     },
     location: { ...record().location, workspaceKind: 'folder' as const },
-    options: {},
+    options: { permissionMode: initial },
     lease: { ...record().lease, runtimeFence: 7 }
   }
   if (!newChat) {
@@ -75,8 +74,7 @@ export async function permissionAcquisitionHost(
       resolveWorkspacePath: async () => root,
       resolveCommand: () => 'FORBIDDEN_REAL_PROVIDER',
       resolveLaunchArgs: () => [],
-      resolveAuthPolicy: () => ({ stripAuthEnv: false }),
-      resolveDefaultPermissionMode: () => state.settings.nativeChatPermissionMode ?? 'ask'
+      resolveAuthPolicy: () => ({ stripAuthEnv: false })
     }),
     openConnection: async (...args) => {
       const connection = await claude.openConnection(...args)
@@ -91,7 +89,7 @@ export async function permissionAcquisitionHost(
       const mode = agentChatLaunchPermissionMode(
         agent,
         store.getRecord(saved.sessionId)?.options,
-        state.settings.nativeChatPermissionMode
+        undefined
       )
       return {
         command: 'FORBIDDEN_REAL_PROVIDER',
@@ -118,8 +116,6 @@ export async function permissionAcquisitionHost(
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'stand-in-spawn',
     logger: recordingStructuredAgentSessionLogger().logger,
-    defaultPermissionMode: () => state.settings.nativeChatPermissionMode ?? 'ask',
-    defaultPermissionRevision: () => nativeChatPermissionDefaultRevision(state.settings),
     idleSweep: { intervalMs: 3_600_000 }
   })
   await host.reconcileRestartLeases()

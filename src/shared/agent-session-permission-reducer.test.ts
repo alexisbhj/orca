@@ -98,8 +98,7 @@ it('old client against new host ignores optional permission ordering fields', ()
       current: 'auto',
       supported: ['ask', 'auto', 'bypass'],
       fence: 7,
-      revision: 9,
-      defaultRevision: 3
+      revision: 9
     })
   ).toEqual({ current: 'auto', supported: ['ask', 'auto', 'bypass'] })
 })
@@ -140,41 +139,4 @@ it('retained permission keeps its original order when later transcript data chan
     cached.permissionPublication
   )
   expect(permission.fact).toEqual({ mode: 'ask', fence: 8, revision: 0 })
-})
-
-it('orders inherited defaults without admitting conflicting equal facts or stale explicit intent', () => {
-  const first = { mode: 'ask', fence: 7, revision: 0, defaultRevision: 3 } as const
-  let state = observeSessionPermission(EMPTY_SESSION_PERMISSION, first)
-  state = observeSessionPermission(state, undefined, {
-    ...first,
-    mode: 'bypass',
-    defaultRevision: 4
-  })
-  expect(state.fact).toMatchObject({ mode: 'bypass', defaultRevision: 4 })
-  for (const fact of [first, { ...first, defaultRevision: 4 }]) {
-    state = observeSessionPermission(state, undefined, fact)
-    expect(state.fact).toMatchObject({ mode: 'bypass', defaultRevision: 4 })
-  }
-  state = observeSessionPermission(state, undefined, { mode: 'ask', fence: 7, revision: 0 })
-  expect(state.fact).toEqual({ mode: 'ask', fence: 7, revision: 0 })
-  state = observeSessionPermission(state, undefined, {
-    ...first,
-    mode: 'bypass',
-    defaultRevision: 100
-  })
-  expect(state.fact).toEqual({ mode: 'ask', fence: 7, revision: 0 })
-  state = observeSessionPermission(state, undefined, { mode: 'bypass', fence: 7, revision: 1 })
-  state = observeSessionPermission(state, undefined, { mode: 'ask', fence: 7, revision: 0 })
-  expect(state.fact).toEqual({ mode: 'bypass', fence: 7, revision: 1 })
-})
-
-it('retains equal-revision conflict rejection when either peer omits default order', () => {
-  const initial = { mode: 'ask', fence: 7, revision: 0 } as const
-  const state = observeSessionPermission(EMPTY_SESSION_PERMISSION, initial)
-  for (const fact of [
-    { mode: 'bypass', fence: 7, revision: 0 } as const,
-    { mode: 'bypass', fence: 7, revision: 0, defaultRevision: 1 } as const
-  ]) {
-    expect(observeSessionPermission(state, undefined, fact).fact).toBe(initial)
-  }
 })

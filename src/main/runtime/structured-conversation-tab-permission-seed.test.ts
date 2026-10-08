@@ -50,15 +50,15 @@ it('does not seed a missing record, another workspace, or an unsupported agent',
   ).not.toHaveProperty('permissionSeed')
 })
 
-it('carries the host default order on inherited tab seeds without changing the record', () => {
-  const inherited = { ...saved, options: {} }
-  const fact = { mode: 'bypass', fence: 7, revision: 0, defaultRevision: 5 } as const
+it('carries fixed derived intent on legacy tab seeds without changing the record', () => {
+  const legacy = { ...saved, options: {} }
+  const fact = { mode: 'ask', fence: 7, revision: 0 } as const
   const seeded = seedStructuredConversationTabPermissions(
     snapshot,
-    () => inherited,
+    () => legacy,
     () => fact
   )
   expect(seeded.tabs[0]).toHaveProperty('permissionSeed', fact)
-  expect(inherited.options).toEqual({})
+  expect(legacy.options).toEqual({})
   expect(snapshot.tabs[0]).not.toHaveProperty('permissionSeed')
 })

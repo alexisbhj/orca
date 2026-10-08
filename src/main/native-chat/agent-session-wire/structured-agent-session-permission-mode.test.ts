@@ -56,24 +56,20 @@ function record(provider: string, options: Record<string, string> = {}): AgentSe
   }
 }
 
-function restingRead(
-  value: AgentSessionRecord,
-  defaultPermissionMode?: (agent: string) => 'ask' | 'bypass' | null
-) {
+function restingRead(value: AgentSessionRecord) {
   return readStructuredAgentSessionOptionsAtRest(
     {
       store: { getRecord: () => value },
-      agents: NO_STRUCTURED_AGENTS,
-      ...(defaultPermissionMode ? { defaultPermissionMode } : {})
+      agents: NO_STRUCTURED_AGENTS
     },
     SESSION
   )
 }
 
 describe('a chat permission mode at rest', () => {
-  it('reports the chat its own stored mode over the setting', async () => {
+  it('reports the chat its own stored mode', async () => {
     await expect(
-      restingRead(record('claude', { permissionMode: 'accept-edits' }), () => 'bypass')
+      restingRead(record('claude', { permissionMode: 'accept-edits' }))
     ).resolves.toMatchObject({
       permissionModes: {
         current: 'accept-edits',
@@ -82,15 +78,17 @@ describe('a chat permission mode at rest', () => {
     })
   })
 
-  it('reports where the setting starts a chat that never chose', async () => {
-    await expect(restingRead(record('codex'), () => 'bypass')).resolves.toMatchObject({
-      permissionModes: { current: 'bypass', supported: ['ask', 'auto', 'bypass'] }
+  it('derives Ask for a legacy chat without saved intent', async () => {
+    await expect(restingRead(record('codex'))).resolves.toMatchObject({
+      permissionModes: { current: 'ask', supported: ['ask', 'auto', 'bypass'] }
     })
   })
 
-  it('reports nothing when neither the chat nor the host can name a mode', async () => {
-    const result = await restingRead(record('codex'))
-    expect(result).not.toHaveProperty('permissionModes')
+  it('normalizes the legacy reviewer without changing the record', async () => {
+    const saved = record('codex', { approvalsReviewer: 'auto_review' })
+    const result = await restingRead(saved)
+    expect(result.permissionModes?.current).toBe('auto')
+    expect(saved.options).toEqual({ approvalsReviewer: 'auto_review' })
   })
 })
 

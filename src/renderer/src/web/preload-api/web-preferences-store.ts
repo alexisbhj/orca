@@ -19,8 +19,8 @@ import { readStoredWebRuntimeEnvironment } from '../web-runtime-environment'
 import { mergeSettings } from './web-preference-normalization'
 import {
   captureWebChatPermissionSetting,
+  beginWebChatPermissionRead,
   settingsForWebChatPermissionOwner,
-  webChatPermissionOwner,
   webChatPermissionUpdate
 } from './web-chat-permission-setting'
 import { readWebUIStateForSettings } from './web-local-ui-state'
@@ -89,7 +89,6 @@ export function getStoredSettings(): GlobalSettings {
   )
   delete settings.zcodePlanSite
   delete settings.nativeChatPermissionMode
-  delete settings.nativeChatPermissionRevision
   return settings
 }
 
@@ -99,7 +98,6 @@ export function writeStoredSettings(
 ): void {
   const durable = { ...settings }
   delete durable.nativeChatPermissionMode
-  delete durable.nativeChatPermissionRevision
   if (explicitActiveRuntimeEnvironmentId !== undefined) {
     durable.activeRuntimeEnvironmentId = explicitActiveRuntimeEnvironmentId
   } else {
@@ -117,7 +115,7 @@ export async function getRuntimeBackedStoredSettings(): Promise<GlobalSettings> 
   const local = getStoredSettings()
   const requestedEnvironment = requireActiveEnvironmentOrNull()
   const requestedSiteOwner = zcodePlanSiteOwner(requestedEnvironment)
-  const requestedPermissionOwner = webChatPermissionOwner()
+  const permissionRead = beginWebChatPermissionRead()
   if (!requestedEnvironment) {
     return local
   }
@@ -128,7 +126,7 @@ export async function getRuntimeBackedStoredSettings(): Promise<GlobalSettings> 
       15_000
     )
     const runtimeSettings: Partial<GlobalSettings> = {}
-    captureWebChatPermissionSetting(requestedPermissionOwner, result.settings)
+    captureWebChatPermissionSetting(permissionRead, result.settings)
     const currentEnvironment = requireActiveEnvironmentOrNull()
     if (currentEnvironment?.id === requestedEnvironment.id) {
       const visibilityDefaults = normalizeWorktreeVisibilityDefaults(
@@ -212,7 +210,7 @@ export async function syncRuntimeBackedSettings(
   localNext: GlobalSettings
 ): Promise<GlobalSettings> {
   const requestedEnvironment = requireActiveEnvironmentOrNull()
-  const requestedPermissionOwner = webChatPermissionOwner()
+  const permissionRead = beginWebChatPermissionRead()
   if (!requestedEnvironment) {
     return localNext
   }
@@ -251,9 +249,12 @@ export async function syncRuntimeBackedSettings(
       15_000
     )
     const runtimeSettings = { ...result.settings }
-    captureWebChatPermissionSetting(requestedPermissionOwner, runtimeSettings)
+    captureWebChatPermissionSetting(
+      permissionRead,
+      runtimeSettings,
+      runtimeUpdates.nativeChatPermissionMode !== undefined
+    )
     delete runtimeSettings.nativeChatPermissionMode
-    delete runtimeSettings.nativeChatPermissionRevision
     delete runtimeSettings.activeRuntimeEnvironmentId
     const updatedVisibilityDefaults = normalizeWorktreeVisibilityDefaults(
       runtimeSettings.worktreeVisibilityDefaults

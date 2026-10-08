@@ -1,5 +1,4 @@
 import { expect, it, vi } from 'vitest'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import { withAgentChatPermissionSeed } from '../native-chat/agent-chat-permission-mode-setting'
 import { record } from '../native-chat/agent-session-wire/structured-agent-session-restart-resume-test-harness'
 import { createClaudeStructuredLaunchResolver } from './claude-structured-launch-resolution'
@@ -9,14 +8,13 @@ import { fakeClaude, USER_MESSAGE } from './claude-structured-session-test-suppo
 it.each(['accept-edits', 'auto'] as const)(
   'retains creation %s across Stop before initialize and a changed new-chat default',
   async (initialMode) => {
-    let defaultMode: AgentChatPermissionMode = initialMode
     const saved = {
       ...record({ chain: [] }),
       provider: 'claude',
       accountHome: { variable: 'CLAUDE_CONFIG_DIR', path: '/accounts/claude' },
       options: withAgentChatPermissionSeed(
         'claude',
-        { nativeChatPermissionMode: defaultMode },
+        { nativeChatPermissionMode: initialMode },
         { model: 'sonnet' }
       )
     }
@@ -33,8 +31,7 @@ it.each(['accept-edits', 'auto'] as const)(
       resolveWorkspacePath: async () => process.cwd(),
       resolveAuthPolicy: () => ({ stripAuthEnv: false }),
       resolveCommand: () => 'claude',
-      resolveLaunchArgs: () => [],
-      resolveDefaultPermissionMode: () => defaultMode
+      resolveLaunchArgs: () => []
     })
     const claude = fakeClaude({ initProof: 'none' })
     const adapter = new ClaudeStructuredSessionAdapter({
@@ -54,7 +51,6 @@ it.each(['accept-edits', 'auto'] as const)(
       await aborted
       expect(claude.connections[0].closeCount).toBeGreaterThan(0)
       expect(claude.connections[0].sent).toEqual([])
-      defaultMode = 'bypass'
       await adapter.acquire({ ...acquire, fence: 2, spawnToken: 'next' })
       const launch = claude.connections[1].launch
       expect(launch.options.extraArgs).not.toHaveProperty('dangerously-skip-permissions')
@@ -71,11 +67,17 @@ it.each(['accept-edits', 'auto'] as const)(
   }
 )
 
-it.each(['saved', 'inherited'] as const)(
+it.each(['saved', 'created'] as const)(
   'writes the first message under %s Accept edits while initialize is withheld',
   async (source) => {
     const options: Record<string, string> =
-      source === 'saved' ? { model: 'sonnet', permissionMode: 'accept-edits' } : { model: 'sonnet' }
+      source === 'saved'
+        ? { model: 'sonnet', permissionMode: 'accept-edits' }
+        : (withAgentChatPermissionSeed(
+            'claude',
+            { nativeChatPermissionMode: 'accept-edits' },
+            { model: 'sonnet' }
+          ) ?? {})
     const saved = {
       ...record({ chain: [] }),
       provider: 'claude',
@@ -87,8 +89,7 @@ it.each(['saved', 'inherited'] as const)(
       resolveWorkspacePath: async () => process.cwd(),
       resolveAuthPolicy: () => ({ stripAuthEnv: false }),
       resolveCommand: () => 'claude',
-      resolveLaunchArgs: () => [],
-      resolveDefaultPermissionMode: () => (source === 'saved' ? 'bypass' : 'accept-edits')
+      resolveLaunchArgs: () => []
     })
     const claude = fakeClaude({ initProof: 'none' })
     const adapter = new ClaudeStructuredSessionAdapter({

@@ -262,26 +262,3 @@ describe('mobile terminal records', () => {
     ).toEqual(['pty-1', 'pty-2'])
   })
 })
-
-it('retains a newer inherited order even when a default returns to the same mode', () => {
-  const tab = {
-    type: 'agent-session' as const,
-    id: 'chat',
-    title: 'Chat',
-    sessionId: 'session',
-    agent: 'codex',
-    permissionSeed: { mode: 'ask' as const, fence: 7, revision: 0, defaultRevision: 1 }
-  }
-  const next = {
-    ...tab,
-    permissionSeed: {
-      ...tab.permissionSeed,
-      mode: 'ask' as const,
-      fence: 7,
-      revision: 0,
-      defaultRevision: 3
-    }
-  }
-  expect(mobileSessionTabsEqual([tab], [next])).toBe(false)
-  expect(mobileSessionTabsEqual([next], [{ ...next }])).toBe(true)
-})

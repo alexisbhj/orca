@@ -19,7 +19,6 @@ export type SubscriberFieldState = {
   sessionId: string
   commands?: AgentSessionSlashCommand[] | null
   permissionRevision?: number
-  permissionDefaultRevision?: number
   permissionMode?: AgentChatPermissionMode | null
   /** The last queue publication actually SENT. */
   queuePublication?: QueuePublication
@@ -38,7 +37,6 @@ export type SubscriberFieldHooks = {
 export type SubscriberFrame = {
   frame: AgentSessionSubscribeEvent
   permissionRevision: number | undefined
-  permissionDefaultRevision: number | undefined
   permissionMode: AgentChatPermissionMode | null | undefined
   commands: AgentSessionSlashCommand[] | null
   attachedQueued: boolean
@@ -62,14 +60,12 @@ export function buildSubscriberFrame(
   const permission = hooks.readPermissionFact?.(subscriber.sessionId)
   const permissionMode = permission?.mode
   const permissionRevision = permission?.revision
-  const permissionDefaultRevision = permission?.defaultRevision
   const includePermission =
     permissionMode !== undefined &&
     event.type !== 'end' &&
     (event.type !== 'batch' ||
       permissionMode !== subscriber.permissionMode ||
-      permissionRevision !== subscriber.permissionRevision ||
-      permissionDefaultRevision !== subscriber.permissionDefaultRevision)
+      permissionRevision !== subscriber.permissionRevision)
   const commands = hooks.readCommands?.(subscriber.sessionId) ?? null
   const includeCommands =
     hooks.readCommands !== undefined &&
@@ -89,8 +85,7 @@ export function buildSubscriberFrame(
       ...(includePermission
         ? {
             permissionMode,
-            ...(permissionRevision !== undefined ? { permissionRevision } : {}),
-            ...(permissionDefaultRevision !== undefined ? { permissionDefaultRevision } : {})
+            ...(permissionRevision !== undefined ? { permissionRevision } : {})
           }
         : {}),
       ...(includeCommands ? { commands: commands ?? null } : {}),
@@ -106,9 +101,6 @@ export function buildSubscriberFrame(
     commands,
     permissionMode: includePermission ? permissionMode : subscriber.permissionMode,
     permissionRevision: includePermission ? permissionRevision : subscriber.permissionRevision,
-    permissionDefaultRevision: includePermission
-      ? permissionDefaultRevision
-      : subscriber.permissionDefaultRevision,
     attachedQueued,
     queued,
     backgroundTasks:

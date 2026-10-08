@@ -106,7 +106,7 @@ it.each(['ask', 'bypass'] as const)(
       expect(host.childPhase()).toBe('starting')
       expect(await host.storedIntent()).toMatchObject({
         options: { permissionMode: initial },
-        permissionRevision: 1
+        permissionRevision: 0
       })
     } finally {
       desktop.unmount()

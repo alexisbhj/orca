@@ -4,21 +4,19 @@ import {
   type AgentSessionPermissionFact,
   type AgentSessionPermissionModes
 } from '../../../shared/agent-chat-permission-mode'
+import { codexChatPermissionOptions } from '../../codex/codex-structured-permission-mode'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 
 export function restingPermissionModes(
   record: AgentSessionRecord,
-  defaultPermissionMode: StructuredAgentSessionHostDeps['defaultPermissionMode'],
   logger?: StructuredAgentSessionHostDeps['logger']
 ): AgentSessionPermissionModes | null | undefined {
   try {
     const supported = agentChatPermissionModes(record.provider)
-    const fallback = defaultPermissionMode?.(record.provider)
-    const current =
-      record.options?.permissionMode !== undefined || fallback !== undefined
-        ? agentChatLaunchPermissionMode(record.provider, record.options, fallback)
-        : null
+    const options =
+      record.provider === 'codex' ? codexChatPermissionOptions(record.options) : record.options
+    const current = agentChatLaunchPermissionMode(record.provider, options, undefined)
     return supported && current ? { current, supported } : null
   } catch (error) {
     logger?.warn('reading chat permissions failed', {
@@ -32,10 +30,7 @@ export function restingPermissionModes(
 
 /** Permission metadata is optional; its failure never blocks transcript delivery. */
 export function readStructuredAgentSessionPermissionFact(
-  deps: Pick<
-    StructuredAgentSessionHostDeps,
-    'store' | 'defaultPermissionMode' | 'defaultPermissionRevision' | 'logger'
-  >,
+  deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'logger'>,
   sessionId: string
 ): AgentSessionPermissionFact | undefined {
   try {
@@ -43,16 +38,13 @@ export function readStructuredAgentSessionPermissionFact(
     if (!record) {
       return undefined
     }
-    const permission = restingPermissionModes(record, deps.defaultPermissionMode, deps.logger)
+    const permission = restingPermissionModes(record, deps.logger)
     return permission === undefined
       ? undefined
       : {
           mode: permission?.current ?? null,
           fence: record.lease.runtimeFence,
-          revision: deps.store.permissionRevision(sessionId),
-          ...(record.options?.permissionMode === undefined && deps.defaultPermissionRevision
-            ? { defaultRevision: deps.defaultPermissionRevision() }
-            : {})
+          revision: deps.store.permissionRevision(sessionId)
         }
   } catch (error) {
     deps.logger.warn('reading chat permissions failed', {

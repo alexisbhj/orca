@@ -29,7 +29,7 @@ it.each([
   ['codex', 'ask'],
   ['codex', 'bypass']
 ] as const)(
-  'updates mobile %s inherited %s through reads, publications and reconnect',
+  'retains mobile %s saved %s through reads, publications and reconnect',
   async (agent, initial) => {
     const host = await fixture.permissionDefaultHost(agent, initial)
     const other = initial === 'ask' ? 'bypass' : 'ask'
@@ -83,19 +83,19 @@ it.each([
       expect(wire.replies.length).toBeGreaterThan(0)
       host.changeDefault(other)
       await host.publish()
-      expect(host.frames).toHaveLength(2)
+      expect(host.frames).toHaveLength(1)
       await host.publish()
-      expect(host.frames).toHaveLength(2)
-      expect(host.fact()).toEqual({ mode: other, fence: 7, revision: 0, defaultRevision: 1 })
+      expect(host.frames).toHaveLength(1)
+      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0 })
       await publish(host.frames.at(-1))
-      expect(show()).toBe(other)
+      expect(show()).toBe(initial)
       await act(async () =>
         wire.replies.splice(0).forEach((reply) => reply({ id: 'r', ok: true, result: oldOptions }))
       )
-      expect(show()).toBe(other)
+      expect(show()).toBe(initial)
       await publish(host.frames[0])
-      expect(show()).toBe(other)
-      const inherited = await host.readOptions()
+      expect(show()).toBe(initial)
+      const oldOptionsAfterDefault = await host.readOptions()
       host.changeDefault(initial)
       await disconnect()
       expect(wire.replies.length).toBeGreaterThan(0)
@@ -107,7 +107,7 @@ it.each([
       )
       expect(show()).toBe(initial)
       expect(await host.storedIntent()).toEqual(before)
-      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0, defaultRevision: 2 })
+      expect(host.fact()).toEqual({ mode: initial, fence: 7, revision: 0 })
       await host.restart()
       await disconnect()
       await publish(await host.snapshot())
@@ -128,7 +128,9 @@ it.each([
       await publish(host.frames[0])
       await disconnect()
       await act(async () =>
-        wire.replies.splice(0).forEach((reply) => reply({ id: 'r', ok: true, result: inherited }))
+        wire.replies
+          .splice(0)
+          .forEach((reply) => reply({ id: 'r', ok: true, result: oldOptionsAfterDefault }))
       )
       expect(show()).toBe(other)
       await host.restart()
