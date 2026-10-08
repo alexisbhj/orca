@@ -2,7 +2,6 @@
  *  journal database. */
 
 import { agentSessionRefusalError } from '../../shared/agent-session-wire-refusals'
-import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import {
   commitConversationClearRecord,
   commitConversationCommandRecord,
@@ -119,8 +118,7 @@ export class AgentSessionRecordStore {
 
   getRecord = (id: string): AgentSessionRecord | null => this.state.records.get(id) ?? null
 
-  permissionRevision = (id: string, mode?: AgentChatPermissionMode | null): number =>
-    this.transactions.permissionRevision(id, mode)
+  permissionRevision = (id: string): number => this.transactions.permissionRevision(id)
 
   listRecords = (): AgentSessionRecord[] => [...this.state.records.values()]
 

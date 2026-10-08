@@ -31,6 +31,7 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 const resumeMetadataUnsupported = new WeakSet<object>()
+const approvalsReviewerUnsupported = new WeakSet<object>()
 
 /** An app-server that predates approval reviewers refuses the field; the open retries without
  *  it, which is the reviewer that app-server always had: a person. */
@@ -45,16 +46,22 @@ function isApprovalsReviewerUnsupported(error: unknown): boolean {
 }
 
 async function withoutUnsupportedReviewer(
+  connection: Pick<CodexAppServerConnection, 'request'>,
   params: Record<string, unknown>,
   open: (params: Record<string, unknown>) => Promise<unknown>
 ): Promise<unknown> {
   try {
+    if (approvalsReviewerUnsupported.has(connection)) {
+      const { approvalsReviewer: _unsupported, ...rest } = params
+      return await open(rest)
+    }
     return await open(params)
   } catch (error) {
     if (!('approvalsReviewer' in params) || !isApprovalsReviewerUnsupported(error)) {
       throw error
     }
     const { approvalsReviewer: _unsupported, ...rest } = params
+    approvalsReviewerUnsupported.add(connection)
     return open(rest)
   }
 }
@@ -133,6 +140,7 @@ export async function openCodexThread(
   }
   const startThread = (): Promise<unknown> =>
     withoutUnsupportedReviewer(
+      connection,
       { ...threadSettings, ...(launch.model ? { model: launch.model } : {}) },
       (params) => connection.request('thread/start', params, { timeoutMs })
     )
@@ -148,7 +156,7 @@ export async function openCodexThread(
       ...(launch.resumePath ? { path: launch.resumePath } : {})
     }
     try {
-      opened = await withoutUnsupportedReviewer(resumeParams, (params) =>
+      opened = await withoutUnsupportedReviewer(connection, resumeParams, (params) =>
         resumeCodexThread(connection, params, timeoutMs)
       )
     } catch (error) {
@@ -166,25 +174,30 @@ export async function openCodexThread(
   if (supersededThreadId === undefined && resumeThreadId && threadId !== resumeThreadId) {
     throw new Error(`codex app-server resumed ${threadId} instead of ${resumeThreadId}`)
   }
-  const result = opened as Record<string, unknown>
+  if (typeof opened !== 'object' || opened === null) {
+    throw new Error('codex app-server did not return thread details')
+  }
+  const result = opened
   const thread =
-    typeof result.thread === 'object' && result.thread !== null
-      ? (result.thread as Record<string, unknown>)
+    'thread' in result && typeof result.thread === 'object' && result.thread !== null
+      ? result.thread
       : {}
-  const model = nonEmptyString(result.model)
-  const effort = nonEmptyString(result.reasoningEffort)
+  const model = nonEmptyString('model' in result ? result.model : undefined)
+  const effort = nonEmptyString('reasoningEffort' in result ? result.reasoningEffort : undefined)
   const serviceTierKnown = Object.hasOwn(result, 'serviceTier')
-  const serviceTier = nonEmptyString(result.serviceTier)
+  const serviceTier = nonEmptyString('serviceTier' in result ? result.serviceTier : undefined)
   return {
     threadId,
     ...(supersededThreadId === undefined ? {} : { supersededThreadId }),
-    thread,
-    ...(thread.historyMode === 'legacy' || thread.historyMode === 'paginated'
+    thread: { ...thread },
+    ...('historyMode' in thread &&
+    (thread.historyMode === 'legacy' || thread.historyMode === 'paginated')
       ? { historyMode: thread.historyMode }
       : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(serviceTierKnown ? { serviceTier } : {}),
-    approvalsReviewerSupported: Object.hasOwn(result, 'approvalsReviewer')
+    approvalsReviewerSupported:
+      !approvalsReviewerUnsupported.has(connection) && Object.hasOwn(result, 'approvalsReviewer')
   }
 }

@@ -11,6 +11,7 @@ import type {
 // journal renders that as delivery unconfirmed instead of as failure.
 
 import type { AgentSessionBackgroundTaskStops } from '../../../shared/agent-child-work-stop-targets'
+import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
 import type {
   AgentJournalAnsweredTurnIdentity,
   AgentJournalItemIdentity,
@@ -222,7 +223,9 @@ export type StructuredAgentSessionStartedEvent = {
   acquisitionGeneration: string
   /** What the child proved, snapshotted by the adapter from what startup already read. The host
    *  handles this inside the session's serialized step, so it must not ask the CLI. */
-  reportedOptions: AgentSessionOptionsResult['current']
+  reportedOptions: AgentSessionOptionsResult['current'] & {
+    permissionMode?: AgentChatPermissionMode
+  }
   /** Saved options the child could not take; the host drops them rather than persist them. */
   restoreSkippedOptions: readonly string[]
   /** Values the child showed it cannot run: a report naming the same value is not persisted. */

@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
-import { expect, it, vi } from 'vitest'
+import { beforeAll, expect, it, vi } from 'vitest'
 import type { PermissionRestartFixture } from '../../../src/shared/agent-session-permission-restart.test-fixture'
 import { SetOptionParams } from '../../../src/shared/rpc-contract/structured-agent-session-params'
 import {
@@ -17,15 +17,18 @@ vi.mock('./mobile-native-chat-session-option-persistence', () => ({
   persistMobileStructuredOptionPicks: vi.fn()
 }))
 
+let fixture: PermissionRestartFixture
+beforeAll(async () => {
+  fixture = await vi.importActual<PermissionRestartFixture>(
+    '../../../src/main/native-chat/agent-session-wire/structured-permission-restart.test-fixture'
+  )
+}, 60_000)
+
 it.each(['claude', 'codex'] as const)(
   'keeps successful %s permission picks after reopening the real store with the client mounted',
   async (agent) => {
-    // The host fixture is checked in Node's program; mobile keeps React Native's timer types.
-    const { permissionRestartHost } = await vi.importActual<PermissionRestartFixture>(
-      '../../../src/main/native-chat/agent-session-wire/structured-permission-restart.test-fixture'
-    )
     for (const retained of ['ask', 'bypass'] as const) {
-      const host = await permissionRestartHost(agent, retained)
+      const host = await fixture.permissionRestartHost(agent, retained)
       const wire = permissionHost()
       const original = wire.client.sendRequest
       wire.client.sendRequest = async (method, params, options) => {

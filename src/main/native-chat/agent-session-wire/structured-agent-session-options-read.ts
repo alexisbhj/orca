@@ -43,10 +43,11 @@ function restingOptionRules(
 }
 
 export async function readStructuredAgentSessionOptionsAtRest(
-  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog' | 'defaultPermissionMode'> & {
-    store: Pick<AgentSessionRecordStore, 'getRecord'>
-    agents: Pick<StructuredAgentRegistry, 'definition'>
-  },
+  deps: Pick<StructuredAgentSessionHostDeps, 'modelCatalog' | 'defaultPermissionMode'> &
+    Partial<Pick<StructuredAgentSessionHostDeps, 'logger'>> & {
+      store: Pick<AgentSessionRecordStore, 'getRecord'>
+      agents: Pick<StructuredAgentRegistry, 'definition'>
+    },
   sessionId: string
 ): Promise<RestingOptions> {
   const record = deps.store.getRecord(sessionId)
@@ -77,10 +78,7 @@ export async function readStructuredAgentSessionOptionsAtRest(
     (rules?.effortDefaultsToModel
       ? models.find((entry) => entry.id === model)?.defaultEffort
       : undefined)
-  const permissionModes = restingPermissionModes(
-    { ...record, options: rules?.normalizeOptions?.(record.options) ?? record.options },
-    deps.defaultPermissionMode
-  )
+  const permissionModes = restingPermissionModes(record, deps.defaultPermissionMode, deps.logger)
   return {
     models: listed ? structuredAgentSessionOptionModels(listed, model, (row) => row) : [],
     ...(permissionModes ? { permissionModes } : {}),
@@ -188,16 +186,17 @@ export async function readStructuredAgentSessionOptions(
   const phase = store.getRecord(sessionId)?.rewind?.phase
   const agent = session.params.provider
   const capabilities = agents.capabilities(agent)
-  const fact = options.permissionModes
+  const { permissionModes, ...otherOptions } = options
+  const fact = permissionModes
     ? readStructuredAgentSessionPermissionFact(context.deps, sessionId)
     : undefined
   return {
-    ...options,
-    ...(options.permissionModes && fact
+    ...otherOptions,
+    ...(permissionModes && fact
       ? {
           permissionModes: {
-            ...options.permissionModes,
-            current: fact.mode ?? options.permissionModes.current,
+            ...permissionModes,
+            current: fact.mode ?? permissionModes.current,
             fence: fact.fence,
             revision: fact.revision
           }

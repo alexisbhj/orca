@@ -16,7 +16,7 @@ it.each([null, 'thread-old'])(
         throw new CodexAppServerRequestError(method, -32602, 'unknown field approvalsReviewer')
       }
       expect(params).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write' })
-      return { thread: { id: resumeThreadId ?? 'thread-new' } }
+      return { thread: { id: resumeThreadId ?? 'thread-new' }, approvalsReviewer: 'user' }
     })
     const launch = {
       cwd: '/workspace',

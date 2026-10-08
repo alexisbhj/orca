@@ -2,6 +2,8 @@ import { SQLITE_DATABASE_RUNTIME_INCLUDE } from './vitest-sqlite-database-runtim
 
 // Real SQLite fixtures keep Node publication and close semantics.
 export const SQLITE_RUNTIME_INCLUDE = [
+  'src/main/native-chat/agent-session-wire/structured-permission-read-isolation.test.ts',
+  'src/renderer/src/components/native-chat/structured-permission-provider-narrowing.test.tsx',
   'src/main/runtime/agent-session-permission-durability.test.ts',
   'src/main/native-chat/agent-session-wire/structured-permission-revision.test.ts',
   'src/renderer/src/components/native-chat/structured-permission-host-restart.test.tsx',

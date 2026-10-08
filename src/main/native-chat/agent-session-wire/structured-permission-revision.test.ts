@@ -22,7 +22,7 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
   'publishes %s host revisions on seed, options, mutation and stream surfaces',
   async (variant) => {
     const provider = variant.startsWith('claude') ? 'claude' : 'codex'
-    const initialMode = variant === 'codex-legacy' ? 'auto' : 'ask'
+    const initialMode = 'ask'
     const inheritedDefault = variant.endsWith('-default')
     let defaultMode: AgentChatPermissionMode = 'ask'
     const root = await mkdtemp(join(tmpdir(), 'orca-permission-revisions-'))
@@ -62,7 +62,7 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
     try {
       await host.reconcileRestartLeases()
       const initialRevision = store.permissionRevision(saved.sessionId)
-      const pickedRevision = initialRevision + (inheritedDefault ? 2 : 1)
+      const pickedRevision = initialRevision + 1
       const events: AgentSessionSubscribeEvent[] = []
       await host.subscribe({
         id: 'reader',
@@ -79,12 +79,12 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
         expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
           current: 'bypass',
           fence: 1,
-          revision: initialRevision + 1
+          revision: initialRevision
         })
         expect(readStructuredAgentSessionPermissionFact(host.deps, saved.sessionId)).toEqual({
           mode: 'bypass',
           fence: 1,
-          revision: initialRevision + 1
+          revision: initialRevision
         })
       }
       const fields = { key: 'permissionMode', value: 'auto' }

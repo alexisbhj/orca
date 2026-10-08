@@ -144,7 +144,12 @@ describe('a Claude start whose CLI answers initialize but not a control request'
       host.attach(CALLER, claude.attachParams(SESSION, null, { options: { model: 'sonnet' } }))
     ).resolves.toMatchObject({ ok: true })
     await vi.waitFor(
-      () => expect(record(host)?.options).toEqual({ model: 'sonnet', effort: 'high' }),
+      () =>
+        expect(record(host)?.options).toEqual({
+          model: 'sonnet',
+          effort: 'high',
+          permissionMode: 'ask'
+        }),
       {
         timeout: DEADLINE_MS * 40
       }
@@ -167,7 +172,12 @@ describe('a Claude start whose CLI answers initialize but not a control request'
       host.attach(CALLER, claude.attachParams(SESSION, null, { options: { model: 'sonnet' } }))
     ).resolves.toMatchObject({ ok: true })
     await vi.waitFor(
-      () => expect(record(host)?.options).toEqual({ model: 'sonnet', effort: 'high' }),
+      () =>
+        expect(record(host)?.options).toEqual({
+          model: 'sonnet',
+          effort: 'high',
+          permissionMode: 'ask'
+        }),
       { timeout: DEADLINE_MS * 40 }
     )
     // The picker offers the saved model, which nothing has vouched for yet.
@@ -181,7 +191,11 @@ describe('a Claude start whose CLI answers initialize but not a control request'
       effort: 'high',
       confirmed: ['model', 'effort']
     })
-    expect(record(host)?.options).toEqual({ model: 'sonnet', effort: 'high' })
+    expect(record(host)?.options).toEqual({
+      model: 'sonnet',
+      effort: 'high',
+      permissionMode: 'ask'
+    })
 
     behavior.optionWritesHang = false
     await setOption(host, 'permissionMode', 'accept-edits')
@@ -240,7 +254,12 @@ describe('a Claude start whose CLI answers initialize but not a control request'
     // The record holds the saved model from creation; only the start's own report (effort) says
     // startup finished, and an option write before then waits for it.
     await vi.waitFor(
-      () => expect(record(host)?.options).toEqual({ model: 'sonnet', effort: 'high' }),
+      () =>
+        expect(record(host)?.options).toEqual({
+          model: 'sonnet',
+          effort: 'high',
+          permissionMode: 'ask'
+        }),
       { timeout: DEADLINE_MS * 40 }
     )
     turnReportsModel('claude-sonnet-5')
@@ -258,9 +277,13 @@ describe('a Claude start whose CLI answers initialize but not a control request'
       ok: true
     })
 
-    await vi.waitFor(() => expect(record(host)?.options).toEqual({ model: 'claude-sonnet-5' }), {
-      timeout: DEADLINE_MS * 40
-    })
+    await vi.waitFor(
+      () =>
+        expect(record(host)?.options).toEqual({ model: 'claude-sonnet-5', permissionMode: 'ask' }),
+      {
+        timeout: DEADLINE_MS * 40
+      }
+    )
     expect(record(host)?.lease.claimStatus).toBe('live')
     expect(await statusRows(host)).toEqual([])
     expect(claude.children(SESSION)).toHaveLength(1)

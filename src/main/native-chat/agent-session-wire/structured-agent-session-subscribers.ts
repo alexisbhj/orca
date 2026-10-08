@@ -49,8 +49,7 @@ export type Subscriber = {
 }
 
 export type AgentSessionSubscribersHooks = {
-  readPermissionRevision?: SubscriberFieldHooks['readPermissionRevision']
-  readPermissionMode?: SubscriberFieldHooks['readPermissionMode']
+  readPermissionFact?: SubscriberFieldHooks['readPermissionFact']
   readCommands?: (sessionId: string) => AgentSessionSlashCommand[] | undefined
   /** Revision-stable per emit: an unchanged list keeps its reference, so token
    *  streams never re-serialize it; any draft-table write changes it. */

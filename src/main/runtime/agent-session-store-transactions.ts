@@ -11,10 +11,6 @@ import {
   agentSessionPermissionRevision,
   stampAgentSessionPermissionRevisions
 } from './agent-session-permission-revisions'
-import {
-  storedAgentChatPermissionMode,
-  type AgentChatPermissionMode
-} from '../../shared/agent-chat-permission-mode'
 import type { JournalHostDatabase } from '../native-chat/agent-session-journal/journal-host-database'
 import type { JournalOperationReceipt } from '../native-chat/agent-session-journal/journal-row-writer'
 import { journalOpenRefusalError } from '../native-chat/agent-session-journal/journal-open-failure'
@@ -116,20 +112,7 @@ export class AgentSessionStoreTransactions {
     return this.journalDatabase.readOnly
   }
 
-  permissionRevision(id: string, mode?: AgentChatPermissionMode | null): number {
-    const record = this.published.records.get(id)
-    if (
-      record &&
-      mode !== undefined &&
-      storedAgentChatPermissionMode(record.provider, record.options) === null &&
-      record.permissionFallbackMode !== mode &&
-      !this.readOnly
-    ) {
-      // A changed inherited default must be durable before any client sees its order.
-      this.commit((draft) => {
-        draft.records.set(id, { ...record, permissionFallbackMode: mode })
-      }, false)
-    }
+  permissionRevision(id: string): number {
     return agentSessionPermissionRevision(this.published.records.get(id))
   }
 

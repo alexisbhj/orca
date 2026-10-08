@@ -4,7 +4,10 @@
 // subscriber — never advanced on a frame that withheld the field, or the final
 // replacement would be suppressed — and each attaches whole to hydrating frames.
 
-import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
+import type {
+  AgentChatPermissionMode,
+  AgentSessionPermissionFact
+} from '../../../shared/agent-chat-permission-mode'
 import type {
   AgentSessionBackgroundTaskState,
   AgentSessionSlashCommand,
@@ -24,8 +27,7 @@ export type SubscriberFieldState = {
 }
 
 export type SubscriberFieldHooks = {
-  readPermissionRevision?: (sessionId: string) => number
-  readPermissionMode?: (sessionId: string) => AgentChatPermissionMode | null
+  readPermissionFact?: (sessionId: string) => AgentSessionPermissionFact | undefined
   readCommands?: (sessionId: string) => AgentSessionSlashCommand[] | undefined
   readQueuePublication?: (sessionId: string) => QueuePublication | undefined
   /** Built from the host's child records, so it is read only when a frame owes it: never per token. */
@@ -55,8 +57,9 @@ export function buildSubscriberFrame(
   event: AgentSessionSubscribeEvent,
   withholdQueued: boolean
 ): SubscriberFrame {
-  const permissionMode = hooks.readPermissionMode?.(subscriber.sessionId)
-  const permissionRevision = hooks.readPermissionRevision?.(subscriber.sessionId)
+  const permission = hooks.readPermissionFact?.(subscriber.sessionId)
+  const permissionMode = permission?.mode
+  const permissionRevision = permission?.revision
   const includePermission =
     permissionMode !== undefined &&
     event.type !== 'end' &&
@@ -93,8 +96,8 @@ export function buildSubscriberFrame(
       ...(backgroundTasks !== undefined ? { backgroundTasks } : {})
     },
     commands,
-    permissionMode,
-    permissionRevision,
+    permissionMode: includePermission ? permissionMode : subscriber.permissionMode,
+    permissionRevision: includePermission ? permissionRevision : subscriber.permissionRevision,
     attachedQueued,
     queued,
     backgroundTasks:

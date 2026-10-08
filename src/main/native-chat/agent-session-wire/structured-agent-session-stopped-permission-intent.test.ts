@@ -85,7 +85,7 @@ it.each(['claude', 'codex'] as const)(
   }
 )
 
-it('restores a saved human reviewer as Ask at rest with a looser default', async () => {
+it('derives a missing canonical mode from the current default at rest', async () => {
   const saved = { ...record({ chain: [] }), options: { approvalsReviewer: 'user' } }
   const read = await readStructuredAgentSessionOptionsAtRest(
     {
@@ -95,5 +95,5 @@ it('restores a saved human reviewer as Ask at rest with a looser default', async
     },
     saved.sessionId
   )
-  expect(read.permissionModes?.current).toBe('ask')
+  expect(read.permissionModes?.current).toBe('bypass')
 })

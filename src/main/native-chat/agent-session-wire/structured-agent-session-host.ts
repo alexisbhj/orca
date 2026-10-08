@@ -147,6 +147,7 @@ export class StructuredAgentSessionHost {
           structuredAgentSessionConversationFence(deps.store, sessionId)
         ),
       publishStatus: this.clientDelivery.publishStatusAndSettlement,
+      publishOptions: this.clientDelivery.publishOptions,
       serialize: (sessionId, task) => this.tasks.trackAttach(this.serialize(sessionId, task)),
       now: () => this.now(),
       runtimeState: this.runtimeState,

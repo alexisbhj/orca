@@ -61,9 +61,8 @@ export class StructuredAgentSessionClientDelivery {
     )
     this.waitForSendSettlement = this.sendSettlement.wait
     this.subscribers = new AgentSessionSubscribers({
-      readPermissionRevision: (id) => this.deps().store.permissionRevision(id),
-      readPermissionMode: (sessionId) =>
-        readStructuredAgentSessionPermissionFact(this.deps(), sessionId)?.mode ?? null,
+      readPermissionFact: (sessionId) =>
+        readStructuredAgentSessionPermissionFact(this.deps(), sessionId),
       readCommands: (sessionId) => this.readCommands(sessionId),
       readQueuePublication: (sessionId) =>
         tryReadQueuePublication(
@@ -94,6 +93,13 @@ export class StructuredAgentSessionClientDelivery {
   }
 
   publishStatus = (sessionId: string): void => this.statusFeed.publish(sessionId)
+
+  publishOptions = (sessionId: string): void => {
+    const journal = this.sessions.get(sessionId)?.journal
+    if (journal) {
+      this.subscribers.publish(sessionId, journal)
+    }
+  }
 
   publishConversationName = (sessionId: string): void =>
     this.statusFeed.publishConversationName(sessionId)

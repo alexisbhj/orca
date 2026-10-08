@@ -9,35 +9,51 @@ import type { StructuredAgentSessionHostDeps } from './structured-agent-session-
 
 export function restingPermissionModes(
   record: AgentSessionRecord,
-  defaultPermissionMode: StructuredAgentSessionHostDeps['defaultPermissionMode']
-): AgentSessionPermissionModes | null {
-  const supported = agentChatPermissionModes(record.provider)
-  const fallback = defaultPermissionMode?.(record.provider)
-  const current =
-    record.options?.permissionMode !== undefined || fallback !== undefined
-      ? agentChatLaunchPermissionMode(record.provider, record.options, fallback)
-      : null
-  return supported && current ? { current, supported } : null
-}
-
-/** All publications read the same normalized intent, including older saved choices. */
-export function readStructuredAgentSessionPermissionFact(
-  deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'agents' | 'defaultPermissionMode'>,
-  sessionId: string
-): AgentSessionPermissionFact | undefined {
-  const record = deps.store.getRecord(sessionId)
-  if (!record) {
+  defaultPermissionMode: StructuredAgentSessionHostDeps['defaultPermissionMode'],
+  logger?: StructuredAgentSessionHostDeps['logger']
+): AgentSessionPermissionModes | null | undefined {
+  try {
+    const supported = agentChatPermissionModes(record.provider)
+    const fallback = defaultPermissionMode?.(record.provider)
+    const current =
+      record.options?.permissionMode !== undefined || fallback !== undefined
+        ? agentChatLaunchPermissionMode(record.provider, record.options, fallback)
+        : null
+    return supported && current ? { current, supported } : null
+  } catch (error) {
+    logger?.warn('reading chat permissions failed', {
+      scope: 'permission-fact',
+      sessionId: record.sessionId,
+      error
+    })
     return undefined
   }
-  const rules = deps.agents.definition(record.provider)?.restingOptions
-  const permission = restingPermissionModes(
-    { ...record, options: rules?.normalizeOptions?.(record.options) ?? record.options },
-    deps.defaultPermissionMode
-  )
-  const mode = permission?.current ?? null
-  return {
-    mode,
-    fence: record.lease.runtimeFence,
-    revision: deps.store.permissionRevision(sessionId, mode)
+}
+
+/** Permission metadata is optional; its failure never blocks transcript delivery. */
+export function readStructuredAgentSessionPermissionFact(
+  deps: Pick<StructuredAgentSessionHostDeps, 'store' | 'defaultPermissionMode' | 'logger'>,
+  sessionId: string
+): AgentSessionPermissionFact | undefined {
+  try {
+    const record = deps.store.getRecord(sessionId)
+    if (!record) {
+      return undefined
+    }
+    const permission = restingPermissionModes(record, deps.defaultPermissionMode, deps.logger)
+    return permission === undefined
+      ? undefined
+      : {
+          mode: permission?.current ?? null,
+          fence: record.lease.runtimeFence,
+          revision: deps.store.permissionRevision(sessionId)
+        }
+  } catch (error) {
+    deps.logger.warn('reading chat permissions failed', {
+      scope: 'permission-fact',
+      sessionId,
+      error
+    })
+    return undefined
   }
 }

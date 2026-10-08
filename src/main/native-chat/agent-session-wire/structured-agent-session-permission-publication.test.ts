@@ -28,7 +28,9 @@ it('publishes idle permission changes to every subscriber without changing the j
     })
     let mode: AgentChatPermissionMode = 'ask'
     const events: AgentSessionSubscribeEvent[][] = [[], []]
-    const subscribers = new AgentSessionSubscribers({ readPermissionMode: () => mode })
+    const subscribers = new AgentSessionSubscribers({
+      readPermissionFact: () => ({ mode, fence: 1 })
+    })
     const cursor = journal.cursor()
     for (const [index, received] of events.entries()) {
       subscribers.open({

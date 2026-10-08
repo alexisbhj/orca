@@ -27,6 +27,7 @@ export type StructuredAgentSessionProviderStartedContext = {
   serialize: <T>(sessionId: string, task: () => Promise<T>) => Promise<T>
   now: () => number
   publishStatus?: (sessionId: string) => void
+  publishOptions?: (sessionId: string) => void
 }
 
 export function settleStructuredAgentSessionProviderStarted(
@@ -54,6 +55,7 @@ export function settleStructuredAgentSessionProviderStarted(
         error
       })
     } finally {
+      context.publishOptions?.(event.sessionId)
       context.publishStatus?.(event.sessionId)
     }
   })
@@ -122,6 +124,7 @@ export function settleStructuredAgentSessionOptionsSkipped(
         error
       })
     } finally {
+      context.publishOptions?.(event.sessionId)
       context.publishStatus?.(event.sessionId)
     }
   })
