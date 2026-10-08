@@ -25,7 +25,6 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
     const initialMode = variant === 'codex-legacy' ? 'auto' : 'ask'
     const inheritedDefault = variant.endsWith('-default')
     let defaultMode: AgentChatPermissionMode = 'ask'
-    const pickedRevision = inheritedDefault ? 2 : 1
     const root = await mkdtemp(join(tmpdir(), 'orca-permission-revisions-'))
     const unused = async (): Promise<never> => {
       throw new Error('No provider execution expected')
@@ -62,6 +61,8 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
     })
     try {
       await host.reconcileRestartLeases()
+      const initialRevision = store.permissionRevision(saved.sessionId)
+      const pickedRevision = initialRevision + (inheritedDefault ? 2 : 1)
       const events: AgentSessionSubscribeEvent[] = []
       await host.subscribe({
         id: 'reader',
@@ -70,7 +71,7 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
       })
       expect(events[0]).toMatchObject({
         permissionMode: initialMode,
-        permissionRevision: 0,
+        permissionRevision: initialRevision,
         fence: 1
       })
       if (inheritedDefault) {
@@ -78,12 +79,12 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
         expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
           current: 'bypass',
           fence: 1,
-          revision: 1
+          revision: initialRevision + 1
         })
         expect(readStructuredAgentSessionPermissionFact(host.deps, saved.sessionId)).toEqual({
           mode: 'bypass',
           fence: 1,
-          revision: 1
+          revision: initialRevision + 1
         })
       }
       const fields = { key: 'permissionMode', value: 'auto' }
@@ -170,7 +171,7 @@ it.each(['claude', 'codex', 'codex-legacy', 'claude-default', 'codex-default'])(
       expect(store.permissionRevision(saved.sessionId)).toBe(pickedRevision + 1)
       expect(
         (await openTestAgentSessionRecordStore(root)).permissionRevision(saved.sessionId)
-      ).toBe(0)
+      ).toBe(pickedRevision + 1)
     } finally {
       await host.flushAllStreamedEvents()
       await rm(root, { recursive: true, force: true })

@@ -1,41 +1,50 @@
-import {
-  storedAgentChatPermissionMode,
-  type AgentChatPermissionMode
-} from '../../shared/agent-chat-permission-mode'
+import { storedAgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
+import type { AgentSessionStoreState } from './agent-session-store-state'
 
-/** Runtime-only order advances at the same commit that changes permission intent. */
-export class AgentSessionPermissionRevisions {
-  private readonly revisions = new Map<string, number>()
-  private readonly modes = new Map<string, AgentChatPermissionMode | null>()
+export function agentSessionPermissionRevision(record: AgentSessionRecord | undefined): number {
+  // Legacy counters were small; the record's durable times avoid restarting them at zero.
+  return record?.permissionRevision ?? Math.max(0, record?.createdAt ?? 0, record?.updatedAt ?? 0)
+}
 
-  read = (sessionId: string, mode?: AgentChatPermissionMode | null): number => {
-    // Legacy chats can inherit changing defaults without a record write.
-    if (mode !== undefined) {
-      if (this.modes.has(sessionId) && this.modes.get(sessionId) !== mode) {
-        this.revisions.set(sessionId, this.read(sessionId) + 1)
-      }
-      this.modes.set(sessionId, mode)
-    }
-    return this.revisions.get(sessionId) ?? 0
+export function reviseAgentSessionPermission(
+  before: AgentSessionRecord | undefined,
+  record: AgentSessionRecord
+): AgentSessionRecord {
+  const priorStored = before && storedAgentChatPermissionMode(before.provider, before.options)
+  const priorMode = priorStored ?? before?.permissionFallbackMode
+  const storedMode = storedAgentChatPermissionMode(record.provider, record.options)
+  const mode = storedMode ?? record.permissionFallbackMode
+  const initialFallback = storedMode === null && priorMode === undefined
+  const changed =
+    before !== undefined && (storedMode !== priorStored || (mode !== priorMode && !initialFallback))
+  const revision = before ? agentSessionPermissionRevision(before) + Number(changed) : 0
+  if (!Number.isSafeInteger(revision)) {
+    throw new Error('agent_session_permission_revision_exhausted')
   }
+  if (
+    record.permissionRevision === revision &&
+    (storedMode === null || record.permissionFallbackMode === undefined)
+  ) {
+    return record
+  }
+  const { permissionFallbackMode: fallback, ...intent } = record
+  return {
+    ...intent,
+    permissionRevision: revision,
+    ...(storedMode === null && fallback !== undefined ? { permissionFallbackMode: fallback } : {})
+  }
+}
 
-  commit(
-    previous: ReadonlyMap<string, AgentSessionRecord>,
-    next: ReadonlyMap<string, AgentSessionRecord>,
-    changed: readonly (readonly [string, string])[]
-  ): void {
-    for (const [id] of changed) {
-      const before = previous.get(id)
-      const after = next.get(id)
-      const priorMode = before && storedAgentChatPermissionMode(before.provider, before.options)
-      const mode = after && storedAgentChatPermissionMode(after.provider, after.options)
-      if (mode !== priorMode) {
-        this.revisions.set(id, this.read(id) + 1)
-        if (mode !== undefined) {
-          this.modes.set(id, mode)
-        }
-      }
+/** Stamped before serialization, so an intent and its order either both commit or neither does. */
+export function stampAgentSessionPermissionRevisions(
+  published: AgentSessionStoreState,
+  draft: AgentSessionStoreState
+): void {
+  for (const [id, record] of draft.records) {
+    const before = published.records.get(id)
+    if (before !== record) {
+      draft.records.set(id, reviseAgentSessionPermission(before, record))
     }
   }
 }

@@ -77,6 +77,7 @@ import type { JournalHostDatabase } from '../native-chat/agent-session-journal/j
 import type { JournalOperationReceipt } from '../native-chat/agent-session-journal/journal-row-writer'
 import { loadAgentSessionStoreRows } from './agent-session-record-rows'
 import { AgentSessionStoreTransactions } from './agent-session-store-transactions'
+import { reviseAgentSessionPermission } from './agent-session-permission-revisions'
 import {
   compareAndSetAgentSessionRecordName,
   type CompareAndSetConversationName,
@@ -119,7 +120,7 @@ export class AgentSessionRecordStore {
   getRecord = (id: string): AgentSessionRecord | null => this.state.records.get(id) ?? null
 
   permissionRevision = (id: string, mode?: AgentChatPermissionMode | null): number =>
-    this.transactions.permissionRevisions.read(id, mode)
+    this.transactions.permissionRevision(id, mode)
 
   listRecords = (): AgentSessionRecord[] => [...this.state.records.values()]
 
@@ -148,9 +149,8 @@ export class AgentSessionRecordStore {
 
   /** Shows each session that still has a record, in one write: an index written part way would
    *  read as complete at the next launch and drop the rest. */
-  showSessionTabs(sessionIds: readonly string[]): Promise<void> {
-    return this.transact((draft) => showAgentSessionTabs(draft, sessionIds))
-  }
+  showSessionTabs = (sessionIds: readonly string[]): Promise<void> =>
+    this.transact((draft) => showAgentSessionTabs(draft, sessionIds))
 
   listByScope(location: AgentSessionExecutionLocation): AgentSessionRecord[] {
     const scope = agentSessionScopeKey(location)
@@ -338,7 +338,7 @@ export class AgentSessionRecordStore {
           ? agentSessionRefusalError('execution_owner_reconciling', { reason: 'recordUnreadable' })
           : agentSessionRefusalError('agent_session_identity_required', { reason: 'recordMissing' })
       }
-      const next = apply(record)
+      const next = reviseAgentSessionPermission(record, apply(record))
       draft.records.set(sessionId, next)
       return next
     })

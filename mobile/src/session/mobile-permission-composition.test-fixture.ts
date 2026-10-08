@@ -66,15 +66,16 @@ export function permissionHost() {
 
 export function permissionSnapshot(
   mode: AgentSessionPermissionSeed['mode'],
-  fence = 7
+  fence = 7,
+  sessionId = 'chat'
 ): AgentSessionSubscribeEvent {
   return {
     type: 'snapshot',
-    sessionId: 'chat',
+    sessionId,
     fence,
     permissionMode: mode,
     page: {
-      sessionId: 'chat',
+      sessionId,
       epoch: 'epoch',
       direction: 'tail',
       fence,
@@ -116,12 +117,13 @@ export type PermissionProbeProps = {
   permissionSeed?: AgentSessionPermissionSeed
   open?: boolean
   sessionKey?: string
+  sessionId?: string
 }
 
 export function usePermissionComposition(props: PermissionProbeProps) {
   const { agent, client, permissionSeed, open = true, sessionKey = 'host:chat' } = props
   const enabled = open
-  const sessionId = open ? 'chat' : null
+  const sessionId = open ? (props.sessionId ?? 'chat') : null
   const structured = useMobileStructuredAgentSession({
     agent,
     client,
