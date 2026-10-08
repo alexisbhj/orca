@@ -150,7 +150,21 @@ it.each(['claude', 'codex'] as const)(
           })
         )
       ).toMatchObject({ ok: true })
+      const acquiredIntent = (await readPersistedTestAgentSessionStore(root)).records[
+        saved.sessionId
+      ]
+      expect(acquiredIntent).toMatchObject({
+        options: { permissionMode: 'bypass' },
+        permissionRevision: 5
+      })
       refuseWrites()
+      expect((await host.readOptions(saved.sessionId)).permissionModes).toMatchObject({
+        current: 'bypass',
+        revision: 5
+      })
+      expect((await readPersistedTestAgentSessionStore(root)).records[saved.sessionId]).toEqual(
+        acquiredIntent
+      )
       const append = async (ordinal: number) => {
         if (!sink) {
           throw new Error('No production host event sink')
@@ -205,7 +219,7 @@ it.each(['claude', 'codex'] as const)(
       failFact.mockRestore()
       permitWrites()
       await append(3)
-      expect(second.at(-1)).toMatchObject({ permissionMode: 'bypass', permissionRevision: 4 })
+      expect(second.at(-1)).toMatchObject({ permissionMode: 'bypass', permissionRevision: 5 })
       expect(second.at(-1)).toMatchObject({ type: 'batch', batch: { items: [expect.any(Object)] } })
     } finally {
       await host.flushAllStreamedEvents()

@@ -20,7 +20,10 @@ export function ChatPermissionSetting({
 }): React.JSX.Element | null {
   const query = useAppStore((state) => state.settingsSearchQuery)
   const entry = getChatPermissionSearchEntry()
-  if (!forceVisible && !matchesSettingsSearch(query, [entry])) {
+  if (
+    settings.nativeChatPermissionMode === undefined ||
+    (!forceVisible && !matchesSettingsSearch(query, [entry]))
+  ) {
     return null
   }
   return (

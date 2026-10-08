@@ -87,6 +87,9 @@ export type AgentSessionAttachParams = {
 
 /** Host-supplied half of the reservation. */
 export type AgentSessionAttachAuthority = {
+  defaultPermissionMode?: Parameters<
+    AgentSessionRecordStore['reserveOwner']
+  >[0]['defaultPermissionMode']
   launchDirectory?: string
   spawnToken: string | (() => string)
   claimKeyId: string
@@ -310,6 +313,7 @@ export function reserveRequestFor(input: {
 }): Parameters<AgentSessionRecordStore['reserveOwner']>[0] {
   const { params, authority } = input
   return {
+    defaultPermissionMode: authority.defaultPermissionMode,
     sessionId: input.sessionId,
     location: params.location,
     provider: params.provider,

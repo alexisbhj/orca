@@ -15,6 +15,7 @@ import {
   type SourceControlAiActionDefaults
 } from '../../shared/source-control-ai-actions'
 import type { GlobalSettings } from '../../shared/global-settings-types'
+import { agentChatPermissionModeFromSetting } from '../../shared/agent-chat-permission-mode'
 import { applyNativeChatSessionOptionSettingsMutation } from '../../shared/native-chat-session-option-defaults'
 import type { NativeChatSessionOptionSettingsMutation } from '../../shared/native-chat-session-options'
 import { getHostDisplayLabelOverrides } from '../../shared/host-setting-overrides'
@@ -44,6 +45,7 @@ export type RuntimeClientSettings = Pick<
   | 'experimentalNativeChat'
   | 'openAgentTabsInChatByDefault'
   | 'experimentalStructuredNativeChat'
+  | 'nativeChatPermissionMode'
   | 'compactWorktreeCards'
   | 'minimaxGroupId'
   | 'minimaxUsageModels'
@@ -70,6 +72,7 @@ export type RuntimeHostDisplayLabelOverrides = Partial<
 export type RuntimeClientSettingsUpdate = Pick<
   Partial<GlobalSettings>,
   | 'agentStatusHooksEnabled'
+  | 'nativeChatPermissionMode'
   | 'defaultTuiAgent'
   | 'disabledTuiAgents'
   | 'agentDefaultArgs'
@@ -130,6 +133,9 @@ export class RuntimeClientSettingsController {
       experimentalNativeChat: settings.experimentalNativeChat === true,
       openAgentTabsInChatByDefault: settings.openAgentTabsInChatByDefault === true,
       experimentalStructuredNativeChat: settings.experimentalStructuredNativeChat === true,
+      nativeChatPermissionMode: agentChatPermissionModeFromSetting(
+        settings.nativeChatPermissionMode
+      ),
       compactWorktreeCards: settings.compactWorktreeCards === true,
       minimaxGroupId: settings.minimaxGroupId ?? '',
       minimaxUsageModels: settings.minimaxUsageModels ?? 'general',

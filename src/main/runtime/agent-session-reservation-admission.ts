@@ -48,8 +48,13 @@ import {
 import type { AgentSessionStoreState } from './agent-session-store-state'
 import { agentSessionRecordIdentityFields } from './agent-session-record-founding'
 import { agentSessionAccountHomesEqual } from '../../shared/agent-session-account-home'
+import {
+  commitAgentSessionPermissionIntent,
+  type AgentSessionPermissionDefaultResolver
+} from './agent-session-reservation-permission'
 
 export type AgentSessionReserveRequest = {
+  defaultPermissionMode?: AgentSessionPermissionDefaultResolver
   /** Host-resolved floating directory committed with the first owner reservation. */
   launchDirectory?: string
   sessionId: string
@@ -338,7 +343,11 @@ export function commitAgentSessionReservation(
     if (continued) {
       return reserveWithOperationRow(state, continued, decision.row, leaseTtlMs)
     }
-    const retried = admitPendingAgentSessionReservationReplay(record, request)
+    const retried = commitAgentSessionPermissionIntent(
+      state,
+      admitPendingAgentSessionReservationReplay(record, request),
+      request.defaultPermissionMode
+    )
     return { record: retried, disposition: 'replayed', operationRow: decision.row }
   }
   return reserveWithOperationRow(state, request, decision.row, leaseTtlMs)
@@ -351,7 +360,11 @@ function reserveWithOperationRow(
   leaseTtlMs: number
 ): AgentSessionReserveResult {
   const result = applyAgentSessionReservation(state, request, leaseTtlMs)
+  result.record = commitAgentSessionPermissionIntent(
+    state,
+    result.record,
+    request.defaultPermissionMode
+  )
   state.operations.set(agentSessionOperationKey(row.callerKey, row.operationId), row)
-  state.records.set(result.record.sessionId, result.record)
   return { ...result, operationRow: row }
 }
