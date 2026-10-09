@@ -10,6 +10,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { deliverTerminalAgentLaunchPrompt } from './agent-launch-terminal-prompt'
 import { AGENT_PROMPT_STALLED_ERROR } from '../../agent-prompt-submission-verification'
+import { resolveDraftPasteReadyTimeoutMs } from '../../../../shared/draft-paste-ready-timeout'
 
 type SendResult = { handle: string; accepted: boolean; bytesWritten: number }
 type SendFn = (
@@ -317,6 +318,39 @@ describe('writing a launch prompt into a terminal agent', () => {
     expect(stub.waitForTerminal.mock.calls.length).toBeLessThanOrEqual(60)
   })
 
+  it('ends a desktop launch’s wait at main’s per-agent budget; other callers keep 60 s', async () => {
+    const budgetMs = resolveDraftPasteReadyTimeoutMs('claude')
+    for (const [callerKey, expectedBudgetMs] of [
+      [DESKTOP, budgetMs],
+      ['trusted-local:runtime', 60_000]
+    ] as const) {
+      const stub = runtimeStub({
+        wait: { satisfied: false, status: 'running', blockedReason: 'trust-prompt' },
+        composerEnds: 'agent_startup_dialog'
+      })
+      const clock = fakeClock()
+
+      const delivered = await deliverTerminalAgentLaunchPrompt({
+        runtime: stub.runtime,
+        handle: 'term_1',
+        agent: 'claude',
+        freshLaunch: true,
+        text: 'do the thing',
+        clock,
+        callerKey
+      })
+
+      // The "with AI" dialog stays up until this settles, behind it the user cannot answer the prompt.
+      expect(delivered).toBe(false)
+      expect(stub.sendTerminalAgentPrompt).not.toHaveBeenCalled()
+      const firstTimeoutMs = stub.waitForTerminal.mock.calls[0]?.[1]?.timeoutMs ?? 0
+      expect(firstTimeoutMs).toBeLessThanOrEqual(expectedBudgetMs)
+      expect(firstTimeoutMs).toBeGreaterThan(expectedBudgetMs - 1_000)
+      expect(clock.now()).toBeLessThan(expectedBudgetMs)
+      expect(clock.now()).toBeGreaterThanOrEqual(expectedBudgetMs - 2_000)
+    }
+  })
+
   it.each([
     ['writes when a fresh read finds the agent in front', 'agent', true],
     ['refuses the write when the shell is back in front', 'shell', false],
@@ -398,7 +432,8 @@ describe('writing a launch prompt into a terminal agent', () => {
         handle: 'term_1',
         agent,
         freshLaunch: true,
-        text: 'do the thing'
+        text: 'do the thing',
+        clock: fakeClock()
       })
 
       expect(delivered).toBe(true)
@@ -459,7 +494,8 @@ describe('writing a launch prompt into a terminal agent', () => {
       handle: 'term_existing',
       agent: 'grok',
       freshLaunch: false,
-      text: 'do the thing'
+      text: 'do the thing',
+      clock: fakeClock()
     })
 
     expect(delivered).toBe(true)

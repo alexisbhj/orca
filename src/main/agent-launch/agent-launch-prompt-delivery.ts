@@ -24,7 +24,8 @@ import type {
 } from '../../shared/agent-launch-intent'
 import { agentPromptRidesLaunchCommand } from '../../shared/tui-agent-startup'
 import type { AgentLaunchModeReceipt } from './agent-launch-mode'
-import type { AgentLaunchExecution, CreatedSurface } from './agent-launch-executor'
+import type { CreatedSurface } from './agent-launch-executor'
+import type { AgentLaunchSurfaceExecution } from './agent-launch-execution'
 import type { AgentLaunchStructuredSurface } from './agent-launch-surface-factories'
 import { isDesktopNewTabPrompt } from '../../shared/desktop-new-tab-prompt'
 
@@ -52,7 +53,7 @@ export function settledAtCreation(
 
 /** Each surface delivers its own way, so the disposal is decided where the surface is known. */
 export async function settleLaunchPromptDisposal(
-  execution: AgentLaunchExecution,
+  execution: AgentLaunchSurfaceExecution,
   created: CreatedSurface
 ): Promise<AgentLaunchPromptDisposal> {
   if (created.structured) {
@@ -72,7 +73,7 @@ export async function settleLaunchPromptDisposal(
  * `draft` is excluded: a structured draft belongs in the composer, and the host has none.
  */
 async function deliverStructuredLaunchPrompt(
-  execution: AgentLaunchExecution,
+  execution: AgentLaunchSurfaceExecution,
   structured: AgentLaunchStructuredSurface
 ): Promise<string | null> {
   const { intent, surfaces } = execution
@@ -99,7 +100,7 @@ async function deliverStructuredLaunchPrompt(
  * Desktop drafts report the unsubmitted paste as handed over; generic drafts remain caller-owned.
  */
 export async function deliverTerminalLaunchPrompt(
-  execution: AgentLaunchExecution,
+  execution: AgentLaunchSurfaceExecution,
   handle: string,
   { freshLaunch }: { freshLaunch: boolean }
 ): Promise<AgentLaunchPromptDisposal> {
@@ -173,8 +174,12 @@ export function launchCommandPrompt(
  *
  * Each arm is a consequence of the act it names, never a write-ahead of it: `journaled` is
  * reachable only from a committed message id, `handed-to-terminal` only from a launch command that
- * carried the text or a PTY write that returned. An interrupted desktop write and a provisional
- * recorded result stay `unconfirmed`; a refusal before any write is `not-delivered`.
+ * carried the text or a PTY write that returned, and everything else under-claims as
+ * `not-delivered`. `unconfirmed` is written into the record before delivery runs
+ * (`settledAtCreation`) and read back by a replay; live, only a desktop write that may have started
+ * reports it. A `legacy-host` create's unawaited post-start send also never reaches the wire
+ * (agent-launch-legacy-host.ts). Dispatch doubt is not this tier's to report: the submission row
+ * carries it.
  */
 export function promptReceipt(
   intent: AgentLaunchIntent,
