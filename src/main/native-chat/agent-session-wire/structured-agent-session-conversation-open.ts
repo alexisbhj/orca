@@ -38,7 +38,7 @@ export type OpenedStructuredAgentSessionConversation = {
 }
 
 export type StructuredAgentSessionConversationOpenDeps = {
-  store: Pick<AgentSessionRecordStore, 'getRecord'>
+  store: Pick<AgentSessionRecordStore, 'getRecord' | 'replacedRuntime'>
   journalDatabase: JournalHostDatabase
   logger: StructuredAgentSessionHostDeps['logger']
 }
@@ -81,7 +81,9 @@ export async function openStructuredAgentSessionConversation(
 
 /** The open itself, indexed by nobody yet: the caller adopts the result. */
 export async function openStructuredAgentSessionConversationJournal(
-  deps: Omit<StructuredAgentSessionConversationOpenDeps, 'store'>,
+  /** An acquisition's open settles nothing itself, so it needs no store. */
+  deps: Omit<StructuredAgentSessionConversationOpenDeps, 'store'> &
+    Partial<Pick<StructuredAgentSessionConversationOpenDeps, 'store'>>,
   record: AgentSessionRecord,
   options: StructuredAgentSessionConversationOpenOptions = {}
 ): Promise<OpenedStructuredAgentSessionConversation> {
@@ -148,7 +150,8 @@ export async function resettleOpenStructuredAgentSessionConversation(
 }
 
 async function settleGoneGeneration(
-  deps: Pick<StructuredAgentSessionConversationOpenDeps, 'logger'>,
+  deps: Pick<StructuredAgentSessionConversationOpenDeps, 'logger'> &
+    Partial<Pick<StructuredAgentSessionConversationOpenDeps, 'store'>>,
   record: AgentSessionRecord,
   journal: AgentSessionJournal
 ): Promise<void> {
@@ -159,6 +162,7 @@ async function settleGoneGeneration(
       fence: record.lease.runtimeFence,
       acquisitionGeneration: null,
       deathEvidence: record.lease.deathEvidence ?? null,
+      replaced: deps.store?.replacedRuntime(record.sessionId),
       failureTextContext: structuredAgentSessionFailureWordsContext(record)
     })
   } catch (error) {

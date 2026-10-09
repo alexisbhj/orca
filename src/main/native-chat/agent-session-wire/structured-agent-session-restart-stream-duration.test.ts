@@ -195,7 +195,8 @@ describe('a provider stream cut short before its next lease renewal', () => {
     expect(rig.adapter.closeSession).toHaveBeenCalledOnce()
   })
 
-  it('leaves the end unverifiable when the execution host cannot prove owner death', async () => {
+  // A new server replacing the owner's runtime ends it anyway (structured-agent-session-replaced-server-turn).
+  it('leaves the end unverifiable when its own runtime reopens and cannot prove owner death', async () => {
     await streamBeforeCrash()
     await restartAfterCrash()
     rig.host.deps.probeOwner = async () => ({
