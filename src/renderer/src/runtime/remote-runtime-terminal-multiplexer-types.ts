@@ -45,8 +45,8 @@ export type RemoteRuntimeMultiplexedTerminalCallbacks = {
        *  it, which must read as unknown so replay keeps the pane's own grid. */
       cols?: number
       rows?: number
-      /** The image carries no history, so replay must keep the pane's own scrollback. */
-      keepsLocalScrollback?: boolean
+      /** The host folded history above the screen (scrollbackRows > 0). */
+      carriesHistory?: boolean
     }
   ) => void
   onSubscribed?: () => void
