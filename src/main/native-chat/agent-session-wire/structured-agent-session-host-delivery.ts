@@ -94,6 +94,7 @@ export function createStructuredAgentSessionConversationDelivery(input: {
       }
       await retireSignedOutStructuredAgentSessionChild(sessionId, session, {
         work,
+        startUnavailable: () => deps.adapter.startUnavailable?.(sessionId),
         stopAgent: input.stopSignedOutAgent,
         logger: deps.logger
       })

@@ -48,6 +48,7 @@ export function useStructuredAgentSessionOptions(args: {
   isVisible: boolean
   providerVisible: boolean
   providerStarting?: boolean
+  providerRunning?: boolean
   fence: number | null
   turnId: string | null
   permissionMode?: string | null
@@ -129,6 +130,7 @@ export function useStructuredAgentSessionOptions(args: {
     ...(launch?.worktree ? { worktree: launch.worktree } : {}),
     fence,
     turnId,
+    ...(args.providerRunning ? { providerRunning: true } : {}),
     activeOptionRecordRef,
     updateOptionState
   })
