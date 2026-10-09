@@ -136,7 +136,7 @@ describe('claude structured launch resolution', () => {
       const launch = await resolverFor(
         value,
         undefined,
-        false,
+        'system',
         undefined,
         hasTranscript
       )({ identity: identityAt('old-leaf') })
@@ -153,7 +153,7 @@ describe('claude structured launch resolution', () => {
       const retry = await resolverFor(
         value,
         undefined,
-        false,
+        'system',
         undefined,
         hasTranscript
       )({ identity: IDENTITY })
@@ -161,7 +161,7 @@ describe('claude structured launch resolution', () => {
       const next = await resolverFor(
         { ...value, providerContextBoundary: { ...boundary, operationId: 'clear-two' } },
         undefined,
-        false,
+        'system',
         undefined,
         async () => false
       )({ identity: IDENTITY })
