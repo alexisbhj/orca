@@ -77,8 +77,8 @@ export type SeatFeedCell = {
   cellId: string
   cellUrl: string
   region: RelayRegion
-  // Ready and heartbeat-fresh: what the database's resolve calls live.
-  heartbeatLive: boolean
+  // When the database's resolve stops calling this cell live; null when not ready.
+  heartbeatExpiresAt: number | null
   // Heartbeat-fresh, with capacity, and not roll-isolated: completeness waits only on these.
   requiredForComplete: boolean
 }
@@ -122,6 +122,8 @@ export type SeatFeedCellState = {
 
 type CellCursor = SeatFeedCellState & { seats: Map<string, ShadowSeat> }
 
+export type HeartbeatSnapshot = { readAt: number; expiresAt: ReadonlyMap<string, number> }
+
 function hostKey(userId: string, relayHostId: string): string {
   return `${userId}\u0000${relayHostId}`
 }
@@ -132,18 +134,21 @@ export class ShadowSeatDirectory {
   // Insertion order is age order: a touched host is re-inserted at the end.
   private readonly recentlyLeft = new Map<string, RecentlyLeftSeat[]>()
   private required = new Set<string>()
-  private heartbeatLive = new Set<string>()
+  // Absent: every listed cell is live (callers without a database view).
+  private heartbeats: HeartbeatSnapshot | undefined
+  // Per host, the newest database epoch seen and when: stands in for the grant time.
+  private readonly databaseEpochs = new Map<string, { epoch: number; firstSeenAt: number }>()
 
   // Cells no longer listed are forgotten with their seats; new ones start pending.
-  // `required` and `heartbeatLive` default to every listed cell.
+  // `required` defaults to every listed cell.
   setCells(
     cellIds: readonly string[],
     required: Iterable<string> = cellIds,
-    heartbeatLive: Iterable<string> = cellIds
+    heartbeats?: HeartbeatSnapshot
   ): void {
     const wanted = new Set(cellIds)
     this.required = new Set([...required].filter((cellId) => wanted.has(cellId)))
-    this.heartbeatLive = new Set(heartbeatLive)
+    this.heartbeats = heartbeats
     for (const [cellId, cursor] of this.cells) {
       if (wanted.has(cellId)) continue
       for (const key of cursor.seats.keys()) this.unindex(key, cellId)
@@ -226,9 +231,28 @@ export class ShadowSeatDirectory {
     return true
   }
 
-  // As of the last cell-list read (at most 30 s old).
-  isHeartbeatLive(cellId: string): boolean {
-    return this.heartbeatLive.has(cellId)
+  // What the database's resolve would call this cell now, from a cell-list read up to
+  // 30 s old. `unknown`: its heartbeat ran out after that read, and the next read decides.
+  cellLiveness(cellId: string, now: number): 'live' | 'unlive' | 'unknown' {
+    if (!this.heartbeats) return this.cells.has(cellId) ? 'live' : 'unlive'
+    const expiresAt = this.heartbeats.expiresAt.get(cellId)
+    if (expiresAt === undefined) return 'unlive'
+    if (expiresAt > now) return 'live'
+    return expiresAt > this.heartbeats.readAt ? 'unknown' : 'unlive'
+  }
+
+  // Returns when this director first saw the host at this database epoch.
+  observeDatabaseEpoch(userId: string, relayHostId: string, epoch: number, now: number): number {
+    const key = hostKey(userId, relayHostId)
+    const known = this.databaseEpochs.get(key)
+    if (known && known.epoch >= epoch) return known.firstSeenAt
+    this.databaseEpochs.delete(key)
+    this.databaseEpochs.set(key, { epoch, firstSeenAt: now })
+    if (this.databaseEpochs.size > SHADOW_SEAT_RECENTLY_LEFT_MAX_HOSTS) {
+      const oldest = this.databaseEpochs.keys().next().value
+      if (oldest !== undefined) this.databaseEpochs.delete(oldest)
+    }
+    return now
   }
 
   seatsOf(userId: string, relayHostId: string): ShadowSeat[] {
@@ -415,15 +439,16 @@ export async function readSeatFeedCells(
   )
   return rows.map((row) => {
     const region = RelayRegionSchema.safeParse(row.region)
-    const heartbeatLive =
-      Number(row.ready) === 1 && Number(row.last_heartbeat_at) > now - heartbeatTtlMs
+    const heartbeatExpiresAt =
+      Number(row.ready) === 1 ? Number(row.last_heartbeat_at) + heartbeatTtlMs : null
     return {
       cellId: String(row.cell_id),
       cellUrl: String(row.cell_url),
       region: region.success ? region.data : RELAY_DEFAULT_REGION,
-      heartbeatLive,
+      heartbeatExpiresAt,
       requiredForComplete:
-        heartbeatLive &&
+        heartbeatExpiresAt !== null &&
+        heartbeatExpiresAt > now &&
         Number(row.capacity_requests) > 0 &&
         (row.roll_isolated_at === null || row.roll_isolated_at === undefined)
     }
@@ -497,13 +522,21 @@ export function startShadowSeatPoller(
     if (now() < cellListRetryAt) return
     cellListInFlight = true
     try {
+      const readAt = now()
       const listed = await options.listCells()
       cells =
         selection === 'all' ? listed : listed.filter((cell) => selection.includes(cell.cellId))
       directory.setCells(
         cells.map((cell) => cell.cellId),
         cells.filter((cell) => cell.requiredForComplete).map((cell) => cell.cellId),
-        cells.filter((cell) => cell.heartbeatLive).map((cell) => cell.cellId)
+        {
+          readAt,
+          expiresAt: new Map(
+            cells.flatMap((cell) =>
+              cell.heartbeatExpiresAt === null ? [] : [[cell.cellId, cell.heartbeatExpiresAt]]
+            )
+          )
+        }
       )
       cellsReadAt = now()
       cellListFailures = 0

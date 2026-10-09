@@ -21,15 +21,16 @@ export type ShadowCompareClass =
   | 'map-only'
   // The map seats the host on a cell the database does not call live, so resolve answered null.
   | 'map-only-cell-unlive'
+  // As above, but the cell's heartbeat ran out after the last cell-list read (at most 30 s).
+  | 'cell-unlive-pending'
 
 export type ShadowCompareVerdict = { class: ShadowCompareClass; explained: boolean }
 
 export type ShadowCompareDatabaseAnswer = { cellId: string; assignmentEpoch: number } | null
 
 export const SHADOW_COMPARE_FLUSH_MS = 60_000
-// One poll, its timeout, and a reconnect (p95 ~6 s on 10-02). A seat the map has
-// not heard about for longer is not "the map catching up": a lost leave must not
-// read as explained forever.
+// One poll, its timeout, and a reconnect (p95 ~6 s on 10-02). A move older than
+// this is not "the map catching up": a lost leave must not read as explained forever.
 export const SHADOW_COMPARE_LAG_BOUND_MS = 10_000
 // Per class per flush window, so a systemic fault cannot flood the log.
 export const SHADOW_COMPARE_SAMPLES_PER_CLASS = 10
@@ -40,13 +41,22 @@ export function classifyShadowSeat(
   answer: ShadowCompareDatabaseAnswer,
   now: number
 ): ShadowCompareVerdict {
+  // Every answer, so the move's age is measured from its first sighting on any route.
+  const movedAt = answer
+    ? directory.observeDatabaseEpoch(
+        identity.userId,
+        identity.relayHostId,
+        answer.assignmentEpoch,
+        now
+      )
+    : now
   if (!directory.isComplete()) return { class: 'map-incomplete', explained: true }
   const seats = directory.seatsOf(identity.userId, identity.relayHostId)
   if (!answer) {
     if (seats.length === 0) return { class: 'agree-absent', explained: true }
-    if (seats.some((seat) => !directory.isHeartbeatLive(seat.cellId))) {
-      return { class: 'map-only-cell-unlive', explained: true }
-    }
+    const liveness = seats.map((seat) => directory.cellLiveness(seat.cellId, now))
+    if (liveness.includes('unlive')) return { class: 'map-only-cell-unlive', explained: true }
+    if (liveness.includes('unknown')) return { class: 'cell-unlive-pending', explained: true }
     return { class: 'map-only', explained: false }
   }
   if (directory.cellState(answer.cellId)?.status !== 'live') {
@@ -63,10 +73,14 @@ export function classifyShadowSeat(
       .some((entry) => entry.cellId === answer.cellId)
     return { class: left ? 'db-only-left' : 'db-only-unseen', explained: true }
   }
-  // The map trails the cells by a poll: a newer database epoch on a recently
-  // seen seat is it catching up.
+  // The map trails the cells by a poll. The database answer carries no grant time, so the
+  // move's age is how long this director has seen the newer epoch; a seat cell not polled
+  // within the bound also leaves the map behind.
+  const seatPolledAt = directory.cellState(seat.cellId)?.lastLiveAt ?? 0
   const mapBehind =
-    answer.assignmentEpoch > seat.epoch && now - seat.observedAt <= SHADOW_COMPARE_LAG_BOUND_MS
+    answer.assignmentEpoch > seat.epoch &&
+    (now - movedAt <= SHADOW_COMPARE_LAG_BOUND_MS ||
+      now - seatPolledAt > SHADOW_COMPARE_LAG_BOUND_MS)
   if (seat.cellId !== answer.cellId) return { class: 'cell-mismatch', explained: mapBehind }
   if (seat.epoch !== answer.assignmentEpoch) {
     return { class: 'epoch-mismatch', explained: mapBehind }

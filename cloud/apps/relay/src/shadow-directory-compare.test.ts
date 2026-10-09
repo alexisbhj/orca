@@ -38,11 +38,13 @@ function directoryWith(
 ) {
   const directory = new ShadowSeatDirectory()
   const cellIds = [...Object.keys(seats), ...noFeed]
-  directory.setCells(
-    cellIds,
-    cellIds,
-    cellIds.filter((cellId) => !unlive.includes(cellId))
-  )
+  // Read at 0; live cells' heartbeats run out far in the future.
+  directory.setCells(cellIds, cellIds, {
+    readAt: 0,
+    expiresAt: new Map(
+      cellIds.filter((cellId) => !unlive.includes(cellId)).map((cellId) => [cellId, 1e12])
+    )
+  })
   for (const [cellId, full] of Object.entries(seats)) {
     directory.apply(cellId, feed(cellId, { full }), 10)
   }
@@ -104,15 +106,51 @@ describe('classifyShadowSeat', () => {
     })
   })
 
-  it('stops explaining a map-behind seat once it is older than the lag bound', () => {
+  it('explains a long-seated host moved by a rehome, then stops once the move is old', () => {
+    // Seated for three hours on cell-b; a rehome grants cell-a at a newer epoch.
     const directory = directoryWith({ 'cell-b': [seat(2)], 'cell-a': [] })
-    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10 + 10_000)).toEqual({
+    const threeHours = 3 * 60 * 60 * 1_000
+    const poll = (cellId: string, now: number) =>
+      directory.apply(cellId, feed(cellId, { full: undefined, changes: [] }), now)
+    poll('cell-b', threeHours)
+    poll('cell-a', threeHours)
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), threeHours)).toEqual({
       class: 'cell-mismatch',
       explained: true
     })
-    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10 + 10_001)).toEqual({
+    poll('cell-b', threeHours + 10_001)
+    poll('cell-a', threeHours + 10_001)
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), threeHours + 10_001)).toEqual({
       class: 'cell-mismatch',
       explained: false
+    })
+  })
+
+  it('explains a map-behind seat while its cell has not been polled within the bound', () => {
+    const directory = directoryWith({ 'cell-b': [seat(2)], 'cell-a': [] })
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10)).toMatchObject({
+      explained: true
+    })
+    // cell-b was last polled at 10; 20 s later the map may simply be behind.
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 20_010)).toMatchObject({
+      class: 'cell-mismatch',
+      explained: true
+    })
+  })
+
+  it('reads a null answer on a cell whose heartbeat ran out after the list read as pending', () => {
+    const directory = directoryWith({ 'cell-a': [seat(3)] })
+    const listRead = (readAt: number) =>
+      directory.setCells(['cell-a'], ['cell-a'], { readAt, expiresAt: new Map([['cell-a', 150]]) })
+    listRead(100)
+    expect(classifyShadowSeat(directory, IDENTITY, null, 200)).toEqual({
+      class: 'cell-unlive-pending',
+      explained: true
+    })
+    listRead(160)
+    expect(classifyShadowSeat(directory, IDENTITY, null, 200)).toEqual({
+      class: 'map-only-cell-unlive',
+      explained: true
     })
   })
 
