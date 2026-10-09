@@ -23,7 +23,9 @@ const MISSING_COMMAND_PATTERNS = [
 
 export type AutomationRunAgentEvidence = {
   /** Agent status rows for a pane, from hooks, OSC and titles alike. */
-  getAgentStatusRowsForPane(paneKey: string): readonly { receivedAt: number }[]
+  getAgentStatusRowsForPane(
+    paneKey: string
+  ): readonly { receivedAt: number; sessionBoundary?: boolean }[]
   /** The names the run's agent command may run under, to tell its refusal from its output. */
   agentCommandsForRun(run: AutomationRun): readonly string[]
 }
@@ -63,7 +65,10 @@ export function judgeIdleRun(
   const paneKey = run.terminalPaneKey
   if (
     paneKey &&
-    evidence.getAgentStatusRowsForPane(paneKey).some((row) => row.receivedAt >= runStartedAt)
+    evidence
+      .getAgentStatusRowsForPane(paneKey)
+      // A session-start boundary lands before the prompt, so it says nothing about the run's turn.
+      .some((row) => row.receivedAt >= runStartedAt && row.sessionBoundary !== true)
   ) {
     return { kind: 'completed' }
   }

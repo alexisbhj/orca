@@ -122,7 +122,9 @@ export async function launchHeadlessAutomationAgent(
           handle,
           agent,
           freshLaunch,
-          text: prompt.text
+          text: prompt.text,
+          // Automations wrote on Windows hosts before, as worker briefs do: only a proven shell refuses.
+          unprovableHost: 'write-unless-shell'
         })
     }
   }
@@ -148,7 +150,20 @@ function launchUntilPublished(
   execution: AgentLaunchSurfaceExecution
 ): Promise<AgentLaunchPublishedSurface> {
   return new Promise((resolve, reject) => {
-    executeAgentLaunch({ ...execution, onSurfacePublished: resolve }).catch(reject)
+    let published = false
+    executeAgentLaunch({
+      ...execution,
+      onSurfacePublished: (surface) => {
+        published = true
+        resolve(surface)
+      }
+    }).catch((error: unknown) => {
+      if (!published) {
+        reject(error)
+        return
+      }
+      console.warn('[automations] the agent launch failed after its terminal was published', error)
+    })
   })
 }
 

@@ -117,7 +117,8 @@ describe('headless automation agent launch', () => {
         handle: 'term_existing',
         agent: 'aider',
         freshLaunch: true,
-        text: 'fix the flaky test'
+        text: 'fix the flaky test',
+        unprovableHost: 'write-unless-shell'
       })
     )
     finishDelivery(true)
@@ -166,7 +167,12 @@ describe('headless automation agent launch', () => {
     expect(runtime.createManagedWorktree.mock.calls[0]![0]).not.toHaveProperty('startupPrompt')
     expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledTimes(1)
     expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({ handle: 'term_new', agent: 'goose', text: 'fix the flaky test' })
+      expect.objectContaining({
+        handle: 'term_new',
+        agent: 'goose',
+        text: 'fix the flaky test',
+        unprovableHost: 'write-unless-shell'
+      })
     )
   })
 
@@ -189,6 +195,23 @@ describe('headless automation agent launch', () => {
       expect.objectContaining({ prompt: '' })
     )
     expect(delivery.deliverTerminalAgentLaunchPrompt).not.toHaveBeenCalled()
+  })
+
+  it('logs a failure after the terminal was recorded instead of dropping it', async () => {
+    const runtime = harness()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    delivery.deliverTerminalAgentLaunchPrompt.mockRejectedValue(new Error('writer broke'))
+
+    const launched = await launch(runtime, { agentId: 'aider' })
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('after its terminal was published'),
+        expect.objectContaining({ message: 'writer broke' })
+      )
+    )
+
+    expect(launched.terminalHandle).toBe('term_existing')
+    warn.mockRestore()
   })
 
   it('refuses an existing-workspace run whose workspace is gone', async () => {
