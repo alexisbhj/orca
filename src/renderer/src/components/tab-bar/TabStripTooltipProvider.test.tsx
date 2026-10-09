@@ -44,7 +44,7 @@ describe('TabStripTooltipProvider', () => {
     expect(screen.getByText('tab tooltip')).toBeTruthy()
   })
 
-  it('does not let a recently-closed tooltip skip the delay on the next tab', () => {
+  it('opens the next tab immediately after a card was shown', () => {
     render(
       <TabStripTooltipProvider>
         <Tooltip>
@@ -74,15 +74,24 @@ describe('TabStripTooltipProvider', () => {
     fireEvent.pointerLeave(first)
     fireEvent.pointerMove(second, { pointerType: 'mouse' })
 
-    // Radix's default would open this one instantly for 300ms after a close.
+    act(() => {
+      vi.advanceTimersByTime(0)
+    })
+    expect(screen.getByText('second tip')).toBeTruthy()
+    expect(screen.queryByText('first tip')).toBeNull()
+
+    fireEvent.pointerLeave(second)
+    act(() => {
+      vi.advanceTimersByTime(301)
+    })
+    fireEvent.pointerMove(first, { pointerType: 'mouse' })
     act(() => {
       vi.advanceTimersByTime(TAB_TOOLTIP_DELAY_MS - 1)
     })
-    expect(screen.queryByText('second tip')).toBeNull()
-
+    expect(screen.queryByText('first tip')).toBeNull()
     act(() => {
       vi.advanceTimersByTime(1)
     })
-    expect(screen.getByText('second tip')).toBeTruthy()
+    expect(screen.getByText('first tip')).toBeTruthy()
   })
 })

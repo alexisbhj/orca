@@ -172,6 +172,12 @@ vi.mock('@/components/ui/tooltip', () => ({
   }
 }))
 
+vi.mock('./TabHoverCard', () => ({
+  TabHoverCard: function TabHoverCard(props: { children?: unknown }) {
+    return props.children
+  }
+}))
+
 vi.mock('@/components/editor/editor-labels', () => ({
   getEditorDisplayLabel: (file: OpenFile) => file.relativePath
 }))
