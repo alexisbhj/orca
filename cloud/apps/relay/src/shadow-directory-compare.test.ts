@@ -126,14 +126,15 @@ describe('classifyShadowSeat', () => {
     })
   })
 
-  it('explains a map-behind seat while its cell has not been polled within the bound', () => {
+  it('counts a seat on a cell not polled within the bound as cell-unpolled', () => {
     const directory = directoryWith({ 'cell-b': [seat(2)], 'cell-a': [] })
     expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10)).toMatchObject({
       explained: true
     })
-    // cell-b was last polled at 10; 20 s later the map may simply be behind.
-    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 20_010)).toMatchObject({
-      class: 'cell-mismatch',
+    // cell-b was last polled at 10; 20 s later only cell-a is fresh.
+    directory.apply('cell-a', feed('cell-a', { full: undefined, changes: [] }), 20_010)
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 20_010)).toEqual({
+      class: 'cell-unpolled',
       explained: true
     })
   })

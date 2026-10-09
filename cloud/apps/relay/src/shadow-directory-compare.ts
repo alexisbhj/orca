@@ -74,14 +74,17 @@ export function classifyShadowSeat(
     return { class: left ? 'db-only-left' : 'db-only-unseen', explained: true }
   }
   // The map trails the cells by a poll. The database answer carries no grant time, so the
-  // move's age is how long this director has seen the newer epoch; a seat cell not polled
-  // within the bound also leaves the map behind.
-  const seatPolledAt = directory.cellState(seat.cellId)?.lastLiveAt ?? 0
+  // move's age is how long this director has seen the newer epoch.
   const mapBehind =
-    answer.assignmentEpoch > seat.epoch &&
-    (now - movedAt <= SHADOW_COMPARE_LAG_BOUND_MS ||
-      now - seatPolledAt > SHADOW_COMPARE_LAG_BOUND_MS)
-  if (seat.cellId !== answer.cellId) return { class: 'cell-mismatch', explained: mapBehind }
+    answer.assignmentEpoch > seat.epoch && now - movedAt <= SHADOW_COMPARE_LAG_BOUND_MS
+  if (seat.cellId !== answer.cellId) {
+    // A stale seat cell is a coverage gap, kept visible rather than explained away.
+    const seatPolledAt = directory.cellState(seat.cellId)?.lastLiveAt ?? 0
+    if (now - seatPolledAt > SHADOW_COMPARE_LAG_BOUND_MS) {
+      return { class: 'cell-unpolled', explained: true }
+    }
+    return { class: 'cell-mismatch', explained: mapBehind }
+  }
   if (seat.epoch !== answer.assignmentEpoch) {
     return { class: 'epoch-mismatch', explained: mapBehind }
   }
