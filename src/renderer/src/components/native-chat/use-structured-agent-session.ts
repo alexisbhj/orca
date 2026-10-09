@@ -37,7 +37,7 @@ import {
 import { hostStatesTurnScopes } from '../../../../shared/native-chat-turn-membership'
 import { pendingPromptsAllUnanswerableHere } from '../../../../shared/agent-session-approval-subject'
 import { withNativeChatCutTurnNotices } from '../../../../shared/native-chat-cut-turn-notice'
-import { useStructuredAgentSessionRewind } from './use-native-chat-rewind'
+import { useStructuredAgentSessionRewind } from './use-structured-agent-session-rewind'
 import type { NativeChatRewindHost } from './use-native-chat-rewind'
 
 export type { StructuredPromptItem } from './structured-agent-session-message-projection'
@@ -52,6 +52,8 @@ export function useStructuredAgentSession(args: {
   transportEnabled?: boolean
   /** The host has published the session but its provider has not answered startup yet. */
   providerStarting?: boolean
+  /** The host runs the session's provider, started or not. */
+  providerRunning?: boolean
   /** This view started the session; only then does the stored selection name what it runs. */
   launch?: StructuredAgentSessionLaunchView
   /** The composer Edit copies a card's text into. */
@@ -109,6 +111,7 @@ export function useStructuredAgentSession(args: {
     isVisible,
     providerVisible,
     providerStarting,
+    ...(args.providerRunning ? { providerRunning: true } : {}),
     fence: state.fence,
     turnId: transportState.turnId,
     unloadedTurnRevisions: state.unloadedTurnRevisions,
@@ -154,12 +157,14 @@ export function useStructuredAgentSession(args: {
 
   const threadGoal = useStructuredAgentSessionThreadGoal({
     journalItems: transportState.journalItems,
+    journalEpoch: state.epoch,
     support: threadGoalSupport,
     mutate
   })
   const contextUsage = useStructuredAgentSessionContextUsage(
     transportState.journalItems,
-    contextUsageSupport
+    contextUsageSupport,
+    state.epoch
   )
 
   const railOutline = useStructuredAgentSessionRailOutline({
@@ -173,12 +178,7 @@ export function useStructuredAgentSession(args: {
   const commandWrite = useStructuredAgentSessionCommandWrite(sessionId, write)
   const sending = pending.some((entry) => entry.phase === 'sending')
   // What the host refuses a rewind behind; a command's own hold is the runner's below.
-  const conversationBusy = Boolean(
-    transportState.turnId ||
-    prompts.length ||
-    transportState.backgroundTasks.isMonitoring ||
-    sending
-  )
+  const conversationBusy = transportState.conversationBusy || prompts.length > 0 || sending
   const rewind = useStructuredAgentSessionRewind({
     sessionId,
     target,
@@ -186,6 +186,7 @@ export function useStructuredAgentSession(args: {
     ...args.rewind,
     state,
     support: transportEnabled ? rewindSupport : undefined,
+    contextFloor: contextUsageSupport?.contextFloor ?? threadGoalSupport?.contextFloor,
     // The host also refuses a rewind behind its queued cards, paused ones included.
     blocked: conversationBusy || commandPending.current || queuedMessageIds.length > 0,
     write

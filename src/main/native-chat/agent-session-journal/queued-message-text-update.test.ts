@@ -26,7 +26,6 @@ function insert(body = initial, messageId = 'card') {
     body,
     fingerprint: agentSessionSendBodyFingerprint(sessionId, body),
     hostInstance: 'remote-host',
-    carriedFrom: 'old-folder-session',
     queuedAt: { epoch: 'epoch', sequence: 4 },
     now: 1,
     holdReason: 'send_failed'

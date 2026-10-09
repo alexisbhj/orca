@@ -17,7 +17,7 @@ import Database from '../../sqlite/sync-database'
 import { JOURNAL_DB_SCHEMA_VERSION } from './journal-database-schema'
 import { journalDatabasePath } from './journal-host-database'
 import { JournalQueuedMessages, QUEUED_MESSAGE_REPLAY_WINDOW_MS } from './journal-queued-messages'
-import { QueuedMessageNotConsumableError } from './queued-message-not-consumable'
+import { QueuedMessageNotConsumableError } from './queued-message-consume-error'
 import type { AgentSessionJournal } from './journal-store'
 import type { AgentMessageSource } from '../../../shared/agent-session-message-source'
 import {

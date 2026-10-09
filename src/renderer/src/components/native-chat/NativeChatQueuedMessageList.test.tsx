@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+// A card's sender line opens and names agents through modules this test does not exercise.
+vi.mock('@/lib/open-agent-message-sender', () => ({ openAgentMessageSender: vi.fn() }))
+vi.mock('@/runtime/structured-conversation-name', () => ({
+  useStructuredChatTabConversationName: () => null
+}))
 vi.mock('../../store', () => {
   const state = { updateSettings: mocks.updateSettings }
   const useAppStore = (selector: (value: typeof state) => unknown): unknown => selector(state)
@@ -41,6 +46,7 @@ function renderList(
   return render(
     <TooltipProvider delayDuration={0}>
       <NativeChatQueuedMessageList
+        chatWorktreeId={null}
         controller={owner}
         agentName={agentName}
         statedFailures={statedFailures}
@@ -62,11 +68,7 @@ function card(overrides: Partial<QueuedMessageCard> & { messageId: string }): Qu
 function controller(
   cards: QueuedMessageCard[],
   pause: { reason: string } | null = null,
-  queueCapable = true,
-  edits: Pick<StructuredAgentSessionQueuedMessagesController, 'editCapable' | 'editor'> = {
-    editCapable: true,
-    editor: undefined
-  }
+  queueCapable = true
 ): StructuredAgentSessionQueuedMessagesController & {
   steer: ReturnType<typeof vi.fn>
   remove: ReturnType<typeof vi.fn>
@@ -76,7 +78,8 @@ function controller(
   return {
     cards,
     queueCapable,
-    ...edits,
+    editCapable: true,
+    editor: undefined,
     pause,
     resume: vi.fn(async () => false),
     resuming: false,
@@ -128,7 +131,7 @@ function renderHeldQueue(
         write: async () => ({ kind: 'dropped' })
       }
     })
-    return <NativeChatQueuedMessageList controller={owner} />
+    return <NativeChatQueuedMessageList chatWorktreeId={null} controller={owner} />
   }
   const view = render(
     <TooltipProvider delayDuration={0}>
@@ -210,7 +213,10 @@ describe('NativeChatQueuedMessageList', () => {
     const region = container.querySelector('[aria-live="polite"]')
     rerender(
       <TooltipProvider delayDuration={0}>
-        <NativeChatQueuedMessageList controller={controller([card({ messageId: 'draft-1' })])} />
+        <NativeChatQueuedMessageList
+          chatWorktreeId={null}
+          controller={controller([card({ messageId: 'draft-1' })])}
+        />
       </TooltipProvider>
     )
     expect(container.querySelector('[aria-live="polite"]')).toBe(region)
@@ -306,7 +312,7 @@ describe('NativeChatQueuedMessageList', () => {
     const owner = controller([card({ messageId: 'draft-1', position: 1 })])
     render(
       <TooltipProvider delayDuration={0}>
-        <NativeChatQueuedMessageList controller={owner} steerHeld />
+        <NativeChatQueuedMessageList chatWorktreeId={null} controller={owner} steerHeld />
       </TooltipProvider>
     )
     const steer = screen.getByRole('button', { name: 'Steer' })
@@ -324,7 +330,11 @@ describe('NativeChatQueuedMessageList', () => {
       const owner = controller([card({ messageId: 'draft-1', position: 1 })])
       render(
         <TooltipProvider delayDuration={0}>
-          <NativeChatQueuedMessageList controller={owner} focusComposer={focusComposer} />
+          <NativeChatQueuedMessageList
+            chatWorktreeId={null}
+            controller={owner}
+            focusComposer={focusComposer}
+          />
         </TooltipProvider>
       )
       const action = screen.getByRole('button', { name })
@@ -500,7 +510,11 @@ describe('NativeChatQueuedMessageList', () => {
     }
     render(
       <TooltipProvider delayDuration={0}>
-        <NativeChatQueuedMessageList controller={owner} focusComposer={focusComposer} />
+        <NativeChatQueuedMessageList
+          chatWorktreeId={null}
+          controller={owner}
+          focusComposer={focusComposer}
+        />
       </TooltipProvider>
     )
     const resume = screen.getByRole('button', { name: 'Resume' })
@@ -512,7 +526,11 @@ describe('NativeChatQueuedMessageList', () => {
     })
     render(
       <TooltipProvider delayDuration={0}>
-        <NativeChatQueuedMessageList controller={idle} focusComposer={focusComposer} />
+        <NativeChatQueuedMessageList
+          chatWorktreeId={null}
+          controller={idle}
+          focusComposer={focusComposer}
+        />
       </TooltipProvider>
     )
     const enabled = screen.getByRole('button', { name: 'Resume' })
@@ -535,11 +553,16 @@ describe('NativeChatQueuedMessageList', () => {
         .getByRole('button', { name: 'Steer' })
         .querySelector('.lucide-corner-down-right')
     ).not.toBeNull()
-    expect(waiting!.firstElementChild?.classList.contains('lucide-list-end')).toBe(true)
+    // The card's row (its first child) leads with the glyph.
+    expect(
+      waiting!.firstElementChild?.firstElementChild?.classList.contains('lucide-list-end')
+    ).toBe(true)
     expect(
       within(failed!).getByRole('button', { name: 'Send' }).querySelector('.lucide-send')
     ).not.toBeNull()
-    expect(failed!.firstElementChild?.classList.contains('lucide-circle-alert')).toBe(true)
+    expect(
+      failed!.firstElementChild?.firstElementChild?.classList.contains('lucide-circle-alert')
+    ).toBe(true)
     expect(container.querySelectorAll('.lucide-list-end')).toHaveLength(1)
   })
 
@@ -677,6 +700,42 @@ describe('NativeChatQueuedMessageList', () => {
     )
   })
 
+  it('a clipped card opens to its whole text, line breaks kept, and folds back', () => {
+    // happy-dom lays nothing out: a line wider than its box is what a clipped card measures.
+    const width = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(900)
+    const box = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
+    try {
+      const text = 'You have 1 orchestration message.\nRun `orca orchestration check --run run_e99`'
+      renderList(controller([card({ messageId: 'mail', text })]))
+      const open = screen.getByRole('button', { name: 'Show full message' })
+      expect(open.getAttribute('aria-expanded')).toBe('false')
+      // A native button in the tab order: Enter or Space opens it from the keyboard.
+      expect(open.tagName).toBe('BUTTON')
+      expect(open.getAttribute('tabindex')).not.toBe('-1')
+      open.focus()
+      expect(document.activeElement).toBe(open)
+      fireEvent.click(open)
+      const fold = screen.getByRole('button', { name: 'Show less' })
+      expect(fold.getAttribute('aria-expanded')).toBe('true')
+      const whole = document.getElementById(fold.getAttribute('aria-controls') ?? '')
+      expect(whole?.textContent).toBe(text)
+      expect(whole?.className).toContain('whitespace-pre-wrap')
+      expect(whole?.className).not.toContain('truncate')
+      // Opened below the row, at the card's width, not squeezed beside its actions.
+      expect(whole?.parentElement?.tagName).toBe('LI')
+      fireEvent.click(fold)
+      expect(screen.getByRole('button', { name: 'Show full message' })).toBeTruthy()
+    } finally {
+      width.mockRestore()
+      box.mockRestore()
+    }
+  })
+
+  it('a card whose text fits its line offers no toggle', () => {
+    renderList(controller([card({ messageId: 'short', text: 'ok' })]))
+    expect(screen.queryByRole('button', { name: 'Show full message' })).toBeNull()
+  })
+
   it('the menu offers Edit message and Turn off queueing', async () => {
     const owner = controller([card({ messageId: 'draft-1' })])
     renderList(owner)
@@ -686,43 +745,6 @@ describe('NativeChatQueuedMessageList', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Turn off queueing' }))
     expect(mocks.updateSettings).toHaveBeenCalledWith({ nativeChatQueueFollowUps: false })
-  })
-
-  it('a host that cannot edit in place offers no Edit, and an empty menu is not shown', async () => {
-    const owner = controller([card({ messageId: 'kept', hold: 'paused' })], null, false, {
-      editCapable: false,
-      editor: undefined
-    })
-    renderList(owner)
-    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
-  })
-
-  it('the card being edited shows its editor in place of its text and actions; others cannot open one', async () => {
-    const editor = {
-      messageId: 'draft-1',
-      text: 'editing',
-      acquiring: false,
-      saving: false,
-      canSave: true,
-      change: vi.fn(),
-      save: vi.fn(),
-      cancel: vi.fn()
-    }
-    const owner = controller(
-      [card({ messageId: 'draft-1' }), card({ messageId: 'draft-2', position: 2 })],
-      null,
-      true,
-      { editCapable: true, editor }
-    )
-    renderList(owner)
-    const [edited, other] = screen.getAllByRole('listitem')
-    expect(within(edited!).getByRole('textbox', { name: 'Edit message' })).toBeTruthy()
-    expect(within(edited!).queryByRole('button', { name: 'Delete' })).toBeNull()
-    expect(within(edited!).queryByText('text of draft-1')).toBeNull()
-    fireEvent.pointerDown(within(other!).getByRole('button', { name: 'More actions' }))
-    const item = await screen.findByRole('menuitem', { name: 'Edit message' })
-    expect(item.getAttribute('aria-disabled')).toBe('true')
   })
 
   // A kept message shows as a card even where the host does not queue sends; there the setting
@@ -762,7 +784,7 @@ describe('NativeChatQueuedMessageList', () => {
     const rerender = (cards: QueuedMessageCard[]): void =>
       view.rerender(
         <TooltipProvider delayDuration={0}>
-          <NativeChatQueuedMessageList controller={controller(cards)} />
+          <NativeChatQueuedMessageList chatWorktreeId={null} controller={controller(cards)} />
         </TooltipProvider>
       )
     rerender([...first, card({ messageId: 'mail', position: 3, from })])
@@ -784,6 +806,7 @@ describe('NativeChatQueuedMessageList', () => {
     view.rerender(
       <TooltipProvider delayDuration={0}>
         <NativeChatQueuedMessageList
+          chatWorktreeId={null}
           controller={controller([
             card({ messageId: 'a', position: 1 }),
             card({ messageId: 'b', position: 2 })

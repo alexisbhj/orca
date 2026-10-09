@@ -22,7 +22,7 @@ import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { AgentSessionTurnContext } from './structured-agent-session-turns'
-import { QueuedMessageNotConsumableError } from '../agent-session-journal/queued-message-not-consumable'
+import { QueuedMessageNotConsumableError } from '../agent-session-journal/queued-message-consume-error'
 import type { QueuedMessageRow } from '../agent-session-journal/queued-message-table'
 import type { StructuredAgentSessionHostSession } from './structured-agent-session-host-types'
 import {

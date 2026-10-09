@@ -48,7 +48,7 @@ export function buildOrcadEntry(outfile) {
     entryPoints: [join(root, ORCAD_ENTRY_POINT)],
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node24',
     format: 'cjs',
     outfile,
     external: ORCAD_EXTERNAL_MODULES,
@@ -57,6 +57,21 @@ export function buildOrcadEntry(outfile) {
     minify: true,
     sourcemap: false,
     define: { 'process.env.NODE_ENV': '"production"' },
+    logLevel: 'error'
+  })
+}
+
+export function buildOrcadCli(outfile) {
+  return build({
+    entryPoints: [join(root, 'src/cli/index.ts')],
+    bundle: true,
+    platform: 'node',
+    target: 'node18',
+    format: 'cjs',
+    outfile,
+    metafile: true,
+    minify: true,
+    sourcemap: false,
     logLevel: 'error'
   })
 }

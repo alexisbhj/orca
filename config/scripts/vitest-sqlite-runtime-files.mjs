@@ -3,8 +3,13 @@ import { SQLITE_DATABASE_RUNTIME_INCLUDE } from './vitest-sqlite-database-runtim
 // Real SQLite fixtures keep Node publication and close semantics.
 export const SQLITE_RUNTIME_INCLUDE = [
   ...SQLITE_DATABASE_RUNTIME_INCLUDE,
+  'src/main/acp/acp-structured-omp-recordings.test.ts',
+  'src/main/acp/acp-text-stream-identity.test.ts',
+  'src/main/acp/acp-text-message-ownership.test.ts',
+  'src/main/native-chat/agent-session-wire/structured-agent-session-clear-queued-command.test.ts',
   'src/main/acp/acp-structured-sign-in.test.ts',
   'src/main/acp/acp-structured-auth.test.ts',
+  'src/main/acp/acp-structured-prompt-failure.test.ts',
   'src/main/acp/acp-timeline-turn-failures.test.ts',
   'src/main/acp/acp-structured-session-adapter.test.ts',
   'src/main/pi/rpc-turn-races.test.ts',
@@ -124,6 +129,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/native-chat/agent-session-wire/structured-agent-session-rewind-at-rest.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-rewind-live-send.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-rewind.test.ts',
+  'src/main/native-chat/agent-session-wire/structured-agent-session-clear-rewind.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-send-idempotency.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-send-open-stale-turn.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-send-preparation.test.ts',

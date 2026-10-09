@@ -300,6 +300,28 @@ describe('edit leases and automatic delivery', () => {
     expect(publication().nextQueuedMessageId).toBeNull()
   })
 
+  it('an edit open across /clear keeps its hold and saves into the same card', async () => {
+    const working = await rig.workingSend()
+    const id = await queue('before clear')
+    await hold(id)
+    await rig.stop()
+    await rig.settleAccepted(working, 'answer')
+    const fields = { command: 'clear' as const }
+    expect(
+      await rig.host.conversationCommand(QUEUED_RIG_CALLER, {
+        envelope: rig.envelope(fields, 'agentSession.conversationCommand', hostTestOperationId()),
+        ...fields
+      })
+    ).toMatchObject({ ok: true })
+    expect(held()).toEqual([id])
+    expect(await update(id, fingerprint(id), 'after clear')).toMatchObject({
+      value: { status: 'updated' }
+    })
+    expect(published(id)?.body.blocks).toEqual([{ type: 'text', text: 'after clear' }])
+    expect(publication().queuePause).toBeNull()
+    expect(journal().queuedMessages.get(id)?.state).toBe('waiting')
+  })
+
   it('release never opens a closed conversation; closing drops every lease', async () => {
     await rig.workingSend()
     const id = await queue('base')
