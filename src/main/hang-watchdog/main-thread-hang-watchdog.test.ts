@@ -56,6 +56,19 @@ function fakeWorker() {
 
 describe('installMainThreadHangWatchdog', () => {
   beforeEach(() => {
+    for (const name of [
+      'CI',
+      'GITHUB_ACTIONS',
+      'GITLAB_CI',
+      'CIRCLECI',
+      'TRAVIS',
+      'BUILDKITE',
+      'JENKINS_URL',
+      'TEAMCITY_VERSION',
+      'ORCA_DIAGNOSTICS_DISABLED'
+    ]) {
+      vi.stubEnv(name, '')
+    }
     vi.useFakeTimers()
     workerState.calls = []
     workerState.instance = null

@@ -14,8 +14,19 @@ vi.mock('electron', () => ({ app: {} }))
 let dir: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'previous-hang-'))
-  vi.stubEnv('CI', '')
-  vi.stubEnv('ORCA_DIAGNOSTICS_DISABLED', '')
+  for (const name of [
+    'CI',
+    'GITHUB_ACTIONS',
+    'GITLAB_CI',
+    'CIRCLECI',
+    'TRAVIS',
+    'BUILDKITE',
+    'JENKINS_URL',
+    'TEAMCITY_VERSION',
+    'ORCA_DIAGNOSTICS_DISABLED'
+  ]) {
+    vi.stubEnv(name, '')
+  }
   setActiveSink(null)
 })
 afterEach(() => {
