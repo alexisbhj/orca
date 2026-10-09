@@ -17,6 +17,7 @@ import { getLocalProjectWorktreeGitOptions } from '../project-runtime-git-option
 import { listLocalRepoWorktreesStrict } from '../repo-worktrees'
 import { listRegisteredPtys, registerPty } from './pty-registry'
 import { getVerifiedLocalFolderWorkspaceKeys } from './verified-local-folder-workspaces'
+import { errorMessage } from '../../shared/error-message'
 
 type HydrationStore = Store
 
@@ -60,10 +61,7 @@ export function hydrateLocalPtyRegistryAtBoot(store: HydrationStore): Promise<vo
       }
     })
     .catch((error) => {
-      console.warn(
-        '[memory] Boot-time pty-registry hydration failed:',
-        error instanceof Error ? error.message : String(error)
-      )
+      console.warn('[memory] Boot-time pty-registry hydration failed:', errorMessage(error))
     })
     .finally(() => {
       clearTimeout(deadline)
@@ -141,7 +139,7 @@ async function hydrateLocalPtyRegistry(
         complete = false
         console.warn(
           '[memory] Worktree enumeration failed during pty-registry hydration:',
-          result.reason instanceof Error ? result.reason.message : String(result.reason)
+          errorMessage(result.reason)
         )
         continue
       }
@@ -266,7 +264,7 @@ async function collectSessionInfos(
         throwIfSignalAborted(signal)
         console.warn(
           '[memory] listSessions failed for one adapter during hydration:',
-          error instanceof Error ? error.message : String(error)
+          errorMessage(error)
         )
         return { complete: false, sessions: [] }
       }
