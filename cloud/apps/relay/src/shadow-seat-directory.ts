@@ -307,9 +307,10 @@ export class ShadowSeatDirectory {
             at: change.at
           })
         }
-      } else if (change.kind === 'drain-only') {
+      } else if (change.kind === 'drain-only' || change.kind === 'active') {
+        // `active`: a token refresh lifted an auth-expiry drain-only.
         if (seat) {
-          seat.state = 'drain-only'
+          seat.state = change.kind
           seat.observedAt = now
         }
       }

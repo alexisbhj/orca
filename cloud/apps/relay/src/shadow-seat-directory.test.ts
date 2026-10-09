@@ -227,6 +227,35 @@ describe('startShadowSeatPoller', () => {
     })
   })
 
+  it('returns a drain-only seat to active, and ignores active for an older generation', () => {
+    const directory = new ShadowSeatDirectory()
+    directory.setCells(['cell-a'])
+    directory.apply('cell-a', feed({ seq: 1, full: [seat('host-1', 2)] }), 10)
+    directory.apply(
+      'cell-a',
+      feed({
+        seq: 4,
+        changes: [
+          change(2, 'drain-only', 'host-1', 2),
+          change(3, 'active', 'host-1', 2),
+          change(4, 'active', 'host-9', 1)
+        ]
+      }),
+      11
+    )
+    expect(directory.seatsOf('user-a', 'host-1')).toMatchObject([{ state: 'active' }])
+    expect(directory.seatsOf('user-a', 'host-9')).toEqual([])
+    directory.apply(
+      'cell-a',
+      feed({
+        seq: 6,
+        changes: [change(5, 'drain-only', 'host-1', 2), change(6, 'active', 'host-1', 1)]
+      }),
+      12
+    )
+    expect(directory.seatsOf('user-a', 'host-1')).toMatchObject([{ state: 'drain-only' }])
+  })
+
   it('ignores a leave for an older generation than the seat', () => {
     const directory = new ShadowSeatDirectory()
     directory.setCells(['cell-a'])
