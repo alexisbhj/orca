@@ -311,10 +311,17 @@ export function createRemoteRuntimePtyTransport(
   }
 
   const recoveryInputHold = createRemoteRuntimeRecoveryInputHold()
-  const inputJournal = createRemoteRuntimeInputJournal({ currentStream: sequencedInputTarget })
+  const inputJournal = createRemoteRuntimeInputJournal({
+    currentStream: sequencedInputTarget,
+    // Why: a refusal that never clears would drop every keystroke behind a connected-looking pane.
+    onRefusalsPersist: () => notifyWriteUnavailable()
+  })
   const recovery = new RemoteRuntimePtyRecoveryState(() => {
     if (recovery.currentPhase === 'disposed') {
       clearPublishedHandleWait()
+    }
+    if (recovery.currentPhase === 'disconnected' || recovery.currentPhase === 'disposed') {
+      // Why: once auto-recovery gives up, held keys would land at an arbitrary later reconnect.
       discardPendingInput()
     }
     if (recovery.currentPhase === 'disconnected') {
@@ -1471,16 +1478,13 @@ export function createRemoteRuntimePtyTransport(
   }
 
   // Why: a pane binding or auto-recovering a known handle holds typing for it instead of dropping it (#25784).
-  // Why 'disconnected' too: the same handle still reattaches on its own after the window, and the hold only releases to that endpoint.
   function shouldHoldInput(): boolean {
     return (
       !destroyed &&
       !terminalEnded &&
       handle !== null &&
-      (recovery.isActive ||
-        recovery.currentPhase === 'disconnected' ||
-        (connecting && !connected) ||
-        recoveryInputHold.isHolding())
+      recovery.currentPhase !== 'disconnected' &&
+      (recovery.isActive || (connecting && !connected) || recoveryInputHold.isHolding())
     )
   }
 

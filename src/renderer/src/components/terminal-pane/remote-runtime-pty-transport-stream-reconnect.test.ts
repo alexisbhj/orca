@@ -529,9 +529,8 @@ describe('createRemoteRuntimePtyTransport', () => {
       expect(transport.getPtyId()).toBe('remote:env-1@@terminal-1')
       expect(transport.isConnected()).toBe(false)
       const inputFramesAtCutoff = inputFrameTexts().length
-      // Held for this same terminal, never written to the stale socket.
-      expect(transport.sendInput('typed while disconnected', 'driving')).toBe(true)
-      expect(inputFrameTexts()).toHaveLength(inputFramesAtCutoff)
+      // Typed after auto-recovery gave up: dropped, never run at a later reconnect.
+      expect(transport.sendInput('must not reach a stale socket', 'driving')).toBe(false)
       expect(onError).not.toHaveBeenCalled()
       await vi.advanceTimersByTimeAsync(5 * 60_000)
       expect(runtimeSubscribe).toHaveBeenCalledTimes(callsAtCutoff)
@@ -545,8 +544,8 @@ describe('createRemoteRuntimePtyTransport', () => {
       expect(manualStream.terminal).toBe('terminal-1')
       emitSnapshot(manualStream.streamId, 'after manual reconnect')
       await vi.advanceTimersByTimeAsync(50)
+      expect(inputFrameTexts().slice(inputFramesAtCutoff)).toEqual([])
 
-      expect(inputFrameTexts().slice(inputFramesAtCutoff)).toEqual(['typed while disconnected'])
       expect(transport.isConnected()).toBe(true)
       expect(transport.getRecoveryState?.().phase).toBe('connected')
       expect(transport.getPtyId()).toBe('remote:env-1@@terminal-1')

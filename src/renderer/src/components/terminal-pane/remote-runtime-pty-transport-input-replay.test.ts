@@ -12,8 +12,13 @@ import {
 import { REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS } from './remote-runtime-pty-recovery-state'
 import { runTerminalPasteOperationWithTimeout } from './terminal-paste-operation-timeout'
 import { writeTerminalPastePtyInput } from './terminal-pty-paste-writer'
+import { executeTerminalPastePlan } from './terminal-paste-executor'
+import type { TerminalPastePlan } from './terminal-paste-model'
 import { TERMINAL_REMOTE_PASTE_OPERATION_TIMEOUT_MS } from './terminal-paste-limits'
-import { REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS } from './remote-runtime-input-journal'
+import {
+  REMOTE_RUNTIME_INPUT_REFUSAL_ROUNDS_BEFORE_ESCALATION,
+  REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS
+} from './remote-runtime-input-journal'
 
 let subscriptionCallbacks: MultiplexSubscriptionCallbacks = null
 let resolvedPaneHandle = 'terminal-1'
@@ -211,7 +216,10 @@ describe('remote pane input across a silent outage', () => {
           .join('')
       ).toBe('echo canceled\x03echo next\r')
     )
-    emitInputAck(latestSubscribePayload().streamId, sentInputs(2).at(-1)?.seq ?? 0)
+    // A live host acks every replayed frame on its own.
+    for (const replayed of sentInputs(2)) {
+      emitInputAck(latestSubscribePayload().streamId, replayed.seq)
+    }
     await expect(interrupted).resolves.toBe(true)
     transport.destroy?.()
   })
@@ -272,7 +280,7 @@ describe('remote pane input across a silent outage', () => {
     transport.destroy?.()
   })
 
-  it('keeps held input past the auto-recovery window and delivers it when the same terminal returns (P1-3)', async () => {
+  it('drops input held or typed past the auto-recovery window instead of running it at a later reconnect', async () => {
     vi.useFakeTimers()
     try {
       const { transport } = await connectPane({ inputAck: 1 })
@@ -291,59 +299,21 @@ describe('remote pane input across a silent outage', () => {
       )
 
       subscriptionCallbacks?.onClose?.()
-      expect(transport.sendInput('HELD-1\r', 'driving')).toBe(true)
+      transport.sendInput('HELD-1\r', 'driving')
       await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
       expect(transport.getRecoveryState?.().phase).toBe('disconnected')
-      // Typed under the "disconnected" banner: still held for the same terminal.
-      expect(transport.sendInput('LATE-2\r', 'driving')).toBe(true)
+      // Typed into the dead pane under the "disconnected" banner.
+      transport.sendInput('git push -f\r', 'driving')
+      const paste = pasteChunk(transport, '\x1b[200~echo one\recho two\r')
+      await vi.advanceTimersByTimeAsync(TERMINAL_REMOTE_PASTE_OPERATION_TIMEOUT_MS + 10_000)
+      await expect(paste).resolves.toEqual({ timedOut: false, value: false })
 
       hostReachable = true
       expect(transport.retryRecovery?.()).toBe(true)
       await vi.waitFor(() => expect(subscribeFrameCount()).toBe(2))
       attachStream(latestSubscribePayload().streamId, { inputAck: 1 })
       await vi.advanceTimersByTimeAsync(50)
-
-      expect(
-        sentInputs(2)
-          .map((input) => input.text)
-          .join('')
-      ).toBe('HELD-1\rLATE-2\r')
-      transport.destroy?.()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-  it('never delivers a paste chunk held past its caller timeout under the disconnected banner', async () => {
-    vi.useFakeTimers()
-    try {
-      const { transport } = await connectPane({ inputAck: 1 })
-      let hostReachable = false
-      runtimeSubscribe.mockImplementation(
-        async (_args: unknown, callbacks: NonNullable<MultiplexSubscriptionCallbacks>) => {
-          if (!hostReachable) {
-            throw Object.assign(new Error('Could not connect to the remote Orca runtime.'), {
-              code: 'remote_runtime_unavailable'
-            })
-          }
-          subscriptionCallbacks = callbacks
-          queueMicrotask(emitMultiplexReady)
-          return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
-        }
-      )
-      subscriptionCallbacks?.onClose?.()
-      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
-      expect(transport.getRecoveryState?.().phase).toBe('disconnected')
-
-      const paste = pasteChunk(transport, '\x1b[200~echo one\recho two\r')
-      await vi.advanceTimersByTimeAsync(TERMINAL_REMOTE_PASTE_OPERATION_TIMEOUT_MS + 10_000)
-      await expect(paste).resolves.toEqual({ timedOut: true })
-      // Typed after the paste error: still held for the same terminal.
       transport.sendInput('ls\r', 'driving')
-
-      hostReachable = true
-      expect(transport.retryRecovery?.()).toBe(true)
-      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(2))
-      attachStream(latestSubscribePayload().streamId, { inputAck: 1 })
       await vi.advanceTimersByTimeAsync(50)
 
       expect(
@@ -432,26 +402,92 @@ describe('remote pane input across a silent outage', () => {
     transport.destroy?.()
   })
 
-  it('never remounts the pane over refusals, and keeps resending with capped backoff', async () => {
+  it('keeps resending through transient refusals, then falls back to a remount once they persist', async () => {
     vi.useFakeTimers()
     try {
       const onWriteUnavailable = vi.fn()
       const { transport, streamId } = await connectPane({ inputAck: 1 }, { onWriteUnavailable })
       transport.sendInput('a', 'driving')
       await vi.advanceTimersByTimeAsync(20)
-      const refusals = REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS.length + 3
-      for (let attempt = 0; attempt < refusals; attempt += 1) {
+      for (
+        let round = 1;
+        round < REMOTE_RUNTIME_INPUT_REFUSAL_ROUNDS_BEFORE_ESCALATION;
+        round += 1
+      ) {
         emitInputAck(streamId, 0, RESEND_REQUEST)
         await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS.at(-1) ?? 0)
       }
-      expect(sentInputs().filter((input) => input.text === 'a').length).toBeGreaterThan(refusals)
+      expect(sentInputs().filter((input) => input.text === 'a').length).toBeGreaterThanOrEqual(
+        REMOTE_RUNTIME_INPUT_REFUSAL_ROUNDS_BEFORE_ESCALATION
+      )
       expect(onWriteUnavailable).not.toHaveBeenCalled()
-      expect(subscribeFrameCount()).toBe(1)
-      emitInputAck(streamId, 1)
+      // The refusal never clears (a stale handle or an unwritable PTY on a live stream).
+      emitInputAck(streamId, 0, RESEND_REQUEST)
+      expect(onWriteUnavailable).toHaveBeenCalledTimes(1)
+      emitInputAck(streamId, 0, RESEND_REQUEST)
+      expect(onWriteUnavailable).toHaveBeenCalledTimes(1)
       transport.destroy?.()
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('reports an accepted write as not applied when a later cumulative ack covers its lost ack', async () => {
+    const { transport } = await connectPane({ inputAck: 1 })
+    const opener = transport.sendInputAccepted?.('\x1b[200~', 'driving')
+    await vi.waitFor(() => expect(sentInputs()).toHaveLength(1))
+    // Its delivery-unknown ack died with the connection; the replacement acks a later write.
+    subscriptionCallbacks?.onClose?.()
+    await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalledTimes(2))
+    await reconnect({ inputAck: 1 }, 2)
+    transport.sendInput('x', 'driving')
+    await vi.waitFor(() => expect(sentInputs(2)).toHaveLength(2))
+    emitInputAck(latestSubscribePayload().streamId, sentInputs(2)[1].seq)
+    await expect(opener).resolves.toBe(false)
+    transport.destroy?.()
+  })
+
+  it('cancels a bracketed paste whose opener ack was lost, without sending the multiline body', async () => {
+    const { transport } = await connectPane({ inputAck: 1 })
+    const body = 'echo first\necho second\n'
+    const plan: TerminalPastePlan = {
+      target: {
+        kind: 'terminal',
+        paneId: 1,
+        leafId: 'pane:1',
+        ptyId: 'remote:terminal-1',
+        runtime: { platform: 'linux', runtimeKey: 'remote', kind: 'remote-runtime' }
+      },
+      payload: {
+        plainText: body,
+        source: 'keyboard',
+        byteLength: body.length,
+        lineCount: 2,
+        hasRichText: false,
+        hasControlSequences: false,
+        lineEndingByteLength: 2
+      },
+      mode: 'chunked',
+      newlinePolicy: 'preserve',
+      runtimeKey: 'remote',
+      bracketed: true,
+      redactedDiagnostic: ''
+    }
+    const pasted = executeTerminalPastePlan(plan, {
+      pasteText: () => {},
+      writePty: (data, signal) => writeTerminalPastePtyInput(transport, data, 'driving', signal)
+    })
+    await vi.waitFor(() => expect(sentText()).toBe('\x1b[200~'))
+    // The opener's delivery-unknown ack dies with the connection; the host answers the resend as unknown.
+    subscriptionCallbacks?.onClose?.()
+    await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalledTimes(2))
+    await reconnect({ inputAck: 1 }, 2)
+    await vi.waitFor(() => expect(sentInputs(2)).toHaveLength(1))
+    emitInputAck(latestSubscribePayload().streamId, sentInputs(2)[0].seq, Uint8Array.of(1))
+
+    await expect(pasted).resolves.toMatchObject({ status: 'cancelled' })
+    expect(sentText()).not.toContain('echo first')
+    transport.destroy?.()
   })
 
   it('reports an accepted write the host failed with unknown delivery as not sent, and never replays it', async () => {
@@ -489,8 +525,9 @@ describe('remote pane input across a silent outage', () => {
             .join('')
         ).toBe(`echo previous\r${draft}`)
       )
-      const replayed = sentInputs(2)
-      emitInputAck(latestSubscribePayload().streamId, replayed.at(-1)?.seq ?? 0)
+      for (const replayed of sentInputs(2)) {
+        emitInputAck(latestSubscribePayload().streamId, replayed.seq)
+      }
       await expect(write).resolves.toBe(true)
       transport.destroy?.()
     }

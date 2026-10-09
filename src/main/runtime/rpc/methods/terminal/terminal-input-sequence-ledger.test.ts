@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   TERMINAL_INPUT_SEQUENCE_LEDGER_MAX_SESSIONS,
+  TERMINAL_INPUT_SEQUENCE_LEDGER_MAX_UNKNOWN_SEQS,
   TerminalInputSequenceLedger,
   type TerminalInputWriteOutcome
 } from './terminal-input-sequence-ledger'
@@ -58,7 +59,11 @@ describe('TerminalInputSequenceLedger', () => {
         throw new Error('write failed')
       })
     ).resolves.toEqual({ kind: 'delivery-unknown', appliedSeq: 1 })
-    await expect(ledger.admit('pty-1', 'session', 1, write('dup'))).resolves.toEqual(applied(1))
+    // Its ack may have died with the connection: a duplicate must still read as unknown, never applied.
+    await expect(ledger.admit('pty-1', 'session', 1, write('dup'))).resolves.toEqual({
+      kind: 'delivery-unknown',
+      appliedSeq: 1
+    })
     await expect(ledger.admit('pty-1', 'session', 2, write('b'))).resolves.toEqual(applied(2))
     expect(writes).toEqual(['b'])
   })
@@ -160,6 +165,33 @@ describe('TerminalInputSequenceLedger', () => {
     first.release()
     await expect(duplicate).resolves.toEqual(applied(1))
     expect(writes).toEqual(['a'])
+  })
+
+  it('answers a duplicate for its own sequence, and as unknown once that outcome is forgotten', async () => {
+    const ledger = new TerminalInputSequenceLedger()
+    const { write } = recordingWrites()
+    await ledger.admit('pty-1', 'session', 1, write('a'))
+    await ledger.admit('pty-1', 'session', 2, write('b', 'delivery-unknown'))
+    const last = TERMINAL_INPUT_SEQUENCE_LEDGER_MAX_UNKNOWN_SEQS + 3
+    for (let seq = 3; seq <= last; seq += 1) {
+      await ledger.admit(
+        'pty-1',
+        'session',
+        seq,
+        write('x', seq === last ? 'applied' : 'delivery-unknown')
+      )
+    }
+    await expect(ledger.admit('pty-1', 'session', 1, write('dup'))).resolves.toEqual({
+      kind: 'delivery-unknown',
+      appliedSeq: 1
+    })
+    await expect(ledger.admit('pty-1', 'session', last, write('dup'))).resolves.toEqual(
+      applied(last)
+    )
+    await expect(ledger.admit('pty-1', 'session', last - 1, write('dup'))).resolves.toEqual({
+      kind: 'delivery-unknown',
+      appliedSeq: last - 1
+    })
   })
 
   it('names each ledger so a client can tell a restarted runtime from the one it sent to', () => {

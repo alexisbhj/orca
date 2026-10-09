@@ -44,6 +44,7 @@ type Stats = {
   restarts: number
   disconnects: number
   zombieFlushes: number
+  gaveUp: number
   faults: Record<WriteFault, number>
   ptyBytes: number
 }
@@ -70,6 +71,48 @@ function track(op: Op, accepted: Promise<boolean> | undefined): void {
   void accepted?.then((value) => {
     op.result = value
   })
+}
+
+type ModelLink = ReturnType<typeof createModelLink>
+
+function attachModelPane(
+  link: ModelLink,
+  environmentId: string,
+  callbacks: Parameters<
+    ReturnType<typeof createRemoteRuntimePtyTransport>['attach']
+  >[0]['callbacks']
+): ReturnType<typeof createRemoteRuntimePtyTransport> {
+  const call = vi.fn(async (request: { method: string }) =>
+    request.method === 'terminal.resolvePane'
+      ? {
+          ok: true,
+          result: {
+            terminal: {
+              handle: MODEL_TERMINAL_HANDLE,
+              tabId: 'tab-1',
+              leafId: 'pane:1',
+              worktreeId: 'wt-1'
+            }
+          }
+        }
+      : { ok: true, result: { terminal: { handle: MODEL_TERMINAL_HANDLE } } }
+  )
+  vi.stubGlobal('window', {
+    api: { runtimeEnvironments: { call, subscribe: link.subscribe } },
+    location: { search: '' }
+  })
+  const transport = createRemoteRuntimePtyTransport(environmentId, {
+    worktreeId: 'wt-1',
+    tabId: 'tab-1',
+    leafId: 'pane:1'
+  })
+  transport.attach({
+    existingPtyId: `remote:${MODEL_TERMINAL_HANDLE}`,
+    cols: 80,
+    rows: 24,
+    callbacks
+  })
+  return transport
 }
 
 async function runSchedule(seed: number, stats: Stats): Promise<void> {
@@ -162,35 +205,22 @@ async function runSchedule(seed: number, stats: Stats): Promise<void> {
   link.onClientInput = (text) => markersIn(text).forEach((id) => sentByClient.add(id))
   link.onHostInput = (text) => markersIn(text).forEach((id) => reachedHost.add(id))
 
-  const call = vi.fn(async (request: { method: string }) =>
-    request.method === 'terminal.resolvePane'
-      ? {
-          ok: true,
-          result: {
-            terminal: {
-              handle: MODEL_TERMINAL_HANDLE,
-              tabId: 'tab-1',
-              leafId: 'pane:1',
-              worktreeId: 'wt-1'
-            }
+  let disconnected = false
+  const transport = attachModelPane(link, `env-model-${seed}`, {
+    onRecoveryStateChange: (state) => {
+      disconnected = state.phase === 'disconnected'
+      if (disconnected) {
+        stats.gaveUp += 1
+        // Why: once auto-recovery gives up, unapplied input is dropped; only bytes a lingering
+        // connection already carries may still arrive.
+        const applied = ptyWrites.join('')
+        for (const op of ops) {
+          if (op.status === 'required' && !applied.includes(op.text)) {
+            op.status = 'optional'
           }
         }
-      : { ok: true, result: { terminal: { handle: MODEL_TERMINAL_HANDLE } } }
-  )
-  vi.stubGlobal('window', {
-    api: { runtimeEnvironments: { call, subscribe: link.subscribe } },
-    location: { search: '' }
-  })
-  const transport = createRemoteRuntimePtyTransport(`env-model-${seed}`, {
-    worktreeId: 'wt-1',
-    tabId: 'tab-1',
-    leafId: 'pane:1'
-  })
-  transport.attach({
-    existingPtyId: `remote:${MODEL_TERMINAL_HANDLE}`,
-    cols: 80,
-    rows: 24,
-    callbacks: {}
+      }
+    }
   })
   await vi.advanceTimersByTimeAsync(50)
   expect(transport.isConnected()).toBe(true)
@@ -199,7 +229,8 @@ async function runSchedule(seed: number, stats: Stats): Promise<void> {
     const op: Op = {
       id: ops.length,
       text: `{${ops.length}}${body}`,
-      status: 'required',
+      // Why forbidden: input typed into a pane that gave up must never run at a later reconnect.
+      status: disconnected ? 'forbidden' : 'required',
       accepted: null,
       result: 'pending',
       controller: null
@@ -338,11 +369,11 @@ async function runSchedule(seed: number, stats: Stats): Promise<void> {
   expect(sentByClient.size).toBe(sentBefore)
   expect(ptyWrites.length).toBe(writesBefore)
 
-  checkPty(ptyWrites.join(''), ops, seed)
+  const arrived = checkPty(ptyWrites.join(''), ops, seed)
   for (const op of ops) {
-    // A write the pane reported applied really reached the PTY.
+    // A write the pane reported applied really reached the PTY, whole.
     if (op.result === true) {
-      expect(op.status, `seed ${seed} op ${op.id} reported applied`).not.toBe('forbidden')
+      expect(arrived.has(op.id), `seed ${seed} op ${op.id} reported applied`).toBe(true)
     }
   }
   stats.ptyBytes += ptyWrites.join('').length
@@ -354,12 +385,14 @@ async function runSchedule(seed: number, stats: Stats): Promise<void> {
 }
 
 /** Walks the PTY bytes against the ops in the order they were typed. */
-function checkPty(pty: string, ops: readonly Op[], seed: number): void {
+function checkPty(pty: string, ops: readonly Op[], seed: number): Set<number> {
+  const arrived = new Set<number>()
   let position = 0
   for (const op of ops) {
     const where = `seed ${seed} op ${op.id} (${op.status}) at ${position}: ${JSON.stringify(pty.slice(position, position + 40))}`
     if (pty.startsWith(op.text, position)) {
       expect(op.status, where).not.toBe('forbidden')
+      arrived.add(op.id)
       position += op.text.length
       continue
     }
@@ -383,6 +416,7 @@ function checkPty(pty: string, ops: readonly Op[], seed: number): void {
       `unexpected PTY bytes: seed ${seed} at ${position}: ${JSON.stringify(pty.slice(position, position + 60))}`
     )
   }
+  return arrived
 }
 
 describe('remote terminal input delivery model', () => {
@@ -395,6 +429,7 @@ describe('remote terminal input delivery model', () => {
     restarts: 0,
     disconnects: 0,
     zombieFlushes: 0,
+    gaveUp: 0,
     faults: {
       accept: 0,
       refuse: 0,
@@ -423,12 +458,44 @@ describe('remote terminal input delivery model', () => {
     }, 120_000)
   }
 
+  it('falls back to a remount when the host keeps refusing input after every fault has cleared', async () => {
+    const ptyWrites: string[] = []
+    let refusing = false
+    const link = createModelLink(async (text) => {
+      if (refusing) {
+        // A stale handle or an unwritable PTY behind a stream that stays open.
+        return {
+          accepted: false,
+          writeSettlement: { outcome: 'refused', reason: 'terminal_not_writable' }
+        }
+      }
+      ptyWrites.push(text)
+      return { accepted: true, writeSettlement: { outcome: 'accepted' } }
+    })
+    const onWriteUnavailable = vi.fn()
+    const transport = attachModelPane(link, 'env-model-refusing', { onWriteUnavailable })
+    await vi.advanceTimersByTimeAsync(50)
+    transport.sendInput('ls\r', 'driving')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(ptyWrites).toEqual(['ls\r'])
+    refusing = true
+    transport.sendInput('pwd\r', 'driving')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(onWriteUnavailable).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(onWriteUnavailable).toHaveBeenCalledTimes(1)
+    expect(ptyWrites).toEqual(['ls\r'])
+    transport.destroy?.()
+    link.dispose()
+  })
+
   it('exercised every fault the model schedules', () => {
     process.stdout.write(`remote input model: ${JSON.stringify(stats)}\n`)
     expect(stats.schedules).toBe(SCHEDULES_PER_BLOCK * BLOCKS)
     expect(stats.cancelledForbidden).toBeGreaterThan(0)
     expect(stats.restarts).toBeGreaterThan(0)
     expect(stats.zombieFlushes).toBeGreaterThan(0)
+    expect(stats.gaveUp).toBeGreaterThan(0)
     for (const count of Object.values(stats.faults)) {
       expect(count).toBeGreaterThan(0)
     }

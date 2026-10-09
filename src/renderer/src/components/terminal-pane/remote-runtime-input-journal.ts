@@ -18,6 +18,10 @@ export const REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS: readonly number[] = [
 // Why: a lost frame or ack must not strand input on a healthy link; resending is safe because the
 // host dedupes by sequence.
 export const REMOTE_RUNTIME_INPUT_ACK_STALL_MS = 5000
+// Why: some refusals never clear while the stream stays open (a stale handle, an unwritable PTY);
+// past the whole backoff ladder (~16 s) the pane must fall back to its remount path.
+export const REMOTE_RUNTIME_INPUT_REFUSAL_ROUNDS_BEFORE_ESCALATION =
+  REMOTE_RUNTIME_INPUT_RESEND_BACKOFF_MS.length + 1
 
 export type RemoteRuntimeInputStream = Pick<
   RemoteRuntimeMultiplexedTerminal,
@@ -58,6 +62,8 @@ export function createRemoteRuntimeInputJournal(deps: {
     stream: RemoteRuntimeInputStream
     endpoint: RemoteRuntimeInputEndpoint
   } | null
+  /** Called once per stall when the host keeps refusing input with no progress. */
+  onRefusalsPersist?: () => void
 }): RemoteRuntimeInputJournal {
   const sessionId = createBrowserUuid()
   let bound: { endpoint: RemoteRuntimeInputEndpoint; ledgerId: string } | null = null
@@ -70,6 +76,7 @@ export function createRemoteRuntimeInputJournal(deps: {
   let timer: ReturnType<typeof setTimeout> | null = null
   let resendRequested = false
   let attempts = 0
+  let refusalRounds = 0
   const waiters = new Map<number, (applied: boolean) => void>()
 
   const settle = (seq: number, applied: boolean): void => {
@@ -210,16 +217,23 @@ export function createRemoteRuntimeInputJournal(deps: {
       if (appliedSeq > ackedSeq) {
         ackedSeq = appliedSeq
         attempts = 0
+        refusalRounds = 0
         let settled = 0
         for (; settled < entries.length && entries[settled].seq <= appliedSeq; settled += 1) {
           const entry = entries[settled]
           codeUnits -= entry.text.length
-          settle(entry.seq, !(kind === 'delivery-unknown' && entry.seq === appliedSeq))
+          // Why only its own ack proves it applied: a cumulative ack can cover a write whose
+          // delivery-unknown ack died with its connection (a paste opener that never arrived).
+          settle(entry.seq, kind === 'applied' && entry.seq === appliedSeq)
         }
         entries = entries.slice(settled)
         clearTimer()
       }
       if (kind === 'resend' && !resendRequested) {
+        refusalRounds += 1
+        if (refusalRounds === REMOTE_RUNTIME_INPUT_REFUSAL_ROUNDS_BEFORE_ESCALATION) {
+          deps.onRefusalsPersist?.()
+        }
         schedule(backoff(), true)
       } else {
         armStall()
@@ -243,6 +257,7 @@ export function createRemoteRuntimeInputJournal(deps: {
       settle(seq, false)
     },
     discard() {
+      refusalRounds = 0
       dropEntries()
       clearTimer()
       resumedStream = null

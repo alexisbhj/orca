@@ -20,7 +20,16 @@ export type TerminalInputAdmission = {
   appliedSeq: number
 }
 
-type Session = { appliedSeq: number; tail: Promise<void> }
+// Why bounded: a duplicate older than every retained unknown outcome is answered as unknown too.
+export const TERMINAL_INPUT_SEQUENCE_LEDGER_MAX_UNKNOWN_SEQS = 256
+
+type Session = {
+  appliedSeq: number
+  tail: Promise<void>
+  // Why kept past the ack: that ack can die with its connection, and a duplicate must not read as applied.
+  unknownSeqs: Set<number>
+  unknownForgottenThrough: number
+}
 
 /**
  * Go-back-N receiver for client input sequences, per (PTY, client input session). It outlives any
@@ -42,13 +51,20 @@ export class TerminalInputSequenceLedger {
   ): Promise<TerminalInputAdmission> {
     const key = `${ptyId}\u0000${inputSessionId}`
     // Why a new session starts at any sequence: the client numbers input per pane, not per PTY.
-    const session = this.sessions.get(key) ?? { appliedSeq: seq - 1, tail: Promise.resolve() }
+    const session = this.sessions.get(key) ?? {
+      appliedSeq: seq - 1,
+      tail: Promise.resolve(),
+      unknownSeqs: new Set<number>(),
+      unknownForgottenThrough: seq - 1
+    }
     this.sessions.delete(key)
     this.sessions.set(key, session)
     this.evictOverflow()
     const run = session.tail.then(async (): Promise<TerminalInputAdmission> => {
       if (seq <= session.appliedSeq) {
-        return { kind: 'applied', appliedSeq: session.appliedSeq }
+        // Why this seq, not the latest: the client settles each write from its own ack only.
+        const unknown = session.unknownSeqs.has(seq) || seq <= session.unknownForgottenThrough
+        return { kind: unknown ? 'delivery-unknown' : 'applied', appliedSeq: seq }
       }
       if (seq > session.appliedSeq + 1) {
         return { kind: 'resend', appliedSeq: session.appliedSeq }
@@ -58,6 +74,9 @@ export class TerminalInputSequenceLedger {
         return { kind: 'resend', appliedSeq: session.appliedSeq }
       }
       session.appliedSeq = seq
+      if (outcome === 'delivery-unknown') {
+        rememberUnknown(session, seq)
+      }
       return { kind: outcome, appliedSeq: seq }
     })
     session.tail = run.then(() => undefined)
@@ -71,6 +90,17 @@ export class TerminalInputSequenceLedger {
         return
       }
       this.sessions.delete(oldest.value)
+    }
+  }
+}
+
+function rememberUnknown(session: Session, seq: number): void {
+  session.unknownSeqs.add(seq)
+  if (session.unknownSeqs.size > TERMINAL_INPUT_SEQUENCE_LEDGER_MAX_UNKNOWN_SEQS) {
+    const oldest = session.unknownSeqs.values().next()
+    if (!oldest.done) {
+      session.unknownSeqs.delete(oldest.value)
+      session.unknownForgottenThrough = oldest.value
     }
   }
 }
