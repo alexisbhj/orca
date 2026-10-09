@@ -25,7 +25,7 @@ export type AgentModelCatalogServiceDeps = {
    *  the SAME resolver the create path fills `record.accountHome` with, so a
    *  record-less read can never answer from another account's listing. */
   resolveAccountHome: (agent: string) => Promise<AgentSessionAccountHome>
-  /** The registered provider policy for remembered session choices. */
+  /** Which agents start on the listed default when their selected model is gone. */
   agents?: Pick<StructuredAgentRegistry, 'definition'>
   /** Session-less listers, one per agent that has one on this host. */
   probes?: Readonly<Partial<Record<string, AgentModelCatalogProbe>>>
@@ -46,6 +46,14 @@ export type AgentModelCatalogService = {
     /** With no entry yet, answer from the listing this read starts or joins instead of `unknown`;
      *  with a held reason past its TTL, from the probe re-checking it. */
     waitForListing?: boolean
+    /** The model a decision is about; absent, the session record's saved model. */
+    requiredModel?: string
+    /** Wait for the one re-listing an aged list lacking `requiredModel` takes, instead of answering
+     *  it in progress: what a start and an at-rest read decide with. */
+    settleRequiredModel?: boolean
+    /** A start's read: it may re-list for its selection, but starts no other listing, since the
+     *  chat's own child lists. */
+    forStart?: boolean
   }) => Promise<AgentSessionModelCatalogResult>
   /** A chat under this record's account proved its start: a held reason is re-checked sooner. */
   providerStarted: (
@@ -137,46 +145,43 @@ export function createAgentModelCatalogService(
       let entry = deps.store.get(fingerprint)
       const probe = deps.probes?.[params.agent]
       const home = accountHomePath
-      const projectedCatalog = async (
-        listed: AgentModelCatalogEntry
-      ): Promise<AgentSessionModelCatalogResult> => {
-        const catalog = resultFromEntry(
-          listed,
-          await workspaceKeepsListedDefault(
-            deps,
-            params.agent,
-            params.workspacePath,
-            accountHomePath
-          )
-        )
-        const projectOptions = deps.agents?.definition(params.agent)?.restingOptions.projectOptions
-        if (!projectOptions) {
-          return catalog
-        }
-        // A host listing is remembered evidence, even when another child just published it.
-        const projected = projectOptions(catalog, { model: scoped?.options?.model ?? '' })
-        return {
-          origin: listed.origin,
-          models: projected.models,
-          ...(projected.fastModeSupport ? { fastModeSupport: projected.fastModeSupport } : {}),
-          fetchedAt: listed.fetchedAt
-        }
-      }
+      const required = params.requiredModel ?? scoped?.options?.model
+      const replacesUnlisted =
+        deps.agents?.definition(params.agent)?.restingOptions.replacesUnlistedModel === true
       // Every answer carries the reason the probe last found, read when the answer is made.
       const answer = async (
         listed: AgentModelCatalogEntry | null,
         extra: { listingInProgress?: true } = {}
       ): Promise<AgentSessionModelCatalogResult> => {
         const unavailable = deps.store.failure(fingerprint)?.unavailable
+        const verified =
+          replacesUnlisted &&
+          listed !== null &&
+          !extra.listingInProgress &&
+          !unavailable &&
+          !deps.store.hasActiveFailure(fingerprint) &&
+          !deps.store.isListing(fingerprint) &&
+          deps.store.isCurrent(listed)
+        // Such an agent names no default for a chat with nothing selected: the CLI picks its own.
+        const namesDefault =
+          (!replacesUnlisted || Boolean(required)) &&
+          (await workspaceKeepsListedDefault(
+            deps,
+            params.agent,
+            params.workspacePath,
+            accountHomePath
+          ))
         return {
-          ...(listed ? await projectedCatalog(listed) : { origin: 'unknown' }),
+          ...(listed ? resultFromEntry(listed, namesDefault) : { origin: 'unknown' }),
           ...extra,
-          ...(unavailable ? { unavailable } : {})
+          ...(unavailable ? { unavailable } : {}),
+          ...(verified ? { verified: true } : {})
         }
       }
       // Past its TTL, only the probe re-derives a held reason. The reason is served meanwhile;
       // only a read that asks waits for the probe's answer.
       if (
+        !params.forStart &&
         probe &&
         home &&
         deps.store.failure(fingerprint)?.unavailable &&
@@ -189,7 +194,29 @@ export function createAgentModelCatalogService(
         await probing
         return answer(deps.store.get(fingerprint))
       }
+      // An aged list may not call the selected model gone until it is re-listed, once per read; a
+      // held failure or a list that already names it settles nothing more.
+      if (
+        replacesUnlisted &&
+        required &&
+        entry &&
+        probe &&
+        home &&
+        !entry.models.some((model) => model.id === required) &&
+        !deps.store.isCurrent(entry) &&
+        !deps.store.hasActiveFailure(fingerprint)
+      ) {
+        const relisting = deps.store.refresh(fingerprint, params.agent, probe, () => probe(home))
+        if (!params.waitForListing && !params.settleRequiredModel) {
+          return answer(entry, { listingInProgress: true })
+        }
+        await relisting
+        return answer(deps.store.get(fingerprint) ?? entry)
+      }
       // Without an entry, answer from any running listing instead of starting a second one.
+      if (params.forStart) {
+        return answer(entry)
+      }
       let listing = !entry && home ? deps.store.pendingListing(fingerprint) : null
       if (probe && home) {
         if (entry && deps.store.shouldRefresh(fingerprint)) {

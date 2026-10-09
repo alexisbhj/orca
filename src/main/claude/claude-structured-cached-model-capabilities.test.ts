@@ -92,7 +92,7 @@ function fixture(
 
 describe('Claude cached model capabilities', () => {
   it.each(['empty', 'error'] as const)(
-    'keeps xhigh usable for a current model missing from saved choices after an %s listing',
+    'offers no effort levels for a running model missing from saved choices after an %s listing',
     async (listing) => {
       const { adapter, store, access } = fixture(true, listing, 'new-current-model')
       try {
@@ -101,20 +101,19 @@ describe('Claude cached model capabilities', () => {
         const result = await adapter.readOptions({ sessionId: 'session-1', fence: 7 })
         expect(result.current.model).toBe('new-current-model')
         expect(result.models).toContainEqual(
-          expect.objectContaining({ id: SAVED_MODEL.id, label: SAVED_MODEL.label })
+          expect.objectContaining({ id: SAVED_MODEL.id, efforts: SAVED_MODEL.efforts })
         )
+        // Nothing says which levels it takes, so none is offered rather than one it may reject.
+        expect(result.models.find((model) => model.id === 'new-current-model')).toMatchObject({
+          efforts: []
+        })
         const state = applyStructuredAgentSessionOptions(
           createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG),
           CLAUDE_SESSION_OPTION_CATALOG,
           result
         )
-        await expect(
-          adapter.setOption({ sessionId: 'session-1', key: 'effort', value: 'xhigh', fence: 7 })
-        ).resolves.toMatchObject({ effort: 'xhigh' })
-        expect(canSetStructuredAgentSessionOption(state, 'effort', 'xhigh')).toBe(true)
-        const current = result.models.find((model) => model.id === result.current.model)
-        expect(current).not.toHaveProperty('defaultEffort')
-        expect(current).not.toHaveProperty('supportsFastMode')
+        expect(canSetStructuredAgentSessionOption(state, 'effort', 'xhigh')).toBe(false)
+        expect(canSetStructuredAgentSessionOption(state, 'effort', 'high')).toBe(false)
         expect(store.get(access.fingerprint)?.models).toEqual([SAVED_MODEL])
       } finally {
         await adapter.closeAll()
@@ -149,25 +148,25 @@ describe('Claude cached model capabilities', () => {
   )
 
   it.each(['empty', 'error'] as const)(
-    'keeps xhigh usable after an %s listing without reusing saved defaults',
+    'offers the saved row its own effort levels after an %s listing',
     async (listing) => {
       const { adapter } = fixture(true, listing)
       try {
         await adapter.acquire({ identity: identityFor(), fence: 7, spawnToken: 'spawn-9' })
         await claudeStartupSettled(adapter, 'session-1')
         const result = await adapter.readOptions({ sessionId: 'session-1', fence: 7 })
-        expect(result.models[0]).toMatchObject({ id: SAVED_MODEL.id, label: SAVED_MODEL.label })
-        expect(result.models[0]).not.toHaveProperty('defaultEffort')
-        expect(result.models[0]).not.toHaveProperty('supportsFastMode')
+        expect(result.models[0]).toMatchObject({
+          id: SAVED_MODEL.id,
+          label: SAVED_MODEL.label,
+          efforts: SAVED_MODEL.efforts
+        })
         const state = applyStructuredAgentSessionOptions(
           createStructuredAgentSessionOptionState('claude', CLAUDE_SESSION_OPTION_CATALOG),
           CLAUDE_SESSION_OPTION_CATALOG,
           result
         )
-        await expect(
-          adapter.setOption({ sessionId: 'session-1', key: 'effort', value: 'xhigh', fence: 7 })
-        ).resolves.toMatchObject({ effort: 'xhigh' })
-        expect(canSetStructuredAgentSessionOption(state, 'effort', 'xhigh')).toBe(true)
+        expect(canSetStructuredAgentSessionOption(state, 'effort', 'high')).toBe(true)
+        expect(canSetStructuredAgentSessionOption(state, 'effort', 'xhigh')).toBe(false)
       } finally {
         await adapter.closeAll()
       }

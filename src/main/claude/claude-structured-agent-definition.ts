@@ -24,10 +24,15 @@ export const CLAUDE_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
     acceptsKey: isClaudeStructuredOptionKey,
     fallbackModels: claudeFallbackModelOptions,
     effortDefaultsToModel: false,
-    projectOptions: (catalog, current) =>
-      projectClaudeSessionModelOptions({
+    replacesUnlistedModel: true,
+    projectOptions: (catalog, current) => ({
+      ...projectClaudeSessionModelOptions({
         ...(catalog.origin === 'unknown' ? {} : { savedModels: catalog.models }),
         current
-      })
+      }),
+      ...(catalog.origin !== 'unknown' && catalog.fastModeSupport
+        ? { fastModeSupport: catalog.fastModeSupport }
+        : {})
+    })
   }
 }

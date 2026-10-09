@@ -83,7 +83,12 @@ export function useStructuredAgentSessionOptionState(args: {
     // A host catalog is the account's, not the fence's: keep it rather than blank the default.
     const next =
       sameSession && previous.catalogSource === 'host'
-        ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
+        ? {
+            ...seeded,
+            catalog: previous.catalog,
+            catalogSource: previous.catalogSource,
+            hostCatalogVerified: previous.hostCatalogVerified
+          }
         : seeded
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null

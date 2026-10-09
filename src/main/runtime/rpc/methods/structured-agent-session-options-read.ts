@@ -63,16 +63,21 @@ export const STRUCTURED_AGENT_SESSION_OPTIONS_READ_METHODS = [
       const record =
         params.sessionId === undefined ? null : host.deps.store.getRecord(params.sessionId)
       const launchDirectory = record ? agentSessionPinnedLaunchDirectory(record) : undefined
+      // Before a record exists, the selection is the saved one create will seed.
+      const seededModel = record
+        ? undefined
+        : ctx.runtime.structuredAgentSessionLaunchSeedOptions(params.agent)?.model
+      const read = { ...params, ...(seededModel ? { requiredModel: seededModel } : {}) }
       if (launchDirectory) {
-        return catalog.read({ ...params, workspacePath: launchDirectory })
+        return catalog.read({ ...read, workspacePath: launchDirectory })
       }
       if (worktree === undefined) {
-        return catalog.read(params)
+        return catalog.read(read)
       }
       const workspacePath = await ctx.runtime
         .resolveStructuredAgentSessionLocalWorkspacePath(worktree)
         .catch(() => null)
-      return catalog.read({ ...params, workspacePath })
+      return catalog.read({ ...read, workspacePath })
     }
   })
 ]

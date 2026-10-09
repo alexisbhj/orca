@@ -110,66 +110,31 @@ describe('the runtime host catalog for session pickers', () => {
     ['live-session', false],
     ['live-session', true]
   ] as const)(
-    'treats %s rows as remembered choices at any age (stale: %s)',
+    'serves saved %s rows with their own capabilities (stale: %s)',
     async (origin, stale) => {
-      const { result, saved, fetchedAt, fingerprint } = await hostCatalog({ origin, stale })
-      expect(result).toMatchObject({
+      const { result, saved, fetchedAt } = await hostCatalog({ origin, stale })
+      // Nothing is selected, so the CLI's own default is not named.
+      expect(result).toEqual({
         origin,
         fetchedAt,
-        models: [
-          {
-            id: SAVED_MODEL.id,
-            label: SAVED_MODEL.label,
-            description: SAVED_MODEL.description,
-            isDefault: false,
-            efforts: expect.arrayContaining([{ value: 'xhigh', label: 'Extra high' }])
-          }
-        ]
+        models: [{ ...SAVED_MODEL, isDefault: false }],
+        fastModeSupport: saved.fastModeSupport,
+        // Only a list current enough to call a missing model gone says so.
+        ...(stale ? {} : { verified: true })
       })
-      expect(result).not.toHaveProperty('fastModeSupport')
-      if (result.origin === 'unknown') {
-        throw new Error('a saved catalog remains available')
-      }
-      expect(result.models[0]).not.toHaveProperty('defaultEffort')
-      expect(result.models[0]).not.toHaveProperty('supportsFastMode')
-      expect(agentModelCatalogStore.get(fingerprint)?.models).toEqual(saved.models)
-    }
-  )
-
-  it.each([false, true])(
-    'drops saved Fast claims in either direction (supported: %s)',
-    async (fastSupported) => {
-      const { result } = await hostCatalog({ fastSupported })
-      expect(result).not.toHaveProperty('fastModeSupport')
-      if (result.origin === 'unknown') {
-        throw new Error('a saved catalog remains available')
-      }
-      expect(result.models[0]).not.toHaveProperty('supportsFastMode')
     }
   )
 
   it.each(['sonnet', 'new-current-model'])(
-    'keeps names usable and adds a permissive row for a pinned folder session model %s',
+    'adds no row for a pinned folder session model %s and verifies nothing while listing fails',
     async (model) => {
       const { result, record } = await hostCatalog({ session: true, model, stale: true })
       if (result.origin === 'unknown') {
         throw new Error('the pinned account has a saved catalog')
       }
-      expect(result.models).toContainEqual(
-        expect.objectContaining({
-          id: SAVED_MODEL.id,
-          label: SAVED_MODEL.label
-        })
-      )
-      const current = result.models.find((row) => row.id === model)
-      expect(current).toMatchObject({
-        isDefault: false,
-        efforts: expect.arrayContaining([{ value: 'xhigh', label: 'Extra high' }])
-      })
-      expect(current).not.toHaveProperty('defaultEffort')
-      expect(current).not.toHaveProperty('supportsFastMode')
+      expect(result.models).toEqual([SAVED_MODEL])
+      expect(result).not.toHaveProperty('verified')
       expect(record.options).toEqual({ model })
-      expect(result).not.toHaveProperty('current')
     }
   )
 

@@ -96,17 +96,6 @@ function seedModels(): ListedModel[] {
   }))
 }
 
-function claudeFallbackModelOption(model: AgentSessionModelOption): ListedModel {
-  return {
-    id: model.id,
-    label: model.label,
-    ...(model.description ? { description: model.description } : {}),
-    isDefault: false,
-    efforts: seedEfforts(CLAUDE_SESSION_OPTION_CATALOG.unknownModelOptions ?? []),
-    resolvedModel: null
-  }
-}
-
 function currentModelId(models: readonly ListedModel[], reportedModel: string | undefined): string {
   const matched = reportedModel
     ? models.find(
@@ -136,19 +125,23 @@ export function wireClaudeModels(models: readonly ListedModel[]): AgentSessionMo
   return models.map(wireClaudeModel)
 }
 
-/** Saved rows offer names, never selection or capability evidence, whether live or at rest. */
+/** The running child's own list, else the account's saved one, else the built-in seed, each with
+ *  its own efforts. A current model none of them lists offers none: nothing says which it takes. */
 export function projectClaudeSessionModelOptions(input: {
   liveModels?: readonly ListedModel[]
   savedModels?: readonly AgentSessionModelOption[]
   current: AgentSessionOptionsResult['current']
 }): Pick<AgentSessionOptionsResult, 'models' | 'current'> {
   const live = input.liveModels ?? []
-  const listed =
-    live.length > 0 ? live : (input.savedModels ?? seedModels()).map(claudeFallbackModelOption)
+  const listed: ListedModel[] =
+    live.length > 0
+      ? [...live]
+      : (input.savedModels?.map((row) => ({ ...row, resolvedModel: null })) ?? seedModels())
   const model = currentModelId(listed, input.current.model || undefined)
-  const models = structuredAgentSessionOptionModels(listed, model, (row) =>
-    live.length > 0 ? { ...row, resolvedModel: null } : claudeFallbackModelOption(row)
-  )
+  const models = structuredAgentSessionOptionModels(listed, model, (row) => ({
+    ...row,
+    resolvedModel: null
+  }))
   return {
     models: wireClaudeModels(
       input.current.model ? models : models.map((row) => ({ ...row, isDefault: false }))

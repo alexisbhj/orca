@@ -92,10 +92,12 @@ describe('Claude chats with unavailable model discovery', () => {
         expect(claude.connections[0].launch.options.model).toBeUndefined()
         const options = await adapter.readOptions({ sessionId: 'session-1', fence: 7 })
         expect(options.models).toContainEqual(
-          expect.objectContaining({ id: SAVED_MODEL.id, label: SAVED_MODEL.label })
+          expect.objectContaining({
+            id: SAVED_MODEL.id,
+            label: SAVED_MODEL.label,
+            efforts: SAVED_MODEL.efforts
+          })
         )
-        expect(options.models[0]).not.toHaveProperty('defaultEffort')
-        expect(options.models[0]).not.toHaveProperty('supportsFastMode')
         expect(store.get(access.fingerprint)?.models).toEqual([SAVED_MODEL])
         // Saved picker metadata cannot refuse a choice while live discovery is unavailable.
         await expect(

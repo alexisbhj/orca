@@ -23,7 +23,10 @@ export type StructuredAgentDefinition = AgentSessionStoredAgent & {
     fallbackModels: () => AgentSessionModelOption[] | null
     /** An unpicked effort reads as the model's default effort, as a running child reports it. */
     effortDefaultsToModel: boolean
-    /** Uses the agent's live picker projection when saved catalogs cannot establish capabilities. */
+    /** A selected model the account's current list no longer offers gives way to the listed
+     *  default, at rest and at the next start, instead of failing the chat's next turn. */
+    replacesUnlistedModel?: true
+    /** The agent's own picker projection of the catalog and the chat's selection at rest. */
     projectOptions?: (
       catalog: AgentSessionModelCatalogResult,
       current: AgentSessionOptionsResult['current']

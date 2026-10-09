@@ -419,6 +419,10 @@ export type AgentSessionModelCatalogResult = {
   /** Why no chat can start under the account, as the host's probe last found it. Absent is
    *  unknown, which shows nothing; an older host never sends it. */
   unavailable?: AgentSessionUnavailable
+  /** The list is current: listed within the last minute, with no listing running and no failure
+   *  held, so a model missing from it is gone. Sent only for an agent whose host then starts its
+   *  chats on the listed default instead; absent (any doubt, or an older host) keeps a selection. */
+  verified?: true
 } & (
   | { origin: 'unknown' }
   | {

@@ -3,12 +3,12 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   AgentModelCatalogStore,
-  AGENT_MODEL_CATALOG_FRESH_MS
+  AGENT_MODEL_CATALOG_CURRENT_MS
 } from '../../src/main/native-chat/agent-model-catalog/agent-model-catalog-store'
 import { createAgentModelCatalogService } from '../../src/main/native-chat/agent-model-catalog/agent-model-catalog-service'
 import { agentModelCatalogFingerprint } from '../../src/main/native-chat/agent-model-catalog/agent-model-catalog-fingerprint'
 import { CLAUDE_STRUCTURED_AGENT } from '../../src/main/claude/claude-structured-agent-definition'
-import { agentSessionRecordFixture } from '../../src/shared/agent-session-record.test-fixture'
+import type { AgentSessionModelOption } from '../../src/shared/agent-session-wire'
 import type { StructuredAgentSessionMutate } from '../../src/renderer/src/components/native-chat/use-structured-agent-session-mutate'
 
 const mocks = vi.hoisted(() => ({ call: vi.fn(), hold: vi.fn() }))
@@ -25,130 +25,197 @@ vi.mock('@/lib/structured-agent-session-launch-options', () => ({
 }))
 import { useStructuredAgentSessionOptions } from '../../src/renderer/src/components/native-chat/use-structured-agent-session-options'
 
-describe('Claude picker before the provider starts', () => {
-  it.each([
-    ['local', true, 'sonnet'],
-    ['paired', true, 'sonnet'],
-    ['local', false, 'sonnet'],
-    ['local', true, 'unlisted-launch-model'],
-    ['paired', true, 'unlisted-launch-model'],
-    ['local', true, 'opus'],
-    ['paired', true, 'opus'],
-    ['local', false, 'opus'],
-    ['paired', false, 'opus'],
-    ['local', true, 'new-account-model'],
-    ['paired', true, 'new-account-model'],
-    ['local', false, 'new-account-model'],
-    ['paired', false, 'new-account-model']
-  ] as const)(
-    'keeps effort choices usable on %s with saved catalog %s and launch model %s after discovery fails',
-    async (host, saved, launchModel) => {
-      mocks.call.mockReset()
-      mocks.hold.mockReset()
-      const home = { variable: 'CLAUDE_CONFIG_DIR', path: '/accounts/pinned' }
-      const fingerprint = agentModelCatalogFingerprint({
-        agent: 'claude',
-        accountHome: home,
-        wslDistro: null
-      })
-      let now = 1_000
-      const store = new AgentModelCatalogStore({ now: () => now })
-      store.recordSuccess(fingerprint, 'claude', {
-        models: [
-          {
-            id: 'sonnet',
-            label: 'Saved Sonnet',
-            isDefault: true,
-            efforts: [
-              { value: 'low', label: 'Low' },
-              { value: 'high', label: 'High' }
-            ],
-            defaultEffort: 'high',
-            supportsFastMode: false
-          }
-        ],
-        origin: 'probe',
-        fastModeTierByModel: new Map()
-      })
-      now += AGENT_MODEL_CATALOG_FRESH_MS
-      const probe = async () => {
-        throw new Error('temporarily unavailable')
+const LOW = { value: 'low', label: 'Low' }
+const HIGH = { value: 'high', label: 'High' }
+const XHIGH = { value: 'xhigh', label: 'Extra high' }
+const SONNET = { id: 'sonnet', label: 'Sonnet', isDefault: true, efforts: [LOW, HIGH] }
+const OPUS = { id: 'opus', label: 'Opus', isDefault: false, efforts: [LOW, HIGH, XHIGH] }
+const SEED = { model: 'opus', effort: 'high' }
+
+let nextChat = 0
+
+/** A new chat whose saved selection is Opus/High, before the host has a record for it, over a
+ *  saved Sonnet-only list a minute old. */
+function startingChat(input: {
+  host: 'local' | 'paired'
+  /** What the host's listing answers when it re-lists; absent, it fails. */
+  relists?: AgentSessionModelOption[]
+  /** Answers as a host that predates verification does. */
+  olderHost?: boolean
+}) {
+  mocks.call.mockReset()
+  mocks.hold.mockReset()
+  const home = { variable: 'CLAUDE_CONFIG_DIR', path: `/accounts/starting-${++nextChat}` }
+  const fingerprint = agentModelCatalogFingerprint({
+    agent: 'claude',
+    accountHome: home,
+    wslDistro: null
+  })
+  let now = 1_000
+  const store = new AgentModelCatalogStore({ now: () => now })
+  store.recordSuccess(fingerprint, 'claude', {
+    models: [SONNET],
+    origin: 'probe',
+    fastModeTierByModel: new Map()
+  })
+  now += AGENT_MODEL_CATALOG_CURRENT_MS
+  const relists = input.relists
+  const probe = vi.fn(async () => {
+    if (!relists) {
+      throw new Error('temporarily unavailable')
+    }
+    return { models: relists, origin: 'probe' as const, fastModeTierByModel: new Map() }
+  })
+  const service = createAgentModelCatalogService({
+    store,
+    getRecord: () => undefined,
+    drivesRecord: () => true,
+    agents: { definition: () => CLAUDE_STRUCTURED_AGENT },
+    probes: { claude: probe },
+    resolveAccountHome: async () => home
+  })
+  mocks.call.mockImplementation(
+    async (_target: unknown, method: string, params: Parameters<typeof service.read>[0]) => {
+      if (method !== 'agentSession.modelCatalog') {
+        return new Promise(() => {})
       }
-      await store.refresh(fingerprint, 'claude', probe, probe)
-      const record = agentSessionRecordFixture()
-      record.accountHome = home
-      record.options = { model: launchModel, effort: 'high' }
-      const service = createAgentModelCatalogService({
-        store,
-        getRecord: () => (launchModel === 'unlisted-launch-model' ? record : undefined),
-        drivesRecord: () => true,
-        agents: { definition: () => CLAUDE_STRUCTURED_AGENT },
-        resolveAccountHome: async () => home
-      })
-      mocks.call.mockImplementation(
-        (_target: unknown, method: string, params: Parameters<typeof service.read>[0]) =>
-          method === 'agentSession.modelCatalog'
-            ? saved
-              ? service.read(params)
-              : Promise.resolve({ origin: 'unknown' })
-            : new Promise(() => {})
-      )
-      mocks.hold.mockResolvedValue({ kind: 'held' })
-      const mutate: StructuredAgentSessionMutate = vi.fn(async () => null)
-      const target =
-        host === 'local'
-          ? { kind: 'local' as const }
-          : { kind: 'environment' as const, environmentId: 'server-1' }
-      const { result, unmount } = renderHook(() =>
-        useStructuredAgentSessionOptions({
-          agent: 'claude',
-          sessionId: `starting-${host}`,
-          target,
-          transportEnabled: false,
-          isVisible: true,
-          providerVisible: false,
-          providerStarting: true,
-          fence: null,
-          turnId: null,
-          unloadedTurnRevisions: undefined,
-          mutate,
-          launch: {
-            kind: 'new',
-            seedOptions: { model: launchModel, effort: 'high' },
-            heldOptions: {}
-          }
-        })
-      )
+      // As the host's handler does before a record exists: the decision is about the saved seed.
+      const answer = await service.read({ ...params, requiredModel: SEED.model })
+      if (!input.olderHost) {
+        return answer
+      }
+      const { verified: _unknownToOlderHosts, ...older } = answer
+      return older
+    }
+  )
+  mocks.hold.mockResolvedValue({ kind: 'held' })
+  const mutate: StructuredAgentSessionMutate = vi.fn(async () => null)
+  const sessionId = `starting-${nextChat}`
+  const target =
+    input.host === 'local'
+      ? { kind: 'local' as const }
+      : { kind: 'environment' as const, environmentId: 'server-1' }
+  const launch = { kind: 'new' as const, seedOptions: SEED, heldOptions: {} }
+  const hook = renderHook(() =>
+    useStructuredAgentSessionOptions({
+      agent: 'claude',
+      sessionId,
+      target,
+      transportEnabled: false,
+      isVisible: true,
+      providerVisible: false,
+      providerStarting: true,
+      fence: null,
+      turnId: null,
+      unloadedTurnRevisions: undefined,
+      mutate,
+      launch
+    })
+  )
+  const row = (id: string) => hook.result.current.optionSnapshot.find((entry) => entry.id === id)
+  const catalogReads = () =>
+    mocks.call.mock.calls.filter(([, method]) => method === 'agentSession.modelCatalog').length
+  return { hook, row, probe, sessionId, mutate, catalogReads }
+}
+
+describe('Claude picker before the provider starts', () => {
+  it.each(['local', 'paired'] as const)(
+    'keeps the selection on %s when the one re-listing still offers it, with its real efforts',
+    async (host) => {
+      const chat = startingChat({ host, relists: [SONNET, OPUS] })
       try {
         await waitFor(() =>
-          expect(
-            result.current.optionSnapshot.find((row) => row.id === 'model')?.kind
-          ).toMatchObject({
-            currentValue: launchModel,
-            ...(saved
-              ? { choices: expect.arrayContaining([{ value: 'sonnet', label: 'Saved Sonnet' }]) }
-              : {})
+          expect(chat.row('model')?.kind).toMatchObject({
+            currentValue: 'opus',
+            choices: expect.arrayContaining([{ value: 'opus', label: 'Opus' }])
           })
         )
-        expect(
-          result.current.optionSnapshot.find((row) => row.id === 'effort')?.kind
-        ).toMatchObject({
+        expect(chat.row('effort')?.kind).toEqual({
+          type: 'select',
           currentValue: 'high',
-          choices: expect.arrayContaining([{ value: 'xhigh', label: 'Extra high' }])
+          choices: OPUS.efforts
         })
+        expect(chat.probe).toHaveBeenCalledOnce()
         let accepted = false
         await act(async () => {
-          accepted = await result.current.setStructuredOption('effort', 'xhigh')
+          accepted = await chat.hook.result.current.setStructuredOption('effort', 'xhigh')
         })
         expect(accepted).toBe(true)
-        expect(mocks.hold).toHaveBeenCalledExactlyOnceWith(`starting-${host}`, 'effort', 'xhigh')
-        expect(mutate).not.toHaveBeenCalled()
-        expect(
-          mocks.call.mock.calls.every(([, method]) => method === 'agentSession.modelCatalog')
-        ).toBe(true)
+        expect(mocks.hold).toHaveBeenCalledExactlyOnceWith(chat.sessionId, 'effort', 'xhigh')
+        expect(chat.mutate).not.toHaveBeenCalled()
       } finally {
-        unmount()
+        chat.hook.unmount()
       }
     }
   )
+
+  it.each(['local', 'paired'] as const)(
+    'shows the default as selected on %s once the re-listing confirms the model is gone',
+    async (host) => {
+      const chat = startingChat({ host, relists: [SONNET] })
+      try {
+        await waitFor(() =>
+          expect(chat.row('model')).toMatchObject({
+            valueSource: 'default',
+            kind: { currentValue: 'sonnet', choices: [{ value: 'sonnet', label: 'Sonnet' }] }
+          })
+        )
+        // The effort carries over where the default lists it, as the host's start applies it.
+        expect(chat.row('effort')?.kind).toEqual({
+          type: 'select',
+          currentValue: 'high',
+          choices: SONNET.efforts
+        })
+        expect(chat.probe).toHaveBeenCalledOnce()
+        // One read answered the re-listing in progress, one waited for it; nothing re-reads.
+        expect(chat.catalogReads()).toBe(2)
+      } finally {
+        chat.hook.unmount()
+      }
+    }
+  )
+
+  it.each(['local', 'paired'] as const)(
+    'keeps the selection on %s without inventing efforts while the list cannot be verified',
+    async (host) => {
+      const chat = startingChat({ host })
+      try {
+        await waitFor(() => expect(chat.probe).toHaveBeenCalledOnce())
+        await waitFor(() =>
+          expect(chat.row('model')?.kind).toMatchObject({
+            currentValue: 'opus',
+            choices: expect.arrayContaining([{ value: 'sonnet', label: 'Sonnet' }])
+          })
+        )
+        expect(chat.row('effort')).toBeUndefined()
+        let accepted = true
+        await act(async () => {
+          accepted = await chat.hook.result.current.setStructuredOption('effort', 'xhigh')
+        })
+        expect(accepted).toBe(false)
+        expect(mocks.hold).not.toHaveBeenCalled()
+        expect(chat.probe).toHaveBeenCalledOnce()
+        expect(chat.catalogReads()).toBe(2)
+      } finally {
+        chat.hook.unmount()
+      }
+    }
+  )
+
+  it('keeps the selection when an older host cannot say its list is current', async () => {
+    const chat = startingChat({ host: 'paired', relists: [SONNET], olderHost: true })
+    try {
+      await waitFor(() => expect(chat.probe).toHaveBeenCalledOnce())
+      await waitFor(() =>
+        expect(chat.row('model')?.kind).toMatchObject({
+          currentValue: 'opus',
+          choices: expect.arrayContaining([{ value: 'sonnet', label: 'Sonnet' }])
+        })
+      )
+      expect(chat.row('model')).toMatchObject({ valueSource: 'dispatched' })
+      expect(chat.row('effort')).toBeUndefined()
+    } finally {
+      chat.hook.unmount()
+    }
+  })
 })

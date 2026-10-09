@@ -5,8 +5,10 @@ import type {
 } from './agent-session-option-catalog'
 import {
   buildNativeChatSessionOptionSnapshot,
-  resolveEffectiveNativeChatModelId
+  resolveEffectiveNativeChatModelId,
+  withTrackedNativeChatModel
 } from './native-chat-session-option-snapshot'
+import { verifiedListReplacementRecord } from './agent-session-model-fallback'
 import {
   applyNativeChatReportedSessionOptions,
   clearTrackedSessionOption,
@@ -92,6 +94,8 @@ export type StructuredAgentSessionOptionState = {
   catalog: AgentSessionOptionCatalog | null
   /** What produced `catalog`; a weaker source never replaces a stronger one. */
   catalogSource: 'seed' | 'host' | 'live' | null
+  /** The host's list is current, so a selected model it lacks is gone (`host` source only). */
+  hostCatalogVerified?: boolean
   record: NativeChatSessionOptionRecord
   pendingId: string | null
 }
@@ -114,7 +118,8 @@ export function createStructuredAgentSessionOptionState(
  * What the picker shows before the host has confirmed this session's values:
  * `seed` (the selection a launch seeds) stands in until the record names a
  * model, and `held` picks outrank both until the host settles them. Both show
- * as `dispatched`; derived on every read, never written into the record.
+ * as `dispatched`, and a selection the host's current list lacks as its
+ * `default` replacement; derived on every read, never written into the record.
  */
 export function structuredAgentSessionOptionView(
   state: StructuredAgentSessionOptionState,
@@ -123,7 +128,7 @@ export function structuredAgentSessionOptionView(
 ): StructuredAgentSessionOptionState {
   const seeded = seed !== undefined && state.record.model === undefined
   if (!state.catalog || (!seeded && Object.keys(held).length === 0)) {
-    return state
+    return withVerifiedModelReplacement(state)
   }
   let view: StructuredAgentSessionOptionState = {
     ...state,
@@ -132,7 +137,10 @@ export function structuredAgentSessionOptionView(
   if (seeded) {
     view = commitStructuredAgentSessionOptionValues(view, seed)
   }
-  return { ...commitStructuredAgentSessionOptionValues(view, held), pendingId: state.pendingId }
+  return withVerifiedModelReplacement({
+    ...commitStructuredAgentSessionOptionValues(view, held),
+    pendingId: state.pendingId
+  })
 }
 
 /**
@@ -165,8 +173,20 @@ export function applyStructuredAgentSessionModelCatalog(
       models,
       ...(options.namesDefault ? { defaultModelIsCliDefault: true } : {})
     },
-    catalogSource: 'host'
+    catalogSource: 'host',
+    hostCatalogVerified: catalog.verified === true
   }
+}
+
+/** Shows what the host starts the chat on once its current list lacks the selection. */
+function withVerifiedModelReplacement(
+  state: StructuredAgentSessionOptionState
+): StructuredAgentSessionOptionState {
+  if (!state.catalog || state.catalogSource !== 'host' || state.hostCatalogVerified !== true) {
+    return state
+  }
+  const record = verifiedListReplacementRecord(state.catalog, state.record)
+  return record === state.record ? state : { ...state, record }
 }
 
 export function applyStructuredAgentSessionOptions(
@@ -201,7 +221,8 @@ export function structuredAgentSessionOptionSnapshot(
   }
   return buildNativeChatSessionOptionSnapshot({
     catalog: state.catalog,
-    models: state.catalog.models,
+    // A seeded default can name a model the static seed does not list yet.
+    models: withTrackedNativeChatModel(state.catalog, state.catalog.models, state.record),
     record: state.record,
     mode: 'live',
     modelLabel: 'Model',

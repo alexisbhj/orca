@@ -18,6 +18,7 @@ import type { StructuredAgentDefinition } from './structured-agent-definition'
 import type { StructuredAgentRegistry } from './structured-agent-registry'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 import { structuredAgentSessionOptionModels } from './structured-agent-session-option-models'
+import { settledAgentModelSelection } from '../agent-model-catalog/agent-model-catalog-selection'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
 import type { StructuredAgentSessionMutationContext } from './structured-agent-session-host-mutations'
 
@@ -40,10 +41,11 @@ async function readStructuredAgentSessionOptionsAtRest(
     throw new Error('agent_session_identity_required')
   }
   const rules = restingOptionRules(deps.agents, record)
+  // Decides as the next start will: an aged list lacking the saved model is re-listed first.
   const catalog = (await deps.modelCatalog
-    ?.read({ agent: record.provider, sessionId })
+    ?.read({ agent: record.provider, sessionId, settleRequiredModel: true })
     .catch(() => null)) ?? { origin: 'unknown' as const }
-  const saved = record.options ?? {}
+  const saved = settledAgentModelSelection(catalog, record.options ?? {})
   const fastMode =
     saved.fastMode === undefined
       ? null

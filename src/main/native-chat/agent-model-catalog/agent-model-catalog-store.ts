@@ -21,6 +21,9 @@ export { AGENT_MODEL_CATALOG_FAILURE_TTL_MS, type AgentModelCatalogFailure }
 // `AgentModelCatalogFailures`, which also holds why no chat can start under the account).
 
 export const AGENT_MODEL_CATALOG_FRESH_MS = 10 * 60_000
+/** A list this young is current enough to say a model it lacks is gone; an older one is re-listed
+ *  once before it may say so. */
+export const AGENT_MODEL_CATALOG_CURRENT_MS = 60_000
 export const AGENT_MODEL_CATALOG_PICKER_WAIT_MS = 30_000
 export const AGENT_MODEL_CATALOG_MAX_ENTRIES = 256
 
@@ -134,6 +137,10 @@ export class AgentModelCatalogStore {
     return this.now() - entry.fetchedAt >= AGENT_MODEL_CATALOG_FRESH_MS
   }
 
+  isCurrent(entry: AgentModelCatalogEntry): boolean {
+    return this.now() - entry.fetchedAt < AGENT_MODEL_CATALOG_CURRENT_MS
+  }
+
   failureDetail(fingerprint: string): string | null {
     return this.hasActiveFailure(fingerprint)
       ? (this.failures.get(fingerprint)?.detail ?? null)
@@ -142,6 +149,11 @@ export class AgentModelCatalogStore {
 
   hasActiveFailure(fingerprint: string): boolean {
     return this.failures.isActive(fingerprint)
+  }
+
+  /** A listing for this catalog is running, by any lister. */
+  isListing(fingerprint: string): boolean {
+    return this.refreshes.has(fingerprint)
   }
 
   failure(fingerprint: string): AgentModelCatalogFailure | null {
@@ -242,7 +254,7 @@ export class AgentModelCatalogStore {
     const run = listModels().then(
       (success) => {
         if (success.models.length === 0) {
-          this.recordFailure(fingerprint, `${agent} listed no models`)
+          this.recordFailure(fingerprint, `${agent} listed no models`, agent)
         }
         // An older session still receives its own result, but cannot replace a newer catalog.
         const superseded =

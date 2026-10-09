@@ -221,7 +221,7 @@ describe('Claude effort default at rest', () => {
     expect(catalogDefault(other, 'opus[1m]')).toBe('medium')
   })
 
-  it('constrains an unlisted model only while a live catalog supplies evidence', async () => {
+  it('offers no effort for a model the catalog does not list, at rest as live', async () => {
     const store = new AgentModelCatalogStore()
     const unlisted = { model: 'claude-unlisted-9', effort: 'medium' }
     // The CLI runs a model its own catalog does not list, as a newer or pinned model can be.
@@ -233,9 +233,9 @@ describe('Claude effort default at rest', () => {
     const row = (result: typeof resting) =>
       result.models.find((entry) => entry.id === unlisted.model)
     expect(row(live)).toEqual(expect.objectContaining({ id: unlisted.model, efforts: [] }))
-    expect(row(resting)?.efforts.map((choice) => choice.value)).toEqual(EFFORTS)
+    expect(row(resting)).toEqual(row(live))
     expect(pickerEffort(live)).toBeUndefined()
-    expect(pickerEffort(resting)).toBe('medium')
+    expect(pickerEffort(resting)).toBeUndefined()
   })
 
   it('lists an unlisted Codex model at rest exactly as its live child does', async () => {
