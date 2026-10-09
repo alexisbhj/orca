@@ -6,7 +6,6 @@
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { JournalQueuedMessages } from '../agent-session-journal/journal-queued-messages'
-import { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import { HOST_TEST_SESSION as SESSION } from './structured-agent-session-host-test-data'
 import { holdDelivery } from './structured-agent-session-delivery-hold.test-fixture'
 import {
@@ -14,6 +13,12 @@ import {
   eventually,
   type QueuedMessageTestRig
 } from './structured-agent-session-queued-message-rig.test-fixture'
+import { stopWithdrawal } from './structured-agent-session-stop-withdrawal.test-fixture'
+
+vi.mock(
+  '../agent-session-journal/journal-unsent-send-hold',
+  () => import('./structured-agent-session-stop-withdrawal.test-fixture')
+)
 
 let rig: QueuedMessageTestRig
 
@@ -108,17 +113,11 @@ it('a Stop whose withdrawal throws after landing still answers; the draft it rel
   await rig.settleAccepted(working, 'working')
   await eventually(async () => expect(await rig.handoff(a)).toBeDefined())
   const firstA = await rig.handoffId(a)
-  const withdraw = AgentSessionJournal.prototype.rejectQueuedSubmissions
-  const failing = vi
-    .spyOn(AgentSessionJournal.prototype, 'rejectQueuedSubmissions')
-    .mockImplementation(async function (this: AgentSessionJournal, ...args) {
-      const withdrawn = await withdraw.apply(this, args)
-      // Only the Stop's own withdrawal fails, after it landed; the delivery loop's pass through.
-      if (args[1].rejection.kind === 'cancelled') {
-        throw new Error('disk full')
-      }
-      return withdrawn
-    })
+  // Only the Stop's own withdrawal fails, after it landed; every other hold passes through.
+  stopWithdrawal.run = async (settle) => {
+    await settle()
+    throw new Error('disk full')
+  }
   const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   try {
     const stopped = rig.stop()
@@ -129,7 +128,7 @@ it('a Stop whose withdrawal throws after landing still answers; the draft it rel
       expect.objectContaining({ step: 'withdrawal', error: new Error('disk full') })
     )
   } finally {
-    failing.mockRestore()
+    stopWithdrawal.run = undefined
     warned.mockRestore()
     release()
   }
