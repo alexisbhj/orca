@@ -113,7 +113,7 @@ describe('POST /v1/admin/host-whereabouts', () => {
       v: 1,
       directorIncarnation: 'director-incarnation',
       relayHostId: HOST,
-      shadow: { complete: true },
+      shadow: { state: 'on', complete: true },
       users: [
         {
           userId: 'user-a',
@@ -146,6 +146,21 @@ describe('POST /v1/admin/host-whereabouts', () => {
     expect(await response.json()).toMatchObject({ users: [{ userId: 'user-a', database: ROW }] })
   })
 
+  it('judges the verdict as /v1/resolve would when the row names a dead cell', async () => {
+    const shadow = directory()
+    shadow.setCells(['cell-a', 'cell-b'], ['cell-a', 'cell-b'], ['cell-b'])
+    const app = appWith(async () => ROW, { shadowSeats: shadow })
+
+    const response = await app.request(
+      '/v1/admin/host-whereabouts',
+      request({ v: 1, relayHostId: HOST, userId: 'user-a' })
+    )
+
+    expect(await response.json()).toMatchObject({
+      users: [{ database: ROW, verdict: { class: 'map-only-cell-unlive', explained: true } }]
+    })
+  })
+
   it('answers an unknown host with an empty result, not a 404', async () => {
     const lookup = vi.fn(async () => null)
     const shadowOff = appWith(lookup)
@@ -158,7 +173,7 @@ describe('POST /v1/admin/host-whereabouts', () => {
       v: 1,
       directorIncarnation: 'director-incarnation',
       relayHostId: 'uuuuuuuuuuuuuuuu',
-      shadow: null,
+      shadow: { state: 'off' },
       users: [],
       cells: {}
     })

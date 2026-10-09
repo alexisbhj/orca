@@ -1534,7 +1534,15 @@ export function createRelayApp(
           database,
           seats,
           recentlyLeft,
-          verdict: shadow ? classifyShadowSeat(shadow, identity, database, now) : null
+          // As /v1/resolve sees it: a row on a cell that is not live reads as no answer.
+          verdict: shadow
+            ? classifyShadowSeat(
+                shadow,
+                identity,
+                database && shadow.isHeartbeatLive(database.cellId) ? database : null,
+                now
+              )
+            : null
         })
       }
       const cells = Object.fromEntries(
@@ -1558,7 +1566,7 @@ export function createRelayApp(
         v: 1,
         directorIncarnation: operations.cellIncarnation ?? null,
         relayHostId,
-        shadow: shadow ? { complete: shadow.isComplete() } : null,
+        shadow: shadow ? { state: 'on', complete: shadow.isComplete() } : { state: 'off' },
         users,
         cells
       })
