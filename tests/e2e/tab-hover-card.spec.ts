@@ -20,8 +20,10 @@ function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
         sliding:
           element
             ?.getAnimations()
-            .some((animation) =>
-              animation.effect?.getKeyframes().some((frame) => frame.translate !== undefined)
+            .some(
+              (animation) =>
+                animation.effect instanceof KeyframeEffect &&
+                animation.effect.getKeyframes().some((frame) => frame.translate !== undefined)
             ) ?? false
       })
       if (performance.now() - started < 10_000) {
@@ -50,9 +52,9 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   orcaPage
 }) => {
   // Keep the recorder's timer running while the test window stays hidden.
-  const window = await electronApp.browserWindow(orcaPage)
-  await window.evaluate((window) => window.webContents.setBackgroundThrottling(false))
-  await window.dispose()
+  const browserWindow = await electronApp.browserWindow(orcaPage)
+  await browserWindow.evaluate((window) => window.webContents.setBackgroundThrottling(false))
+  await browserWindow.dispose()
   await waitForSessionReady(orcaPage)
   await waitForActiveWorktree(orcaPage)
   await ensureTerminalVisible(orcaPage)
