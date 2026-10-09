@@ -1,6 +1,5 @@
 import type { Tab } from '../../../../shared/tab-types'
 import type { OpenFile } from '../../store/slices/editor'
-import { hasOpenFileExecutionHostEvidence } from '@/lib/unified-tab-host-ownership'
 import {
   resolveEditorFileIdForOwner,
   runtimeOwnerKey
@@ -79,14 +78,15 @@ export function createMirroredEditorFileResolver(
     const mode = tab.type === 'markdown' ? tab.mode : 'edit'
     const key = ownerKey(tab.filePath, worktreeId, environmentId, mode)
     const retained = existingTab ? index.byId.get(existingTab.entityId) : undefined
-    // Retained relay tabs must cross the save-quiesce fence before changing file ownership.
+    // Retained relay tabs must cross the save-quiesce fence before changing file ownership;
+    // live ones carry route provenance and may hold an unsaved draft keyed by their current ID.
     const preservesOwner =
       retained &&
       existingTab?.id === tab.id &&
       retained.worktreeId === worktreeId &&
       retained.filePath === tab.filePath &&
       (retained.mode ?? 'edit') === mode &&
-      !hasOpenFileExecutionHostEvidence(retained)
+      !retained.runtimeEnvironmentId?.trim()
     if (preservesOwner) {
       retainedFiles.set(key, retained)
     }

@@ -86,6 +86,55 @@ describe('host editor file ownership', () => {
     expect(patch?.unifiedTabsByWorktree?.[WT]?.[0]?.entityId).toBe(retained.id)
   })
 
+  it.each([
+    [
+      'relay route provenance',
+      {
+        operationProvenance: {
+          generation: {
+            route: { executionHostId: 'ssh:legacy-target', runtimeEnvironmentId: null },
+            runtimeConnectionGeneration: null,
+            runtimePairingRevision: undefined,
+            runtimeSshGeneration: null,
+            nestedSshGeneration: null,
+            directSshGeneration: 1
+          },
+          ownershipProjection: 'legacy'
+        }
+      } satisfies Partial<OpenFile>
+    ],
+    ['an external SSH target', { externalSshTargetId: 'legacy-target' }]
+  ])('keeps a dirty in-session file with %s on its tab after conversion', (_, evidence) => {
+    const retained = file({ isDirty: true, ...evidence })
+    const state = makeState({
+      openFiles: [retained],
+      editorDrafts: { [retained.id]: 'unsaved client edit' },
+      unifiedTabsByWorktree: {
+        [WT]: [
+          {
+            id: hostTab.id,
+            entityId: retained.id,
+            worktreeId: WT,
+            groupId: 'legacy-group',
+            executionHostId: 'ssh:legacy-target',
+            contentType: 'editor',
+            label: 'readme.txt',
+            customLabel: null,
+            color: null,
+            sortOrder: 0,
+            createdAt: NOW,
+            isPreview: false
+          }
+        ]
+      }
+    })
+    const patch = applyWebSessionTabsSnapshot(state, snapshot(), ENV, NOW)
+    const files = patch?.openFiles ?? state.openFiles
+    expect(files).toEqual([retained])
+    expect(files[0]).toBe(retained)
+    expect(patch?.unifiedTabsByWorktree?.[WT]?.[0]?.entityId).toBe(retained.id)
+  })
+
   it('reuses the file ID produced by ownership migration on later snapshots', () => {
     const owned = file({ id: buildOwnedEditorFileId(filePath, WT, ENV), runtimeEnvironmentId: ENV })
     const state = makeState({ openFiles: [owned] })
