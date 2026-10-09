@@ -182,11 +182,8 @@ export class AcpTimelineTranslator {
     const session = requestSessionSchema.safeParse(params)
     if (session.success && session.data.sessionId !== this.options.sessionId) {
       const id = session.data.sessionId
-      if (this.loading || !this.subagents.has(id)) {
-        return []
-      }
       const child = acpNotificationEnvelopeSchema.safeParse(params)
-      if (!child.success || child.data._meta?.isReplay === true) {
+      if (this.loading || !this.subagents.has(id) || !child.success || child.data._meta?.isReplay) {
         return []
       }
       const state = this.dialect.subagentSessionEnd?.(method, params)
