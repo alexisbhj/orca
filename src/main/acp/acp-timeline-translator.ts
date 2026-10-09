@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { BoundedMap } from '../../shared/bounded-map'
 import type { ProviderTimelineEvent } from '../native-chat/agent-session-timeline/provider-timeline-event'
 import { acpNotificationEnvelopeSchema, AcpContextTimeline } from './acp-context-usage'
-import { acpCompactionEnd, readAcpCompactionUpdate } from './acp-compaction-turn'
+import { absorbAcpCompactionFrame, acpCompactionEnd } from './acp-compaction-turn'
 import { AcpBackgroundTaskTimeline } from './acp-background-task-timeline'
 import { GENERIC_ACP_DIALECT, type AcpDialect } from './acp-dialects/acp-dialect'
 import { AcpAgentError } from './acp-errors'
-import { acpTurnEnd, AcpPromptTurns, type AcpPromptTurn } from './acp-prompt-turns'
+import { acpTurnEnd, AcpPromptTurns } from './acp-prompt-turns'
 import { readAcpSessionEvent, type AcpSessionEvent } from './acp-session-events'
 import { translateAcpRequest } from './acp-timeline-requests'
 import { acpSessionUpdate } from './acp-session-update'
@@ -139,21 +139,19 @@ export class AcpTimelineTranslator {
       return []
     }
     if (prompt.compaction) {
-      const events = acpCompactionEnd({
+      this.end(prompt.turn)
+      this.prompts.finish()
+      return acpCompactionEnd({
+        ...prompt,
         compaction: prompt.compaction,
-        turn: prompt.turn,
         thread: this.options.sessionId,
         stopReason,
         at,
-        ...(prompt.durationMs === undefined ? {} : { durationMs: prompt.durationMs }),
-        ...(failureDetail === undefined ? {} : { failureDetail }),
-        ...(notSignedIn ? { notSignedIn } : {}),
+        failureDetail,
+        notSignedIn,
         dialect: this.dialect,
-        ...(this.options.agentName === undefined ? {} : { agentName: this.options.agentName })
+        agentName: this.options.agentName
       })
-      this.end(prompt.turn)
-      this.prompts.finish()
-      return events
     }
     const events = this.start(prompt.turn, at)
     events.push(
@@ -238,32 +236,22 @@ export class AcpTimelineTranslator {
     }
     // A running compaction's words and end are read for its result, which its answer writes. Its
     // turn is the host's, open in the assembler under no provider key, so its rows name none.
-    const compacting = turn === undefined ? undefined : this.compactingPrompt(turn)
-    const compaction = compacting?.compaction
-    const rowTurn = compacting ? undefined : turn
-    const join = {
-      thread: this.options.sessionId,
-      ...(rowTurn === undefined ? {} : { turn: rowTurn })
-    }
+    const compacting = turn === undefined ? undefined : this.prompts.compacting(turn)
+    const keyed = compacting ? undefined : turn
+    const join = { thread: this.options.sessionId, ...(keyed === undefined ? {} : { turn: keyed }) }
     if (extension?.backgroundTasks) {
       events.push(...this.backgroundTasks.translate(extension.backgroundTasks, join))
     }
     if (extension?.usage) {
       events.push(...this.context.update(extension.usage, join))
     }
-    if (extension?.failureDetail && compaction) {
-      compaction.failureDetail = extension.failureDetail
-    } else if (extension?.failureDetail && turn) {
+    if (compacting && absorbAcpCompactionFrame(compacting, extension, update)) {
+      return events
+    }
+    if (extension?.failureDetail && turn && !compacting) {
       events.push(...this.failures.row(turn, extension.failureDetail))
     }
     const end = extension?.end
-    if (end && compacting && compaction) {
-      compacting.durationMs = end.durationMs
-      if (end.failureDetail) {
-        compaction.failureDetail = end.failureDetail
-      }
-      return events
-    }
     if (end && turn) {
       if (
         this.prompts.current?.turn === turn &&
@@ -275,9 +263,6 @@ export class AcpTimelineTranslator {
       }
       return events
     }
-    if (standard && compaction && readAcpCompactionUpdate(compaction, standard.update)) {
-      return events
-    }
     if (standard) {
       const messageKey =
         turn && this.dialect.injectedPromptIdentity
@@ -285,7 +270,7 @@ export class AcpTimelineTranslator {
           : undefined
       return [
         ...events,
-        ...acpSessionUpdate(standard, rowTurn, at, {
+        ...acpSessionUpdate(standard, keyed, at, {
           tools: this.tools,
           dialect: this.dialect,
           backgroundTasks: this.backgroundTasks,
@@ -327,11 +312,6 @@ export class AcpTimelineTranslator {
       this.prompts.finish()
     }
     return events
-  }
-
-  private compactingPrompt(turn: string): AcpPromptTurn | undefined {
-    const prompt = this.prompts.current
-    return prompt?.turn === turn && prompt.compaction ? prompt : undefined
   }
 
   private start(turn: string, at: number): ProviderTimelineEvent[] {

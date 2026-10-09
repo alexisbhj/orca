@@ -27,6 +27,33 @@ export function readAcpCompactionUpdate(compaction: AcpCompaction, update: Sessi
   return update.sessionUpdate === 'agent_thought_chunk'
 }
 
+/** Folds a frame of the running compaction into it: its words and end are read for the result its
+ *  answer writes. True for a frame that is the compaction's own, which draws nothing. */
+export function absorbAcpCompactionFrame(
+  prompt: { compaction?: AcpCompaction; durationMs?: number },
+  extension:
+    | { failureDetail?: string; end?: { durationMs?: number; failureDetail?: string } }
+    | undefined,
+  update: SessionUpdate | undefined
+): boolean {
+  const { compaction } = prompt
+  if (!compaction) {
+    return false
+  }
+  if (extension?.failureDetail) {
+    compaction.failureDetail = extension.failureDetail
+  }
+  const end = extension?.end
+  if (end) {
+    prompt.durationMs = end.durationMs
+    if (end.failureDetail) {
+      compaction.failureDetail = end.failureDetail
+    }
+    return true
+  }
+  return update !== undefined && readAcpCompactionUpdate(compaction, update)
+}
+
 /** The compaction's result row and its turn's end, from the agent's answer. */
 export function acpCompactionEnd(input: {
   compaction: AcpCompaction

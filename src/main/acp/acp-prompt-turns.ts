@@ -45,6 +45,11 @@ export class AcpPromptTurns {
     }
   }
 
+  /** The running `/compact`, when `turn` is its turn. */
+  compacting(turn: string): AcpPromptTurn | undefined {
+    return this.current?.turn === turn && this.current.compaction ? this.current : undefined
+  }
+
   finish(): void {
     this.last = this.current
     this.current = undefined
