@@ -63,11 +63,8 @@ function load(frame: HTMLIFrameElement): void {
   })
 }
 
-function answer(frame: HTMLIFrameElement, id: number, instance: string): void {
-  post(
-    { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: channelOf(frame), id, instance },
-    frame.contentWindow
-  )
+function answer(frame: HTMLIFrameElement, id: number): void {
+  post({ type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: channelOf(frame), id }, frame.contentWindow)
 }
 
 /** Records what the host posts into the frame, so only the test answers its pings. */
@@ -88,7 +85,7 @@ async function renderLoaded(onRetired: () => void) {
   const posted = captureFramePosts(frame)
   await vi.waitFor(() => {
     expect(posted).toHaveBeenCalledWith(
-      expect.objectContaining({ type: NATIVE_CHAT_VISUAL_PING_TYPE, id: 1 }),
+      expect.objectContaining({ type: NATIVE_CHAT_VISUAL_THEME_TYPE }),
       '*'
     )
   })
@@ -199,25 +196,24 @@ describe('NativeChatVisualFrame', () => {
     expect(openHttpLink).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the visual through a later load its own shell answers, as for an in-page link in WebKit', async () => {
+  it('keeps the visual through a later load it answers, as for an in-page link in WebKit', async () => {
     const onRetired = vi.fn()
     const { frame, posted } = await renderLoaded(onRetired)
+    const ping = expect.objectContaining({ type: NATIVE_CHAT_VISUAL_PING_TYPE })
+    expect(posted).not.toHaveBeenCalledWith(ping, '*')
+    load(frame)
     expect(posted).toHaveBeenCalledWith(
-      { type: NATIVE_CHAT_VISUAL_PING_TYPE, channel: channelOf(frame), id: 1 },
+      { type: NATIVE_CHAT_VISUAL_PING_TYPE, channel: channelOf(frame), id: 2 },
       '*'
     )
-    answer(frame, 1, 'run-a')
-    load(frame)
-    expect(posted).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }), '*')
-    answer(frame, 2, 'run-a')
+    answer(frame, 2)
     waitOutTheAnswer()
     expect(onRetired).not.toHaveBeenCalled()
   })
 
-  it('retires itself when a later load goes unanswered: the frame navigated away', async () => {
+  it('retires itself when a later load goes unanswered: the frame went blank or left', async () => {
     const onRetired = vi.fn()
     const { frame } = await renderLoaded(onRetired)
-    answer(frame, 1, 'run-a')
     load(frame)
     act(() => {
       vi.advanceTimersByTime(NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS - 1)
@@ -229,24 +225,13 @@ describe('NativeChatVisualFrame', () => {
     expect(onRetired).toHaveBeenCalledTimes(1)
   })
 
-  it('retires itself when a new run of the shell answers, as after a reload', async () => {
-    const onRetired = vi.fn()
-    const { frame } = await renderLoaded(onRetired)
-    answer(frame, 1, 'run-a')
-    load(frame)
-    answer(frame, 2, 'run-b')
-    waitOutTheAnswer()
-    expect(onRetired).toHaveBeenCalledTimes(1)
-  })
-
   it('ignores answers from another window, another channel, or an earlier load', async () => {
     const onRetired = vi.fn()
     const { frame } = await renderLoaded(onRetired)
-    answer(frame, 1, 'run-a')
     load(frame)
     load(frame)
-    answer(frame, 2, 'run-a')
-    const pong = { type: NATIVE_CHAT_VISUAL_PONG_TYPE, id: 3, instance: 'run-a' }
+    answer(frame, 2)
+    const pong = { type: NATIVE_CHAT_VISUAL_PONG_TYPE, id: 3 }
     post({ ...pong, channel: channelOf(frame) }, window)
     post({ ...pong, channel: 'other' }, frame.contentWindow)
     waitOutTheAnswer()
@@ -256,7 +241,6 @@ describe('NativeChatVisualFrame', () => {
   it('owes no answer once it unmounts', async () => {
     const onRetired = vi.fn()
     const { frame, unmount } = await renderLoaded(onRetired)
-    answer(frame, 1, 'run-a')
     load(frame)
     unmount()
     waitOutTheAnswer()

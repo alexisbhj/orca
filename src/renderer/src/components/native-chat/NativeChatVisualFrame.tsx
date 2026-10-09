@@ -29,9 +29,9 @@ function newChannel(): string {
 /**
  * One agent-written visual in an opaque-origin frame that may run scripts and nothing else. Inline
  * it fits its height to the page; in a panel it fills the panel. A theme change restyles the page in
- * place, so interaction state survives it. The frame is never allowed to become another page: the
- * main process refuses its navigation, and a later load whose document no longer answers as this
- * visual's shell (a navigation that got through anyway) retires it.
+ * place, so interaction state survives it. On desktop the main process refuses the frame's
+ * navigation; a later load that nothing answers (the frame gone blank or showing another page)
+ * retires it, as a tripwire rather than a boundary.
  */
 export function NativeChatVisualFrame({
   document: visual,
@@ -56,8 +56,7 @@ export function NativeChatVisualFrame({
   }, [theme])
   const [height, setHeight] = useState(NATIVE_CHAT_VISUAL_RESERVED_HEIGHT)
   const loadsRef = useRef(0)
-  // The shell run that answered the first load, and a later load still awaiting that run's answer.
-  const shellInstanceRef = useRef<string | null>(null)
+  // The latest later load still awaiting an answer, and the timer that retires the frame.
   const unansweredRef = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   // Built once per revision: the theme at build time paints first, later themes arrive by message.
@@ -98,12 +97,7 @@ export function NativeChatVisualFrame({
       }
       const pong = readNativeChatVisualPong(event.data, built.channel)
       if (pong !== null) {
-        if (pong.id === 1) {
-          shellInstanceRef.current ??= pong.instance
-        } else if (
-          pong.id === unansweredRef.current?.id &&
-          pong.instance === shellInstanceRef.current
-        ) {
+        if (pong === unansweredRef.current?.id) {
           clearTimeout(unansweredRef.current.timer)
           unansweredRef.current = null
         }
@@ -148,7 +142,6 @@ export function NativeChatVisualFrame({
   // A frame rebuilt for a new revision, or unmounted, owes no answer.
   useEffect(
     () => () => {
-      shellInstanceRef.current = null
       if (unansweredRef.current) {
         clearTimeout(unansweredRef.current.timer)
         unansweredRef.current = null
@@ -186,8 +179,7 @@ export function NativeChatVisualFrame({
           loadsRef.current += 1
           const frameWindow = frameRef.current?.contentWindow
           if (loadsRef.current > 1) {
-            // WebKit also fires load for an in-page link in a sandboxed frame. Only the same run of
-            // this visual's shell answers as itself; silence or a new run means it navigated away.
+            // A tripwire for a frame gone blank or to another page (WebKit also loads on `#x`).
             if (unansweredRef.current) {
               clearTimeout(unansweredRef.current.timer)
             }
@@ -195,11 +187,11 @@ export function NativeChatVisualFrame({
               id: loadsRef.current,
               timer: setTimeout(onRetired, NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS)
             }
+            frameWindow?.postMessage(
+              nativeChatVisualPingMessage(loadsRef.current, built.channel),
+              '*'
+            )
           }
-          frameWindow?.postMessage(
-            nativeChatVisualPingMessage(loadsRef.current, built.channel),
-            '*'
-          )
           // Covers a theme change that landed while the page loaded.
           frameWindow?.postMessage(
             nativeChatVisualThemeMessage(themeRef.current, built.channel),

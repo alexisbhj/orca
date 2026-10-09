@@ -30,10 +30,10 @@ const LINK_WINDOW_MS = 5_000
  *   and stamps them with `token`, which the child never sees.
  * - A link request is relayed only while the child frame holds focus and the page holds user
  *   activation, and at most once per activation window.
- * - Every `load` of the child pings its shell. A later load (WebKit fires one for an in-page link
- *   too) must be answered by the run that answered the first; silence or a new run means it
- *   navigated away: the frame is removed and the app told, so a replacement document never
- *   inherits the frame.
+ * - A later `load` of the child (WebKit fires one for in-page links too) is pinged; if nothing
+ *   answers, the frame went blank or left, so it is removed and the app told. A tripwire only: this
+ *   page's policy (`frame-src`/`child-src 'none'`), the app's `allowsLoad` and the sandbox are the
+ *   navigation boundary.
  * - It never sizes the frame from a report itself; the app decides heights and calls back.
  * - Inline, the frame does not scroll, so a drag that starts on it scrolls the transcript.
  *
@@ -94,7 +94,6 @@ frame.setAttribute('title', C.title)
 // inline the frame is sized to its content (full screen still scrolls).
 if (!C.fullscreen) frame.setAttribute('scrolling', 'no')
 var loads = 0
-var shellInstance = null
 var unanswered = null
 function escaped() {
   frame.remove()
@@ -102,10 +101,9 @@ function escaped() {
 }
 frame.addEventListener('load', function () {
   loads += 1
-  if (loads > 1) {
-    if (unanswered) clearTimeout(unanswered.timer)
-    unanswered = { id: loads, timer: setTimeout(escaped, C.pongTimeoutMs) }
-  }
+  if (loads === 1) return
+  if (unanswered) clearTimeout(unanswered.timer)
+  unanswered = { id: loads, timer: setTimeout(escaped, C.pongTimeoutMs) }
   frame.contentWindow.postMessage({ type: C.ping, channel: C.channel, id: loads }, '*')
 })
 window[C.applyHeight] = function (height) {
@@ -126,8 +124,7 @@ window.addEventListener('message', function (event) {
   // The visual chooses every field, so only an exact channel match is relayed, as the host's own copy.
   if (!data || typeof data !== 'object' || data.channel !== C.channel) return
   if (data.type === C.pong) {
-    if (data.id === 1 && shellInstance === null) shellInstance = data.instance
-    else if (unanswered && data.id === unanswered.id && data.instance === shellInstance) {
+    if (unanswered && data.id === unanswered.id) {
       clearTimeout(unanswered.timer)
       unanswered = null
     }

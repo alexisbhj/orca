@@ -107,9 +107,9 @@ describe('buildNativeChatVisualDocument', () => {
     expect(document).toContain('event.source !== host')
   })
 
-  it('answers a ping from the host with the ping id and its own run', () => {
+  it('answers a ping from the host with the ping id', () => {
     expect(document).toContain(`"ping":"${NATIVE_CHAT_VISUAL_PING_TYPE}"`)
-    expect(document).toContain('send({ type: C.pong, id: data.id, instance: instance })')
+    expect(document).toContain('send({ type: C.pong, id: data.id })')
   })
 })
 
@@ -184,9 +184,9 @@ describe('readNativeChatVisualFrameMessage', () => {
 })
 
 describe('readNativeChatVisualPong', () => {
-  it('reads the ping id and shell run on its own channel', () => {
-    const pong = { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: 2, instance: '42' }
-    expect(readNativeChatVisualPong(pong, 'c')).toEqual({ id: 2, instance: '42' })
+  it('reads the ping id on its own channel', () => {
+    const pong = { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: 2 }
+    expect(readNativeChatVisualPong(pong, 'c')).toBe(2)
     expect(nativeChatVisualPingMessage(2, 'c')).toEqual({
       type: NATIVE_CHAT_VISUAL_PING_TYPE,
       channel: 'c',
@@ -195,14 +195,11 @@ describe('readNativeChatVisualPong', () => {
   })
 
   it.each([
-    ['another channel', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'x', id: 2, instance: '1' }],
-    ['a ping', { type: NATIVE_CHAT_VISUAL_PING_TYPE, channel: 'c', id: 2, instance: '1' }],
-    ['no run', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: 2 }],
-    [
-      'a fractional id',
-      { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: 1.5, instance: '1' }
-    ],
-    ['a string id', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: '2', instance: '1' }],
+    ['another channel', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'x', id: 2 }],
+    ['a ping', { type: NATIVE_CHAT_VISUAL_PING_TYPE, channel: 'c', id: 2 }],
+    ['no id', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c' }],
+    ['a fractional id', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: 1.5 }],
+    ['a string id', { type: NATIVE_CHAT_VISUAL_PONG_TYPE, channel: 'c', id: '2' }],
     ['null', null]
   ])('refuses %s', (_name, data) => {
     expect(readNativeChatVisualPong(data, 'c')).toBeNull()

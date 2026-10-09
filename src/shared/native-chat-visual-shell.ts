@@ -1,4 +1,3 @@
-import { PANEL_WATCHDOG_PONG_TIMEOUT_MS } from './plugins/plugin-panel-bridge'
 import { PANEL_DESIGN_TOKEN_ALLOWLIST } from './plugins/plugin-panel-shell'
 
 /**
@@ -62,11 +61,8 @@ export const NATIVE_CHAT_VISUAL_OPEN_LINK_TYPE = 'orca-visual-open-link'
 export const NATIVE_CHAT_VISUAL_THEME_TYPE = 'orca-visual-theme'
 export const NATIVE_CHAT_VISUAL_PING_TYPE = 'orca-visual-ping'
 export const NATIVE_CHAT_VISUAL_PONG_TYPE = 'orca-visual-pong'
-/** How long a host waits for the shell to answer after a later load; the plugin panel deadline. */
-export const NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS = PANEL_WATCHDOG_PONG_TIMEOUT_MS
-
-/** The shell's answer: which ping, and which run of the shell (a reloaded page is a new run). */
-export type NativeChatVisualPong = { id: number; instance: string }
+/** Visuals' own wait for an answer: at 1 s, a busy visual in WebKit answered too late. */
+export const NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS = 5_000
 
 export const NATIVE_CHAT_VISUAL_MIN_HEIGHT = 80
 export const NATIVE_CHAT_VISUAL_MAX_HEIGHT = 2000
@@ -155,12 +151,11 @@ document.addEventListener('click', function (event) {
 }, true)
 document.addEventListener('submit', function (event) { event.preventDefault() }, true)
 // Only the host window may restyle the visual, or ask whether this document still runs the shell.
-var instance = String(Math.random()).slice(2)
 var themeStyle = document.getElementById('orca-visual-theme')
 window.addEventListener('message', function (event) {
   var data = event.data
   if (event.source !== host || !data || data.channel !== C.channel) return
-  if (data.type === C.ping) return send({ type: C.pong, id: data.id, instance: instance })
+  if (data.type === C.ping) return send({ type: C.pong, id: data.id })
   if (data.type !== C.theme || typeof data.css !== 'string' || !themeStyle) return
   themeStyle.textContent = data.css
   document.documentElement.classList.toggle('dark', data.colorScheme === 'dark')
@@ -266,11 +261,8 @@ export function readNativeChatVisualFrameMessage(
   return null
 }
 
-/** A visual shell's answer to a ping on `channel`, or null for anything else. */
-export function readNativeChatVisualPong(
-  data: unknown,
-  channel: string
-): NativeChatVisualPong | null {
+/** The ping id a visual's shell answered on `channel`, or null for anything else. */
+export function readNativeChatVisualPong(data: unknown, channel: string): number | null {
   if (typeof data !== 'object' || data === null || !('channel' in data) || !('type' in data)) {
     return null
   }
@@ -278,10 +270,7 @@ export function readNativeChatVisualPong(
     return null
   }
   const id = 'id' in data ? data.id : undefined
-  const instance = 'instance' in data ? data.instance : undefined
-  return typeof id === 'number' && Number.isSafeInteger(id) && typeof instance === 'string'
-    ? { id, instance }
-    : null
+  return typeof id === 'number' && Number.isSafeInteger(id) ? id : null
 }
 
 export function clampNativeChatVisualHeight(height: number): number {

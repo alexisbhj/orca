@@ -137,12 +137,15 @@ for (const engine of ['chromium', 'webkit']) {
         await page.close()
       })
 
-      it('still retires a visual that navigated away or reloaded itself', async () => {
+      it('still retires a visual that went blank, from a link or a navigation', async () => {
         for (const leave of [
           () => {
             location.href = 'about:blank'
           },
-          () => location.reload()
+          () => {
+            document.querySelector('base').remove()
+            document.getElementById('to-s2').click()
+          }
         ]) {
           const { page, frame } = await openNativeHost(browser())
           await frame.evaluate(leave).catch(() => {})
@@ -150,6 +153,16 @@ for (const engine of ['chromium', 'webkit']) {
           expect(await page.evaluate(() => document.querySelector('iframe'))).toBeNull()
           await page.close()
         }
+      })
+
+      it('keeps a visual that reran its own page, which is the same host-owned document', async () => {
+        const { page, frame } = await openNativeHost(browser())
+        const marker = await frame.evaluate(() => window.marker)
+        await frame.evaluate(() => location.reload()).catch(() => {})
+        await outlastTheAnswer(page)
+        await expect.poll(() => frame.evaluate(() => window.marker)).not.toBe(marker)
+        expect(await escaped(page)).toBe(false)
+        await page.close()
       })
 
       it('moves within the sealed visual on the web shell, under its shipped policy', async () => {
