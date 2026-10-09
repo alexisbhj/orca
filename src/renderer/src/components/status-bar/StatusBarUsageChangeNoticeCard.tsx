@@ -34,7 +34,7 @@ export function StatusBarUsageChangeNoticeCard({
   eligible: boolean
   dismiss: () => void
   title: string
-  description: string
+  description: ReactNode
   action?: { label: string; onClick: () => void }
 }): React.JSX.Element {
   const [delayElapsed, setDelayElapsed] = useState(false)
@@ -144,7 +144,7 @@ export function StatusBarUsageChangeNoticeCard({
                 <X className="size-3.5" />
               </Button>
             </div>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex justify-end gap-2">
               {action ? (
                 <Button
                   variant="default"
@@ -155,7 +155,7 @@ export function StatusBarUsageChangeNoticeCard({
                   {action.label}
                 </Button>
               ) : null}
-              <Button variant="ghost" size="sm" onClick={dismiss}>
+              <Button variant={action ? 'secondary' : 'default'} size="sm" onClick={dismiss}>
                 {translate(
                   'auto.components.status.bar.UsagePercentageDisplayChangeNotice.gotIt',
                   'Got it'
