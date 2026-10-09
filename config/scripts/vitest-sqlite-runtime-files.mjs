@@ -2,6 +2,7 @@ import { SQLITE_DATABASE_RUNTIME_INCLUDE } from './vitest-sqlite-database-runtim
 
 // Real SQLite fixtures keep Node publication and close semantics.
 export const SQLITE_RUNTIME_INCLUDE = [
+  'src/renderer/src/components/settings/chat-permission-creation.test.tsx',
   'src/renderer/src/components/native-chat/structured-permission-both-clients.test.tsx',
   'src/main/runtime/agent-session-legacy-permission-resume.test.ts',
   'src/renderer/src/web/web-chat-permission-settings.test.ts',
@@ -149,6 +150,7 @@ export const SQLITE_RUNTIME_INCLUDE = [
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed-children.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed-clock.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed-launch-directory.test.ts',
+  'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed-permission-mode.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed-stopping.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-feed.test.ts',
   'src/main/native-chat/agent-session-wire/structured-agent-session-status-reentry.test.ts',

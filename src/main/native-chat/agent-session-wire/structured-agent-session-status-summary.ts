@@ -7,6 +7,7 @@ import type { StructuredAgentSessionStatusState } from './structured-agent-sessi
 import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import { structuredAgentSessionProviderSessionMetadata } from './structured-agent-session-history-result'
 import { agentSessionPinnedLaunchDirectory } from '../../runtime/agent-session-record-launch-directory'
+import { restingPermissionModes } from './structured-agent-session-permission-fact'
 
 export function structuredAgentSessionStatusSummary({
   sessionId,
@@ -37,6 +38,8 @@ export function structuredAgentSessionStatusSummary({
   // switch lands, so the row follows whichever is in force.
   const model = normalizeOptionalField(record?.options?.model, AGENT_MODEL_MAX_LENGTH)
   const launchDirectory = record ? agentSessionPinnedLaunchDirectory(record) : undefined
+  // What the chat's pill shows; a new chat reuses an empty one only when this matches its default.
+  const permissionMode = record ? restingPermissionModes(record)?.current : undefined
   return {
     sessionId,
     workspaceId: session.params.location.workspaceId,
@@ -54,6 +57,7 @@ export function structuredAgentSessionStatusSummary({
       ? { rewindBlockedReason: 'outcome-unknown' as const }
       : {}),
     ...(model ? { model } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
     ...childWork,
     ...(providerSession ? { providerSession } : {}),
     ...(launchDirectory ? { launchDirectory } : {}),

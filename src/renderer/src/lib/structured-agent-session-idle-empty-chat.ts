@@ -13,18 +13,25 @@ import { isStructuredLaunchChatEmpty } from './structured-agent-session-launch-e
 export type IdleEmptyStructuredChat = { sessionId: string; executionHostId: ExecutionHostId }
 
 /** Published, and its host's journal holds no request (a null status). A resumed chat's journal
- *  holds the imported conversation, so it never reads as empty. */
-function hostHoldsNoRequest(tab: Tab, executionHostId: ExecutionHostId): boolean {
+ *  holds the imported conversation, so it never reads as empty. A host that names the mode a new
+ *  chat starts in only offers an empty chat already in it, so a changed default opens a new chat. */
+function hostOffersEmptyChat(
+  tab: Tab,
+  executionHostId: ExecutionHostId,
+  permissionMode: string | undefined
+): boolean {
   const lifecycle = getStructuredAgentSessionLaunchLifecycle(tab.worktreeId, tab.entityId)
   const target = structuredAgentSessionTargetForHost(executionHostId)
   if ((lifecycle !== null && lifecycle !== 'published') || !target) {
     return false
   }
   const feed = getStructuredAgentSessionStatusFeed(target)
+  const summary = feed.getSnapshot().get(tab.entityId)
   // Why live only: a summary cached across a lost stream may predate a message the host took.
   return (
     feed.getSessionObservation(tab.entityId) === 'live' &&
-    feed.getSnapshot().get(tab.entityId)?.status === null
+    summary?.status === null &&
+    (permissionMode === undefined || summary.permissionMode === permissionMode)
   )
 }
 
@@ -35,12 +42,14 @@ function holdsUnadoptedLaunchDraft(tabId: string): boolean {
 }
 
 /** An open chat for `agent` in this workspace's `groupId` (else any group) that nothing was ever
- *  sent into and whose composer is untouched. Prefers the group's active tab, else the newest. */
+ *  sent into and whose composer is untouched. Prefers the group's active tab, else the newest.
+ *  `permissionMode`: the mode the host said a new chat would start in, when it said one. */
 export function findIdleEmptyStructuredChat(
   worktreeId: string,
   agent: TuiAgent,
   executionHostId?: ExecutionHostId,
-  groupId?: string
+  groupId?: string,
+  permissionMode?: string
 ): IdleEmptyStructuredChat | undefined {
   const state = useAppStore.getState()
   const candidates: (IdleEmptyStructuredChat & { tab: Tab })[] = []
@@ -53,7 +62,7 @@ export function findIdleEmptyStructuredChat(
       owner &&
       (!groupId || tab.groupId === groupId) &&
       (!executionHostId || owner === executionHostId) &&
-      hostHoldsNoRequest(tab, owner) &&
+      hostOffersEmptyChat(tab, owner, permissionMode) &&
       isStructuredLaunchChatEmpty(tab.entityId) &&
       !holdsUnadoptedLaunchDraft(tab.id)
     ) {

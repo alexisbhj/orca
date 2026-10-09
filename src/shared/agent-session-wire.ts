@@ -19,7 +19,8 @@ import type { AgentSessionContextUsage } from './agent-session-context-usage'
 import type {
   AgentSessionPermissionFrameFields,
   AgentSessionPermissionModes,
-  AgentSessionPermissionFact
+  AgentSessionPermissionFact,
+  AgentChatPermissionMode
 } from './agent-chat-permission-mode'
 // ─── Structured agent-session wire contract ─────────────────────────────────
 // The shapes `agentSession.*` accepts and publishes. Phase 2 builds provider
@@ -236,6 +237,8 @@ export type AgentSessionSubscribeEvent =
  *  from the journal so no client has to replay a transcript to learn whether a
  *  turn is running. Additive surface: an older host has no such method. */
 export type AgentSessionStatusSummary = {
+  /** The chat's saved permission mode; absent from older hosts and agents without one. */
+  permissionMode?: AgentChatPermissionMode
   rewindBlockedReason?: AgentSessionRewindReason
   sessionId: string
   workspaceId: string

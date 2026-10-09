@@ -7,16 +7,22 @@ import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wi
 import type { StructuredAgentSessionLaunchIntent } from '@/lib/launch-structured-agent-session'
 import type * as LaunchAdmissionModule from './structured-agent-session-launch-admission'
 
-const mocks = vi.hoisted(() => ({
-  createIntent: vi.fn(),
-  launch: vi.fn(),
-  callRuntimeRpc: vi.fn(),
-  refreshTabs: vi.fn(),
-  activateTab: vi.fn(),
-  focusGroup: vi.fn(),
-  statusBySession: new Map<string, AgentSessionStatusSummary['status']>(),
-  liveSessions: new Set<string>()
-}))
+const mocks = vi.hoisted(() => {
+  /** The seed this machine's admission reports for the next pick. */
+  const admitted: { seed?: Record<string, string> } = {}
+  return {
+    createIntent: vi.fn(),
+    launch: vi.fn(),
+    callRuntimeRpc: vi.fn(),
+    refreshTabs: vi.fn(),
+    activateTab: vi.fn(),
+    focusGroup: vi.fn(),
+    statusBySession: new Map<string, AgentSessionStatusSummary['status']>(),
+    permissionBySession: new Map<string, AgentSessionStatusSummary['permissionMode']>(),
+    liveSessions: new Set<string>(),
+    admitted
+  }
+})
 
 type StoreState = {
   unifiedTabsByWorktree: Record<string, Tab[]>
@@ -62,7 +68,9 @@ vi.mock('@/lib/launch-structured-agent-session', () => {
 // Reuse is decided where an admitted launch opens its chat; here this machine admits at once.
 vi.mock('@/lib/structured-agent-session-launch-admission', async (importOriginal) => ({
   ...(await importOriginal<typeof LaunchAdmissionModule>()),
-  beginHostAdmittedStructuredLaunch: (args: { openAdmitted: () => unknown }) => args.openAdmitted()
+  beginHostAdmittedStructuredLaunch: (args: {
+    openAdmitted: (seedOptions?: Record<string, string>) => unknown
+  }) => args.openAdmitted(mocks.admitted.seed)
 }))
 vi.mock('@/runtime/local-structured-session-tabs-sync', () => ({
   refreshLocalStructuredSessionTabs: mocks.refreshTabs
@@ -82,7 +90,10 @@ vi.mock('@/runtime/structured-agent-session-status-feed', () => ({
       mocks.liveSessions.has(sessionId) ? 'live' : 'unverifiable',
     getSnapshot: () =>
       new Map(
-        [...mocks.statusBySession].map(([sessionId, status]) => [sessionId, { sessionId, status }])
+        [...mocks.statusBySession].map(([sessionId, status]) => {
+          const permissionMode = mocks.permissionBySession.get(sessionId)
+          return [sessionId, { sessionId, status, ...(permissionMode ? { permissionMode } : {}) }]
+        })
       )
   })
 }))
@@ -253,7 +264,9 @@ beforeEach(() => {
     discardStructuredLaunchPrompts(sessionId)
   }
   mocks.statusBySession.clear()
+  mocks.permissionBySession.clear()
   mocks.liveSessions.clear()
+  delete mocks.admitted.seed
   store.state = emptyStoreState()
   mocks.createIntent
     .mockReturnValueOnce(first)
@@ -410,6 +423,48 @@ describe('a second "new chat" with no text', () => {
 
     expect(pick('claude-pick', { agent: 'claude' }).sessionId).toBe(second.sessionId)
     expect(pick('other-pick', { worktreeId: 'wt-other' }).sessionId).toBe('session-third')
+  })
+})
+
+describe('a second "new chat" after its host changed the new-chat permission default', () => {
+  it('opens a new chat in the new default beside an idle empty chat saved in the old one', async () => {
+    mocks.admitted.seed = { permissionMode: 'ask' }
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.permissionBySession.set(first.sessionId, 'ask')
+    mocks.admitted.seed = { permissionMode: 'bypass' }
+
+    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
+    expect(mocks.createIntent).toHaveBeenLastCalledWith(WORKTREE_ID, 'codex', 'local', undefined, {
+      permissionMode: 'bypass'
+    })
+  })
+
+  it('reuses the idle empty chat already in the default', async () => {
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.permissionBySession.set(first.sessionId, 'bypass')
+    mocks.admitted.seed = { permissionMode: 'bypass' }
+
+    expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
+  })
+
+  it("opens a new chat when the idle chat's mode is unknown but the host names one", async () => {
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.admitted.seed = { permissionMode: 'ask' }
+
+    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
+  })
+
+  // An older host has no new-chat default, so its empty chat is reused as before.
+  it('reuses the idle empty chat when the host names no default', async () => {
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.permissionBySession.set(first.sessionId, 'ask')
+    mocks.admitted.seed = { model: 'gpt-5.5' }
+
+    expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
   })
 })
 
