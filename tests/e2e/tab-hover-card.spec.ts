@@ -9,7 +9,7 @@ function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
   return page.evaluateHandle(() => {
     const frames: CardFrame[] = []
     const started = performance.now()
-    let nextFrame = 0
+    let nextSample = 0
     const record = (): void => {
       const cards = document.querySelectorAll('[data-tab-hover-card]')
       const element = cards[0]
@@ -25,13 +25,14 @@ function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
             ) ?? false
       })
       if (performance.now() - started < 10_000) {
-        nextFrame = requestAnimationFrame(record)
+        // Hidden Linux windows can suspend animation frames even with throttling disabled.
+        nextSample = window.setTimeout(record, 16)
       }
     }
     record()
     return {
       stop: () => {
-        cancelAnimationFrame(nextFrame)
+        window.clearTimeout(nextSample)
         return frames
       }
     }
@@ -48,7 +49,7 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   electronApp,
   orcaPage
 }) => {
-  // Hidden Linux windows otherwise pause the animation frames this test samples.
+  // Keep the recorder's timer running while the test window stays hidden.
   const window = await electronApp.browserWindow(orcaPage)
   await window.evaluate((window) => window.webContents.setBackgroundThrottling(false))
   await window.dispose()
@@ -98,7 +99,7 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   await orcaPage.waitForTimeout(200)
   const frames = await stopCardRecording(recording)
   const firstTargetFrame = frames.findIndex((frame) => frame.title === 'Review changes')
-  expect(firstTargetFrame).toBeGreaterThan(0)
+  expect(firstTargetFrame, JSON.stringify(frames)).toBeGreaterThan(0)
   expect(
     frames
       .slice(0, firstTargetFrame)
