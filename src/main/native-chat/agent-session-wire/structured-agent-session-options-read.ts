@@ -41,9 +41,10 @@ async function readStructuredAgentSessionOptionsAtRest(
     throw new Error('agent_session_identity_required')
   }
   const rules = restingOptionRules(deps.agents, record)
-  // Decides as the next start will: an aged list lacking the saved model is re-listed first.
+  // Decides as the next start will, without waiting: while an aged list lacking the saved model is
+  // re-listed, the saved model stands.
   const catalog = (await deps.modelCatalog
-    ?.read({ agent: record.provider, sessionId, settleRequiredModel: true })
+    ?.read({ agent: record.provider, sessionId })
     .catch(() => null)) ?? { origin: 'unknown' as const }
   const saved = settledAgentModelSelection(catalog, record.options ?? {})
   const fastMode =
@@ -58,31 +59,16 @@ async function readStructuredAgentSessionOptionsAtRest(
   if (rules?.projectOptions) {
     return rules.projectOptions(catalog, current)
   }
-  // Agents without a saved-catalog projection retain their own default/capability policy.
-  const listed = catalog.origin === 'unknown' ? (rules?.fallbackModels() ?? null) : catalog.models
-  const models = listed ?? []
-  // An unknown model is one the client already treats as unconfirmed. Only a real listing names the
-  // account's default; a built-in list's default is a guess, so with none the client keeps its own.
-  const model =
-    saved.model ??
-    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id) ??
-    ''
-  // As a live child answers: the pick, else the model's default where the agent reports that.
-  const effort =
-    saved.effort ??
-    (rules?.effortDefaultsToModel
-      ? models.find((entry) => entry.id === model)?.defaultEffort
-      : undefined)
+  // Agents without a saved-catalog projection list the catalog as is. An unknown model is one the
+  // client already treats as unconfirmed; only a real listing names the account's default.
+  const listed = catalog.origin === 'unknown' ? null : catalog.models
+  const model = saved.model ?? listed?.find((entry) => entry.isDefault)?.id ?? ''
   return {
     models: listed ? structuredAgentSessionOptionModels(listed, model, (row) => row) : [],
     ...(catalog.origin !== 'unknown' && catalog.fastModeSupport
       ? { fastModeSupport: catalog.fastModeSupport }
       : {}),
-    current: {
-      model,
-      ...(effort ? { effort } : {}),
-      ...(typeof fastMode === 'boolean' ? { fastMode } : {})
-    }
+    current: { ...current, model }
   }
 }
 

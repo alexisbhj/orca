@@ -51,6 +51,7 @@ function parseModel(value: unknown): AgentSessionModelOption | null {
   }
   const description = text(row.description)
   const defaultEffort = text(row.defaultEffort)
+  const resolvedModel = text(row.resolvedModel)
   return {
     id,
     label,
@@ -58,7 +59,10 @@ function parseModel(value: unknown): AgentSessionModelOption | null {
     isDefault: row.isDefault === true,
     ...(defaultEffort ? { defaultEffort } : {}),
     efforts: efforts.filter((effort): effort is AgentSessionOptionChoice => effort !== null),
-    ...(typeof row.supportsFastMode === 'boolean' ? { supportsFastMode: row.supportsFastMode } : {})
+    ...(typeof row.supportsFastMode === 'boolean'
+      ? { supportsFastMode: row.supportsFastMode }
+      : {}),
+    ...(resolvedModel ? { resolvedModel } : {})
   }
 }
 

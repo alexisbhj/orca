@@ -42,6 +42,8 @@ function startingChat(input: {
   relists?: AgentSessionModelOption[]
   /** Answers as a host that predates verification does. */
   olderHost?: boolean
+  /** A floating chat in a workspace whose own config may pick another model. */
+  floating?: boolean
 }) {
   mocks.call.mockReset()
   mocks.hold.mockReset()
@@ -72,7 +74,8 @@ function startingChat(input: {
     drivesRecord: () => true,
     agents: { definition: () => CLAUDE_STRUCTURED_AGENT },
     probes: { claude: probe },
-    resolveAccountHome: async () => home
+    resolveAccountHome: async () => home,
+    workspaceMayOverrideDefaultModel: async () => true
   })
   mocks.call.mockImplementation(
     async (_target: unknown, method: string, params: Parameters<typeof service.read>[0]) => {
@@ -80,11 +83,15 @@ function startingChat(input: {
         return new Promise(() => {})
       }
       // As the host's handler does before a record exists: the decision is about the saved seed.
-      const answer = await service.read({ ...params, requiredModel: SEED.model })
+      const answer = await service.read({
+        ...params,
+        requiredModel: SEED.model,
+        ...(input.floating ? { workspacePath: '/workspaces/floating' } : {})
+      })
       if (!input.olderHost) {
         return answer
       }
-      const { verified: _unknownToOlderHosts, ...older } = answer
+      const { unlistedModelReplacement: _unknownToOlderHosts, ...older } = answer
       return older
     }
   )
@@ -201,6 +208,22 @@ describe('Claude picker before the provider starts', () => {
       }
     }
   )
+
+  it("shows a floating chat the account's listed default the host starts, not the first row", async () => {
+    const haiku = { id: 'haiku', label: 'Haiku', isDefault: false, efforts: [LOW] }
+    const chat = startingChat({ host: 'local', relists: [haiku, SONNET], floating: true })
+    try {
+      await waitFor(() =>
+        expect(chat.row('model')).toMatchObject({
+          valueSource: 'default',
+          kind: { currentValue: 'sonnet' }
+        })
+      )
+      expect(chat.probe).toHaveBeenCalledOnce()
+    } finally {
+      chat.hook.unmount()
+    }
+  })
 
   it('keeps the selection when an older host cannot say its list is current', async () => {
     const chat = startingChat({ host: 'paired', relists: [SONNET], olderHost: true })

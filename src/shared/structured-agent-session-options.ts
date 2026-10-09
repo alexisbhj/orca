@@ -66,6 +66,7 @@ function discoveredModel(
     label: model.label,
     ...(model.description ? { description: model.description } : {}),
     ...(model.isDefault ? { isDefault: true } : {}),
+    ...(model.resolvedModel ? { resolvedModel: model.resolvedModel } : {}),
     options: [
       ...(effort ? [effort] : []),
       ...(sessionSupportsFastMode && model.supportsFastMode === true ? [fastModeOption()] : [])
@@ -94,8 +95,9 @@ export type StructuredAgentSessionOptionState = {
   catalog: AgentSessionOptionCatalog | null
   /** What produced `catalog`; a weaker source never replaces a stronger one. */
   catalogSource: 'seed' | 'host' | 'live' | null
-  /** The host's list is current, so a selected model it lacks is gone (`host` source only). */
-  hostCatalogVerified?: boolean
+  /** What the host starts a chat on whose selection its current list lacks (`host` source only);
+   *  absent while that list is unverified. */
+  hostModelReplacement?: string
   record: NativeChatSessionOptionRecord
   pendingId: string | null
 }
@@ -174,7 +176,7 @@ export function applyStructuredAgentSessionModelCatalog(
       ...(options.namesDefault ? { defaultModelIsCliDefault: true } : {})
     },
     catalogSource: 'host',
-    hostCatalogVerified: catalog.verified === true
+    hostModelReplacement: catalog.unlistedModelReplacement
   }
 }
 
@@ -182,11 +184,12 @@ export function applyStructuredAgentSessionModelCatalog(
 function withVerifiedModelReplacement(
   state: StructuredAgentSessionOptionState
 ): StructuredAgentSessionOptionState {
-  if (!state.catalog || state.catalogSource !== 'host' || state.hostCatalogVerified !== true) {
-    return state
-  }
-  const record = verifiedListReplacementRecord(state.catalog, state.record)
-  return record === state.record ? state : { ...state, record }
+  const { catalog, record, hostModelReplacement } = state
+  const shown =
+    catalog && state.catalogSource === 'host'
+      ? verifiedListReplacementRecord(catalog, record, hostModelReplacement)
+      : record
+  return shown === record ? state : { ...state, record: shown }
 }
 
 export function applyStructuredAgentSessionOptions(

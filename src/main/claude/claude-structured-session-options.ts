@@ -4,6 +4,7 @@ import type {
   AgentSessionOptionsResult
 } from '../../shared/agent-session-wire'
 import {
+  claudeSessionModelRows,
   listedModels,
   matchListedModel,
   record,
@@ -226,12 +227,6 @@ export function claudeCatalogAdmitsModel(models: readonly ListedModel[], modelId
 
 type WireClaudeModel = AgentSessionOptionsResult['models'][number]
 
-/** The built-in models a running child lists when the CLI gives it none; a chat at rest with no
- *  catalog lists the same. */
-export function claudeFallbackModelOptions(): WireClaudeModel[] {
-  return projectClaudeSessionModelOptions({ current: { model: '' } }).models
-}
-
 /** The listing, with what the CLI runs when no effort is sent on each model the child applies —
  *  a default only a running child knows, and only while this session has no effort pick. */
 function catalogClaudeModels(session: ClaudeSession, discovered: ListedModel[]): WireClaudeModel[] {
@@ -250,18 +245,22 @@ function catalogClaudeModels(session: ClaudeSession, discovered: ListedModel[]):
 
 /** Write a provider-listed catalog through to the host store. Account-level
  *  facts only: this session's disabled reason and its unlisted current model
- *  stay out, so another surface never inherits session state as a catalog. */
+ *  stay out, so another surface never inherits session state as a catalog.
+ *  The child answers from its initialize result, so every write keeps the age of its first. */
 function writeClaudeCatalogThrough(session: ClaudeSession, discovered: ListedModel[]): void {
-  if (discovered.length === 0 || !session.catalogAccess) {
+  const access = session.catalogAccess
+  if (discovered.length === 0 || !access) {
     return
   }
-  const rows = claudeCatalogRowsOfAccount(session.catalogAccess, discovered, session.launchedModel)
+  session.catalogListedAt ??= access.store.now()
+  const rows = claudeCatalogRowsOfAccount(access, discovered, session.launchedModel)
   const support = claudeFastModeSupport(rows, undefined)
-  session.catalogAccess.store.recordSuccess(session.catalogAccess.fingerprint, 'claude', {
+  access.store.recordSuccess(access.fingerprint, 'claude', {
     models: catalogClaudeModels(session, rows),
     ...(support ? { fastModeSupport: support } : {}),
     fastModeTierByModel: new Map(),
-    origin: 'live-session'
+    origin: 'live-session',
+    listedAt: session.catalogListedAt
   })
 }
 
@@ -306,6 +305,21 @@ function observeClaudeSettingsReadback(
       session.fastModePerSessionOptIn = perSessionOptIn
     }
   }
+}
+
+/** Whether a row of the list this session's options answer from has `modelId` as its own id. */
+export function claudeSessionListsModel(
+  session: ClaudeSession,
+  catalog: unknown[] | null,
+  modelId: string | undefined
+): boolean {
+  return (
+    modelId !== undefined &&
+    claudeSessionModelRows({
+      liveModels: listedModels(catalog ? { models: catalog } : null),
+      savedModels: session.catalogAccess?.store.get(session.catalogAccess.fingerprint)?.models
+    }).some((row) => row.id === modelId)
+  )
 }
 
 /** The options as main already holds them, over `catalog`; asks the CLI nothing. Startup's

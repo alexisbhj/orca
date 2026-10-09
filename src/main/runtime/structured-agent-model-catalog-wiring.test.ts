@@ -120,7 +120,7 @@ describe('the runtime host catalog for session pickers', () => {
         models: [{ ...SAVED_MODEL, isDefault: false }],
         fastModeSupport: saved.fastModeSupport,
         // Only a list current enough to call a missing model gone says so.
-        ...(stale ? {} : { verified: true })
+        ...(stale ? {} : { unlistedModelReplacement: 'sonnet' })
       })
     }
   )
@@ -133,7 +133,7 @@ describe('the runtime host catalog for session pickers', () => {
         throw new Error('the pinned account has a saved catalog')
       }
       expect(result.models).toEqual([SAVED_MODEL])
-      expect(result).not.toHaveProperty('verified')
+      expect(result).not.toHaveProperty('unlistedModelReplacement')
       expect(record.options).toEqual({ model })
     }
   )

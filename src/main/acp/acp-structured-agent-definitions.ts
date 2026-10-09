@@ -30,10 +30,7 @@ export function acpStructuredAgentDefinition(spec: AcpLaunchSpec): StructuredAge
       approvalEnforcement: 'orca'
     },
     restingOptions: {
-      acceptsKey: isAcpStructuredOptionKey,
-      // The agent lists its models over the protocol once it runs; Orca keeps no list of its own.
-      fallbackModels: () => null,
-      effortDefaultsToModel: false
+      acceptsKey: isAcpStructuredOptionKey
     }
   }
 }

@@ -193,6 +193,8 @@ export type ClaudeSession = {
   fastModeAtStart: boolean
   /** Absent when the adapter runs without a host catalog store (tests). */
   catalogAccess?: AgentModelCatalogSessionAccess
+  /** When this child's list first reached the store, by its clock; the list never changes since. */
+  catalogListedAt?: number
   /** CLI-advertised protocol capabilities from init; gates interrupt-receipt handling. */
   capabilities: readonly string[]
   backgroundTasks: ClaudeBackgroundTaskTracker

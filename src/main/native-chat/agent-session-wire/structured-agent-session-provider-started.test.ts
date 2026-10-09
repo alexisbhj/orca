@@ -35,6 +35,7 @@ let store: AgentSessionRecordStore
 let host: StructuredAgentSessionHost
 let adapter: ClaudeStructuredSessionAdapter
 let settings: ReturnType<typeof startupSettings>
+let initModels: unknown[]
 let lifecycle: Promise<void>[]
 let statuses: AgentSessionStatusEvent[]
 
@@ -59,9 +60,11 @@ beforeEach(async () => {
   // A CLI whose own default is not the catalog's: startup reports it through get_settings,
   // since system/init arrives only with the first command.
   settings = startupSettings()
+  initModels = [{ value: 'claude-sonnet', displayName: 'Sonnet' }]
   const claude = fakeClaude({
     initDelayMs: INIT_DELAY_MS,
     initModel: 'claude-opus-9',
+    initModels,
     settings
   })
   adapter = new ClaudeStructuredSessionAdapter({
@@ -123,7 +126,7 @@ function lastPhase(): string | undefined {
 }
 
 describe('a publish-first Claude create whose init is slow', () => {
-  it('shows applied effort without persisting it through either startup report or a reopen', async () => {
+  it('shows the applied model and effort without persisting them through a startup report or a reopen', async () => {
     settings.effective = {}
     await host.attach(CALLER, claudeParams())
     await claudeStartupSettled(adapter, SESSION)
@@ -135,9 +138,10 @@ describe('a publish-first Claude create whose init is slow', () => {
           sessionId: SESSION,
           fence: store.getRecord(SESSION)?.lease.runtimeFence ?? 0
         })
-      ).current.effort
-    ).toBe('high')
-    expect(store.getRecord(SESSION)?.options).toEqual({ model: 'claude-opus-9' })
+      ).current
+    ).toMatchObject({ model: 'claude-opus-9', effort: 'high' })
+    // Claude's own config chose both; the next start lets it choose again.
+    expect(store.getRecord(SESSION)?.options).toEqual({})
     await host.close(SESSION, 'evict')
     const fence = store.getRecord(SESSION)?.lease.runtimeFence ?? 0
     settings.applied.effort = 'medium'
@@ -153,10 +157,10 @@ describe('a publish-first Claude create whose init is slow', () => {
         })
       ).current.effort
     ).toBe('medium')
-    expect(store.getRecord(SESSION)?.options).toEqual({ model: 'claude-opus-9' })
+    expect(store.getRecord(SESSION)?.options).toEqual({})
   })
 
-  it('never persists the catalog default, and persists the reported model once started', async () => {
+  it('never persists the catalog default, nor a model only the CLI config chose', async () => {
     await expect(host.attach(CALLER, claudeParams())).resolves.toMatchObject({ ok: true })
 
     // Published, not yet answering: the record holds no model rather than a guessed one.
@@ -166,8 +170,17 @@ describe('a publish-first Claude create whose init is slow', () => {
     await claudeStartupSettled(adapter, SESSION)
     await Promise.all(lifecycle)
 
-    expect(store.getRecord(SESSION)?.options?.model).toBe('claude-opus-9')
+    expect(store.getRecord(SESSION)?.options?.model).toBeUndefined()
     expect(lastPhase()).toBe('ready')
+  })
+
+  it('persists the listed row an unpicked child reports running, by its own id', async () => {
+    initModels.push({ value: 'opus', displayName: 'Opus', resolvedModel: 'claude-opus-9' })
+    await host.attach(CALLER, claudeParams())
+    await claudeStartupSettled(adapter, SESSION)
+    await Promise.all(lifecycle)
+
+    expect(store.getRecord(SESSION)?.options?.model).toBe('opus')
   })
 
   it('keeps the saved model as intent while starting, then confirms what the child runs', async () => {

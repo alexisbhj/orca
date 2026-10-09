@@ -25,6 +25,7 @@ import {
 } from './claude-structured-session-acquisition-options'
 import { claudeRetiredOptions } from './claude-structured-retired-model'
 import {
+  claudeSessionListsModel,
   claudeStructuredSessionOptionsFrom,
   observeClaudeSettingsApplied,
   readClaudeFastModeFacts,
@@ -171,18 +172,25 @@ function applyClaudeSettingsFacts(
 }
 
 /** What the start persists as the session's options. The applied effort is display-only: saved,
- *  it would pin an effort nobody chose on every reopen, past a later settings change. */
+ *  it would pin an effort nobody chose on every reopen, past a later settings change. So is a model
+ *  Orca never sent that no listed row names: Claude's own settings or env chose it and choose again
+ *  at the next start, while saved it would read as a pick a later list could call gone. */
 function claudeStartedReportedOptions(
   session: ClaudeSession,
   catalog: unknown[],
   readMutationSequence = session.optionMutationSequence
 ): StructuredAgentSessionStartedOptions['reportedOptions'] {
   const { current } = claudeStructuredSessionOptionsFrom(session, catalog, readMutationSequence)
-  if (session.options.has('effort') || session.reportedOptions.effort !== undefined) {
-    return current
+  const { effort, ...persisted } = current
+  const keepsModel =
+    session.options.has('model') || claudeSessionListsModel(session, catalog, current.model)
+  return {
+    ...persisted,
+    model: keepsModel ? current.model : '',
+    ...(effort && (session.options.has('effort') || session.reportedOptions.effort !== undefined)
+      ? { effort }
+      : {})
   }
-  const { effort: _displayOnly, ...persisted } = current
-  return persisted
 }
 
 /** Applies the initialize answer and reports `started`, so the host hands the child what it holds;

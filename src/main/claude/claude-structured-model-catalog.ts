@@ -7,7 +7,9 @@ import { CLAUDE_SESSION_OPTION_CATALOG } from '../../shared/agent-session-option
 import type { CatalogOption } from '../../shared/agent-session-option-catalog-types'
 import { structuredAgentSessionOptionModels } from '../native-chat/agent-session-wire/structured-agent-session-option-models'
 
-export type ListedModel = AgentSessionModelOption & { resolvedModel: string | null }
+export type ListedModel = Omit<AgentSessionModelOption, 'resolvedModel'> & {
+  resolvedModel: string | null
+}
 
 export function record(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -117,7 +119,8 @@ export function wireClaudeModel(entry: ListedModel): AgentSessionModelOption {
     isDefault: entry.isDefault,
     efforts: entry.efforts,
     ...(entry.defaultEffort ? { defaultEffort: entry.defaultEffort } : {}),
-    ...(entry.supportsFastMode !== undefined ? { supportsFastMode: entry.supportsFastMode } : {})
+    ...(entry.supportsFastMode !== undefined ? { supportsFastMode: entry.supportsFastMode } : {}),
+    ...(entry.resolvedModel ? { resolvedModel: entry.resolvedModel } : {})
   }
 }
 
@@ -125,18 +128,31 @@ export function wireClaudeModels(models: readonly ListedModel[]): AgentSessionMo
   return models.map(wireClaudeModel)
 }
 
-/** The running child's own list, else the account's saved one, else the built-in seed, each with
- *  its own efforts. A current model none of them lists offers none: nothing says which it takes. */
-export function projectClaudeSessionModelOptions(input: {
+type ClaudeSessionModelSources = {
   liveModels?: readonly ListedModel[]
   savedModels?: readonly AgentSessionModelOption[]
-  current: AgentSessionOptionsResult['current']
-}): Pick<AgentSessionOptionsResult, 'models' | 'current'> {
+}
+
+/** The running child's own list, else the account's saved one, else the built-in seed. */
+export function claudeSessionModelRows(input: ClaudeSessionModelSources): ListedModel[] {
   const live = input.liveModels ?? []
-  const listed: ListedModel[] =
-    live.length > 0
-      ? [...live]
-      : (input.savedModels?.map((row) => ({ ...row, resolvedModel: null })) ?? seedModels())
+  if (live.length > 0) {
+    return [...live]
+  }
+  return (
+    input.savedModels?.map(({ resolvedModel, ...row }) => ({
+      ...row,
+      resolvedModel: resolvedModel ?? null
+    })) ?? seedModels()
+  )
+}
+
+/** The rows of `claudeSessionModelRows`, each with its own efforts. A current model none of them
+ *  lists offers none: nothing says which it takes. */
+export function projectClaudeSessionModelOptions(
+  input: ClaudeSessionModelSources & { current: AgentSessionOptionsResult['current'] }
+): Pick<AgentSessionOptionsResult, 'models' | 'current'> {
+  const listed = claudeSessionModelRows(input)
   const model = currentModelId(listed, input.current.model || undefined)
   const models = structuredAgentSessionOptionModels(listed, model, (row) => ({
     ...row,

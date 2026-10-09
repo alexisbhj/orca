@@ -23,6 +23,7 @@ import { agentModelLaunchOptions } from '../agent-model-catalog/agent-model-cata
 import {
   AGENT_MODEL_CATALOG_CURRENT_MS,
   AGENT_MODEL_CATALOG_FAILURE_TTL_MS,
+  AGENT_MODEL_CATALOG_START_WAIT_MS,
   AgentModelCatalogStore,
   type AgentModelCatalogSuccess
 } from '../agent-model-catalog/agent-model-catalog-store'
@@ -58,8 +59,8 @@ function restingChat(input: {
   options?: Record<string, string>
   /** How old the saved list is when the chat is read. */
   ageMs?: number
-  /** What the host's session-less listing answers now; absent, it fails. */
-  relists?: AgentSessionModelOption[]
+  /** What the host's session-less listing answers now; absent, it fails; `hangs`, never answers. */
+  relists?: AgentSessionModelOption[] | 'hangs'
 }) {
   const record = agentSessionRecordFixture(
     agentSessionLeaseFixture({ claimStatus: 'released', ownerProcess: null })
@@ -81,6 +82,9 @@ function restingChat(input: {
   clock.now += input.ageMs ?? 0
   const relists = input.relists
   const probe = vi.fn(async (_home: string) => {
+    if (relists === 'hangs') {
+      return new Promise<AgentModelCatalogSuccess>(() => {})
+    }
     if (!relists) {
       throw new Error('temporarily unavailable')
     }
@@ -128,7 +132,10 @@ function restingChat(input: {
       },
       { key, value }
     )
-  return { record, clock, probe, modelCatalog, read, write }
+  // The picker's follow-up read, which waits for the re-listing an at-rest read only starts.
+  const listed = () =>
+    modelCatalog.read({ agent: record.provider, sessionId: record.sessionId, waitForListing: true })
+  return { record, clock, probe, modelCatalog, read, write, listed }
 }
 
 function snapshotRow(state: StructuredAgentSessionOptionState, id: string) {
@@ -165,6 +172,9 @@ describe('Claude picker catalog at rest', () => {
       ageMs: AGENT_MODEL_CATALOG_CURRENT_MS,
       relists: [SONNET, OPUS]
     })
+    // The read itself never waits: the saved model stands while the list is re-listed.
+    expect((await chat.read()).result.current).toEqual({ model: 'opus', effort: 'xhigh' })
+    await chat.listed()
     const { result, state } = await chat.read()
     expect(chat.probe).toHaveBeenCalledExactlyOnceWith('/accounts/pinned')
     expect(result.current).toEqual({ model: 'opus', effort: 'xhigh' })
@@ -185,15 +195,18 @@ describe('Claude picker catalog at rest', () => {
 
   it.each([
     ['high', { model: 'sonnet', effort: 'high' }],
-    ['xhigh', { model: 'sonnet' }]
+    ['xhigh', { model: 'sonnet', effort: 'high' }],
+    ['unranked', { model: 'sonnet' }]
   ])(
-    'moves a model the fresh list confirms gone to the default, keeping effort %s only where listed',
+    'moves a model the fresh list confirms gone to the default, carrying effort %s to its nearest level',
     async (effort, settled) => {
       const chat = restingChat({
         options: { model: 'opus', effort },
         ageMs: AGENT_MODEL_CATALOG_CURRENT_MS,
         relists: [SONNET]
       })
+      expect((await chat.read()).result.current).toEqual({ model: 'opus', effort })
+      await chat.listed()
       const { result, state } = await chat.read()
       expect(result.current).toEqual(settled)
       expect(snapshotRow(state, 'model')?.kind).toMatchObject({ currentValue: 'sonnet' })
@@ -235,6 +248,29 @@ describe('Claude picker catalog at rest', () => {
     chat.clock.now += AGENT_MODEL_CATALOG_FAILURE_TTL_MS
     await chat.read()
     expect(chat.probe).toHaveBeenCalledTimes(2)
+  })
+
+  it('never waits on a hanging re-listing at rest, and a start waits for it only briefly', async () => {
+    vi.useFakeTimers()
+    try {
+      const chat = restingChat({
+        options: { model: 'opus', effort: 'xhigh' },
+        ageMs: AGENT_MODEL_CATALOG_CURRENT_MS,
+        relists: 'hangs'
+      })
+      expect((await chat.read()).result.current).toEqual({ model: 'opus', effort: 'xhigh' })
+      let launched: Readonly<Record<string, string>> | undefined
+      void agentModelLaunchOptions(chat.modelCatalog, chat.record).then((options) => {
+        launched = options
+      })
+      await vi.advanceTimersByTimeAsync(AGENT_MODEL_CATALOG_START_WAIT_MS - 1)
+      expect(launched).toBeUndefined()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(launched).toEqual({ model: 'opus', effort: 'xhigh' })
+      expect(chat.probe).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps the Codex resting policy: no re-listing, no replacement', async () => {

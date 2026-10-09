@@ -35,14 +35,14 @@ describe('the model a start launches', () => {
           }
         ],
         fetchedAt: NOW,
-        ...(verified ? { verified: true as const } : {})
+        ...(verified ? { unlistedModelReplacement: 'sonnet' } : {})
       }))
       host.deps.modelCatalog = { read, providerStarted: vi.fn() }
 
       const params = attachParams({ options: { model: 'opus', effort: 'high' } })
       expect(await host.attach(CALLER, params)).toMatchObject({ ok: true })
       expect(read).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: SESSION, settleRequiredModel: true, forStart: true })
+        expect.objectContaining({ sessionId: SESSION, forStart: true })
       )
       expect(acquire).toHaveBeenCalledWith(expect.objectContaining({ options: launched }))
     }

@@ -19,10 +19,6 @@ export const CODEX_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
     approvalEnforcement: 'provider'
   },
   restingOptions: {
-    acceptsKey: isCodexTurnOptionKey,
-    // No built-in list: the client fills the current model from its own unknown-model defaults.
-    fallbackModels: () => null,
-    // A running child answers only the effort its thread reported, never the model's default.
-    effortDefaultsToModel: false
+    acceptsKey: isCodexTurnOptionKey
   }
 }

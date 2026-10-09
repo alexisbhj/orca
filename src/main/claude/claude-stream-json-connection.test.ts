@@ -556,7 +556,8 @@ describe('Claude stream-json connection', () => {
       efforts: [
         { value: 'low', label: 'Low' },
         { value: 'high', label: 'High' }
-      ]
+      ],
+      resolvedModel: 'claude-opus-5'
     })
     expect(options.current.model).toBe('opus')
   })

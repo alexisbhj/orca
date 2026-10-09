@@ -9,11 +9,18 @@ import {
   agentModelCatalogFingerprint,
   agentModelCatalogFingerprintForRecord
 } from './agent-model-catalog-fingerprint'
-import type {
-  AgentModelCatalogEntry,
-  AgentModelCatalogProbe,
-  AgentModelCatalogStore
+import {
+  AGENT_MODEL_CATALOG_PICKER_WAIT_MS,
+  AGENT_MODEL_CATALOG_START_WAIT_MS,
+  type AgentModelCatalogEntry,
+  type AgentModelCatalogProbe,
+  type AgentModelCatalogStore
 } from './agent-model-catalog-store'
+import {
+  agentModelListNames,
+  agentModelListReplacement
+} from '../../../shared/agent-session-model-fallback'
+import { withTimeout } from '../../../shared/promise-timeout-fallback'
 
 export type AgentModelCatalogServiceDeps = {
   store: AgentModelCatalogStore
@@ -48,11 +55,8 @@ export type AgentModelCatalogService = {
     waitForListing?: boolean
     /** The model a decision is about; absent, the session record's saved model. */
     requiredModel?: string
-    /** Wait for the one re-listing an aged list lacking `requiredModel` takes, instead of answering
-     *  it in progress: what a start and an at-rest read decide with. */
-    settleRequiredModel?: boolean
-    /** A start's read: it may re-list for its selection, but starts no other listing, since the
-     *  chat's own child lists. */
+    /** A start's read: it waits a few seconds for the one re-listing its selection takes, and
+     *  starts no other listing, since the chat's own child lists. */
     forStart?: boolean
   }) => Promise<AgentSessionModelCatalogResult>
   /** A chat under this record's account proved its start: a held reason is re-checked sooner. */
@@ -154,7 +158,7 @@ export function createAgentModelCatalogService(
         extra: { listingInProgress?: true } = {}
       ): Promise<AgentSessionModelCatalogResult> => {
         const unavailable = deps.store.failure(fingerprint)?.unavailable
-        const verified =
+        const replacement =
           replacesUnlisted &&
           listed !== null &&
           !extra.listingInProgress &&
@@ -162,6 +166,8 @@ export function createAgentModelCatalogService(
           !deps.store.hasActiveFailure(fingerprint) &&
           !deps.store.isListing(fingerprint) &&
           deps.store.isCurrent(listed)
+            ? agentModelListReplacement(listed.models)
+            : null
         // Such an agent names no default for a chat with nothing selected: the CLI picks its own.
         const namesDefault =
           (!replacesUnlisted || Boolean(required)) &&
@@ -175,7 +181,7 @@ export function createAgentModelCatalogService(
           ...(listed ? resultFromEntry(listed, namesDefault) : { origin: 'unknown' }),
           ...extra,
           ...(unavailable ? { unavailable } : {}),
-          ...(verified ? { verified: true } : {})
+          ...(replacement ? { unlistedModelReplacement: replacement } : {})
         }
       }
       // Past its TTL, only the probe re-derives a held reason. The reason is served meanwhile;
@@ -195,23 +201,34 @@ export function createAgentModelCatalogService(
         return answer(deps.store.get(fingerprint))
       }
       // An aged list may not call the selected model gone until it is re-listed, once per read; a
-      // held failure or a list that already names it settles nothing more.
+      // held failure or a list that already names it settles nothing more. Only a start or a
+      // picker's follow-up waits, each bounded; a listing still running decides nothing.
       if (
         replacesUnlisted &&
         required &&
         entry &&
         probe &&
         home &&
-        !entry.models.some((model) => model.id === required) &&
+        !agentModelListNames(entry.models, required) &&
         !deps.store.isCurrent(entry) &&
         !deps.store.hasActiveFailure(fingerprint)
       ) {
         const relisting = deps.store.refresh(fingerprint, params.agent, probe, () => probe(home))
-        if (!params.waitForListing && !params.settleRequiredModel) {
-          return answer(entry, { listingInProgress: true })
-        }
-        await relisting
-        return answer(deps.store.get(fingerprint) ?? entry)
+        const waitMs = params.forStart
+          ? AGENT_MODEL_CATALOG_START_WAIT_MS
+          : params.waitForListing
+            ? AGENT_MODEL_CATALOG_PICKER_WAIT_MS
+            : 0
+        const relisted =
+          waitMs > 0 &&
+          (await withTimeout(
+            relisting.then(() => true),
+            waitMs,
+            false
+          ))
+        return relisted
+          ? answer(deps.store.get(fingerprint) ?? entry)
+          : answer(entry, { listingInProgress: true })
       }
       // Without an entry, answer from any running listing instead of starting a second one.
       if (params.forStart) {

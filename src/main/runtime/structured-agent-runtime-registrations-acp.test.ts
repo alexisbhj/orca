@@ -98,7 +98,7 @@ describe('ACP agents in the runtime registrations', () => {
     const resting = structuredAgentRuntimeRegistration('grok')!.definition.restingOptions
     expect(['model', 'effort'].map(resting.acceptsKey)).toEqual([true, true])
     expect(resting.acceptsKey('fastMode')).toBe(false)
-    expect(resting.fallbackModels()).toBeNull()
+    expect(resting.projectOptions).toBeUndefined()
   })
 
   it('finds the account home on this runtime from the launch env, else the default', async () => {

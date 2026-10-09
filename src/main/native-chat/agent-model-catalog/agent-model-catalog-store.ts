@@ -25,6 +25,8 @@ export const AGENT_MODEL_CATALOG_FRESH_MS = 10 * 60_000
  *  once before it may say so. */
 export const AGENT_MODEL_CATALOG_CURRENT_MS = 60_000
 export const AGENT_MODEL_CATALOG_PICKER_WAIT_MS = 30_000
+/** How long a start waits for the one re-listing its selection takes before launching as saved. */
+export const AGENT_MODEL_CATALOG_START_WAIT_MS = 3_000
 export const AGENT_MODEL_CATALOG_MAX_ENTRIES = 256
 
 export type AgentModelCatalogEntry = {
@@ -43,6 +45,9 @@ export type AgentModelCatalogSuccess = {
   fastModeSupport?: AgentSessionFastModeSupport
   fastModeTierByModel: ReadonlyMap<string, string>
   origin: 'live-session' | 'probe'
+  /** When the lister got this list, by `store.now`; absent, now. A running Claude child's list is
+   *  the one it got at its start, however often it is read since. */
+  listedAt?: number
   /** A probe that listed models but also found no chat can start (a signed-out Codex): both kept. */
   unavailable?: AgentSessionUnavailable
 }
@@ -100,7 +105,7 @@ export class AgentModelCatalogStore {
   private readonly latestWrittenOrder = new Map<string, number>()
   private nextListingOrder = 0
   private persistence: AgentModelCatalogPersistence | null = null
-  private readonly now: () => number
+  readonly now: () => number
 
   constructor(options?: { now?: () => number }) {
     this.now = options?.now ?? Date.now
@@ -195,7 +200,7 @@ export class AgentModelCatalogStore {
       ...(success.fastModeSupport ? { fastModeSupport: success.fastModeSupport } : {}),
       fastModeTierByModel: tierRecord(success.fastModeTierByModel),
       origin: success.origin,
-      fetchedAt: this.now()
+      fetchedAt: success.listedAt ?? this.now()
     }
   }
 
@@ -210,6 +215,10 @@ export class AgentModelCatalogStore {
       return null
     }
     const previous = this.entries.get(fingerprint)
+    // A list older than the one held, such as a long-running child's, never replaces it.
+    if (previous && entry.fetchedAt < previous.fetchedAt) {
+      return previous
+    }
     this.entries.delete(fingerprint)
     this.entries.set(fingerprint, entry)
     if (this.refreshes.has(fingerprint)) {

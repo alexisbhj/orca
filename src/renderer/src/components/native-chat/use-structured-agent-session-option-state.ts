@@ -87,7 +87,7 @@ export function useStructuredAgentSessionOptionState(args: {
             ...seeded,
             catalog: previous.catalog,
             catalogSource: previous.catalogSource,
-            hostCatalogVerified: previous.hostCatalogVerified
+            hostModelReplacement: previous.hostModelReplacement
           }
         : seeded
     optionMutationGeneration.current += 1
