@@ -87,6 +87,10 @@ export class ProfilePreferences {
       const next = this.updateSettings(updates)
       const previousEntries = new Map(Object.entries(previous))
       const updateKeys = new Set(Object.keys(updates))
+      if (previous.terminalLinkActionPopoverEnabled !== next.terminalLinkActionPopoverEnabled) {
+        // Keep the legacy switch inside the click choice's durability boundary.
+        updateKeys.add('terminalLinkActionPopoverEnabled')
+      }
       changedUpdates = Object.fromEntries(
         Object.entries(next).filter(
           ([key, value]) => updateKeys.has(key) && !Object.is(previousEntries.get(key), value)
@@ -97,6 +101,14 @@ export class ProfilePreferences {
         rollback: () => {
           const currentEntries = new Map(Object.entries(runtime.state.settings))
           const nextEntries = new Map(Object.entries(next))
+          if (
+            updateKeys.has('terminalLinkClickBehavior') &&
+            currentEntries.get('terminalLinkClickBehavior') !==
+              nextEntries.get('terminalLinkClickBehavior')
+          ) {
+            // A newer click choice owns its legacy switch as well.
+            updateKeys.delete('terminalLinkActionPopoverEnabled')
+          }
           const restoredUpdates = Object.fromEntries(
             Object.entries(previous).filter(
               ([key]) =>
