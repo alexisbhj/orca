@@ -1,0 +1,56 @@
+import type { Hono } from 'hono'
+import type { CellSeatPage } from './cell-seat-log.js'
+import { parseCellSeatCursor } from './cell-seat-log.js'
+import type { RelayConfig } from './config.js'
+import { RELAY_FIX_LEVEL } from './relay-fix-level.js'
+import type { RelayRuntimeCounts } from './relay-observability.js'
+import { readBearer } from './relay-token-verifier.js'
+
+// Read-only, so it reuses the directors' rehome credential and grants it nothing new. Only
+// cells that already hold the rehome pair serve it: giving a cell the pair turns rehome on.
+export function registerCellSeatFeedRoute(
+  app: Hono,
+  config: RelayConfig,
+  input: {
+    verifyRegionalRehomeToken: (token: string) => Promise<boolean>
+    cellIncarnation?: string
+    seatFeed?: (sinceSeq: number | null) => CellSeatPage
+    isDraining?: () => boolean
+    runtimeCounts?: () => RelayRuntimeCounts
+    now?: () => number
+  }
+): void {
+  app.get('/v1/admin/cell-seats', async (context) => {
+    if (config.role !== 'cell' || !input.seatFeed || !input.cellIncarnation) {
+      return context.json({ error: 'cell_only' }, 404)
+    }
+    if (!config.rehomeAudience || !config.rehomeDirectorServiceAccount) {
+      return context.json({ error: 'seat_feed_unavailable' }, 404)
+    }
+    const bearer = readBearer(context.req.header('authorization'))
+    if (!bearer || !(await input.verifyRegionalRehomeToken(bearer))) {
+      return context.json({ error: 'invalid_token' }, 401)
+    }
+    const cursor = parseCellSeatCursor(context.req.query('since'))
+    if (cursor === 'invalid') return context.json({ error: 'invalid_request' }, 400)
+    const sinceSeq =
+      cursor !== null && cursor.incarnation === input.cellIncarnation ? cursor.seq : null
+    const page = input.seatFeed(sinceSeq)
+    const counts = input.runtimeCounts?.()
+    return context.json({
+      v: 1,
+      cellId: config.cellId,
+      incarnation: input.cellIncarnation,
+      at: (input.now ?? Date.now)(),
+      fixLevel: RELAY_FIX_LEVEL,
+      draining: input.isDraining?.() ?? false,
+      counts: {
+        controls: counts?.controls ?? 0,
+        splices: counts?.splices ?? 0,
+        enforcedUnits: counts?.enforcedConnectionUnits ?? null,
+        hardCap: config.connectionHardCap ?? null
+      },
+      ...page
+    })
+  })
+}

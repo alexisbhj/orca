@@ -37,6 +37,8 @@ import {
 } from './assignment-store.js'
 import { AssignmentRejectionLogWindow } from './assignment-rejection-log-window.js'
 import { CELL_ADMISSION_STATES } from './cell-admission-selector.js'
+import { registerCellSeatFeedRoute } from './cell-seat-feed-route.js'
+import type { CellSeatPage } from './cell-seat-log.js'
 import { RELAY_MAX_CELL_CAPACITY_REQUESTS, type RelayConfig } from './config.js'
 import type { RelayCredentialStore } from './credential-store.js'
 import { isRelayDatabaseTransientError } from './database.js'
@@ -112,6 +114,7 @@ export function createRelayApp(
     regionalRehomeFetch?: typeof fetch
     regionalRehomeTrustProbeHostExists?: (input: { userId: string; relayHostId: string }) => boolean
     cellIncarnation?: string
+    cellSeatFeed?: (sinceSeq: number | null) => CellSeatPage
     isDraining?: () => boolean
     regionalRehomeSafetySnapshot?: () => RegionalRehomeSafetySnapshot
     runtimeCounts?: () => RelayRuntimeCounts
@@ -278,6 +281,14 @@ export function createRelayApp(
       return context.json({ error: 'invalid_token' }, 401)
     }
     return await next()
+  })
+
+  registerCellSeatFeedRoute(app, config, {
+    verifyRegionalRehomeToken,
+    cellIncarnation: operations.cellIncarnation,
+    seatFeed: operations.cellSeatFeed,
+    isDraining: operations.isDraining,
+    runtimeCounts: operations.runtimeCounts
   })
 
   // Not /healthz: Google Front End reserves that path before the container.

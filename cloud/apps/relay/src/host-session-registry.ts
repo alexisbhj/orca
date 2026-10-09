@@ -29,6 +29,7 @@ import type WebSocket from 'ws'
 import type { RawData } from 'ws'
 import type { RelayConfig } from './config.js'
 import type { RelayAssignmentStore } from './assignment-store.js'
+import { CellSeatLog, type CellSeat, type CellSeatPage } from './cell-seat-log.js'
 import { ControlRenewalBatch } from './control-renewal-batch.js'
 import { RelayCredentialStore, type CredentialReservation } from './credential-store.js'
 import { HostCloseReasonMemory } from './host-close-reason-memory.js'
@@ -216,6 +217,7 @@ export class HostSessionRegistry {
   // Hosts whose drain has been sent. Paced sends land minutes apart, so "this cell is
   // draining" is not the same question as "this host has been told to leave".
   private readonly drainSentHosts = new Set<string>()
+  private readonly seatLog = new CellSeatLog()
 
   private readonly idleWork = new Map<string, number>()
   private readonly idleAttempts = new Map<
@@ -925,7 +927,7 @@ export class HostSessionRegistry {
   private sendDrain(session: HostSession, graceMs: number): void {
     if (session.state === 'closed') return
     session.authorityRevision += 1
-    session.state = 'drain-only'
+    this.markSeatDrainOnly(session)
     this.drainSentHosts.add(session.relayHostId)
     if (session.socket) send(session.socket, 'drain', { graceMs, recovery: 'resolve-director' })
     this.scheduleDrainTimer(graceMs, () => this.closeDrainedSession(session))
@@ -1221,6 +1223,7 @@ export class HostSessionRegistry {
       existing.activityRenewalDueAt = this.now() + RELAY_PROTOCOL_LIMITS.controlPingIntervalMs
       this.wireActiveControl(existing)
       this.sendHelloAck(existing)
+      this.appendSeatChange(existing, 'join')
       if (existing.regionalDrainAttemptId) this.reassertRegionalDrain(existing)
       previousSocket?.close(RELAY_CLOSE_CODE.PEER_DROPPED, 'control rebound')
       return
@@ -1292,6 +1295,54 @@ export class HostSessionRegistry {
     this.sessions.set(sessionKey, session)
     this.wireActiveControl(session)
     this.sendHelloAck(session)
+    this.appendSeatChange(session, 'join')
+  }
+
+  seatFeed(sinceSeq: number | null): CellSeatPage {
+    return this.seatLog.read(sinceSeq, () => {
+      const seats: CellSeat[] = []
+      // Same filter as runtimeCounts' controls, so a full snapshot always matches it.
+      for (const session of this.sessions.values()) {
+        const socket = session.socket
+        if (socket === null || socket.readyState !== socket.OPEN) continue
+        if (session.state !== 'active' && session.state !== 'drain-only') continue
+        seats.push({
+          userId: session.identity.sub,
+          relayHostId: session.relayHostId,
+          epoch: session.assignmentEpoch,
+          generation: session.generation,
+          state: session.state,
+          joinedAt: session.controlWiredAt
+        })
+      }
+      return seats
+    })
+  }
+
+  private appendSeatChange(
+    session: HostSession,
+    kind: 'join' | 'leave' | 'drain-only',
+    closeCode?: number
+  ): void {
+    this.seatLog.append({
+      kind,
+      userId: session.identity.sub,
+      relayHostId: session.relayHostId,
+      epoch: session.assignmentEpoch,
+      generation: session.generation,
+      ...(kind === 'join' && (session.state === 'active' || session.state === 'drain-only')
+        ? { state: session.state }
+        : {}),
+      ...(closeCode === undefined ? {} : { closeCode }),
+      at: this.now()
+    })
+  }
+
+  // Only a seated host's transition is a feed change; an orphaned one already left.
+  private markSeatDrainOnly(session: HostSession): void {
+    const changed = session.state !== 'drain-only'
+    session.state = 'drain-only'
+    if (changed && session.socket) this.appendSeatChange(session, 'drain-only')
   }
 
   private wireActiveControl(session: HostSession): void {
@@ -1314,6 +1365,7 @@ export class HostSessionRegistry {
       // cause onto the live session that replaced it.
       if (session.socket === socket) {
         this.hostCloseReasons.record(this.key(session.identity.sub, session.relayHostId), reason)
+        this.appendSeatChange(session, 'leave', code)
       }
       // One line per control close makes reconnect churners attributable by
       // host digest without exposing the raw relay host id.
@@ -1618,7 +1670,7 @@ export class HostSessionRegistry {
   }
 
   private reassertRegionalDrain(session: HostSession): void {
-    session.state = 'drain-only'
+    this.markSeatDrainOnly(session)
     if (!session.socket) return
     send(session.socket, 'drain', {
       graceMs: Math.max(0, (session.regionalDrainExpiresAt ?? this.now()) - this.now()),
