@@ -147,8 +147,9 @@ export class AgentSessionRecordStore {
 
   /** Shows each session that still has a record, in one write: an index written part way would
    *  read as complete at the next launch and drop the rest. */
-  showSessionTabs = (sessionIds: readonly string[]): Promise<void> =>
-    this.transact((draft) => showAgentSessionTabs(draft, sessionIds))
+  showSessionTabs(sessionIds: readonly string[]): Promise<void> {
+    return this.transact((draft) => showAgentSessionTabs(draft, sessionIds))
+  }
 
   listByScope(location: AgentSessionExecutionLocation): AgentSessionRecord[] {
     const scope = agentSessionScopeKey(location)

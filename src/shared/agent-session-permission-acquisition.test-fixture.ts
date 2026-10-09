@@ -19,6 +19,8 @@ export type PermissionAcquisitionHost = {
   snapshot: () => Promise<Extract<AgentSessionSubscribeEvent, { type: 'snapshot' }>>
   fact: () => AgentSessionPermissionSeed
   readOptions: () => Promise<AgentSessionOptionsResult>
+  /** Claude's initialize answer, withheld until called. */
+  answerInitialize: () => void
   storedIntent: () => Promise<unknown>
   launchMode: () => AgentChatPermissionMode
   childPhase: () => string | undefined

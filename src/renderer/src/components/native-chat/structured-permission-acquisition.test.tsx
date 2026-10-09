@@ -89,6 +89,7 @@ it.each([
         revision: 0
       })
       expect(result.current.optionSurface.permissionPicker?.current).toBe(initial)
+      host.answerInitialize()
       await host.send()
       await vi.waitFor(() => expect(host.delivered()).toBe(1))
       expect(host.launchMode()).toBe(initial)

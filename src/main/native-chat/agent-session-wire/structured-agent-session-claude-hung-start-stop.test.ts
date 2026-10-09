@@ -132,11 +132,15 @@ async function readsWorking(): Promise<boolean> {
   )
 }
 
-/** Whether the CLI was written `hello`, once the delivery loop has settled what it does with it. */
-async function helloWritten(): Promise<boolean> {
+async function settledDelivery(): Promise<void> {
   await vi.waitFor(() =>
     expect(host.collaboratorsForTests().conversationDelivery.loop.isRunning(SESSION)).toBe(false)
   )
+}
+
+/** Whether the CLI was written `hello`, once the delivery loop has settled what it does with it. */
+async function helloWritten(): Promise<boolean> {
+  await settledDelivery()
   return claude.connections[0]!.sent.some((message) => JSON.stringify(message).includes('hello'))
 }
 
@@ -237,7 +241,9 @@ it.each(['accept-edits', 'auto'] as const)(
     const preparing = vi.spyOn(adapter, 'prepareDispatch')
     const body = hostTestMessage('inherited permission')
     await host.send(CALLER, { envelope: envelope('agentSession.send', { body }), body })
-    await vi.waitFor(() => expect(preparing).toHaveBeenCalledWith(SESSION))
+    await settledDelivery()
+    // The start barrier holds the send ahead of any permission preparation.
+    expect(preparing).not.toHaveBeenCalled()
     const [connection] = claude.connections
     expect(connection!.sent).toEqual([])
     const result = { settled: false }
@@ -269,7 +275,8 @@ it('close can settle inherited permission preparation without an initialize answ
     body,
     userSend: true
   })
-  await vi.waitFor(() => expect(preparing).toHaveBeenCalled())
+  await settledDelivery()
+  expect(preparing).not.toHaveBeenCalled()
   const closed = { settled: false }
   const close = host.close(SESSION, 'user-close').then(() => {
     closed.settled = true

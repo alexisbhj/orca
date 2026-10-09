@@ -62,6 +62,7 @@ it.each([
         wire.replies.splice(0).forEach((reply) => reply({ id: 'r', ok: true, result: before }))
       )
       expect(show()).toBe(initial)
+      host.answerInitialize()
       await host.send()
       await vi.waitFor(() => expect(host.delivered()).toBe(1))
       expect(host.launchMode()).toBe(initial)

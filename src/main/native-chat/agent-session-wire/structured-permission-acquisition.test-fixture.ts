@@ -11,6 +11,7 @@ import type { AgentSessionSubscribeEvent } from '../../../shared/agent-session-w
 import { computeAgentSessionPayloadFingerprint } from '../../../shared/agent-session-mutation-envelope'
 import { updateSettings } from '../../persistence/applying-settings/settings-update'
 import { RuntimeClientSettingsController } from '../../runtime/runtime-client-settings'
+import { structuredClaudeLifecycleEvent } from '../../runtime/structured-claude-runtime-adapter'
 import {
   openTestAgentSessionRecordStore,
   readPersistedTestAgentSessionStore,
@@ -68,6 +69,11 @@ export async function permissionAcquisitionHost(
     initSessionId: claudeSessionIdForOrcaSession(saved.sessionId),
     replayUuid: null
   })
+  // Withheld until a test answers it: the host hands a starting child nothing.
+  let answerInitialize = (): void => {}
+  const initialized = new Promise<unknown>((resolve) => {
+    answerInitialize = () => resolve({ models: [] })
+  })
   const claudeAdapter = new ClaudeStructuredSessionAdapter({
     resolveLaunch: createClaudeStructuredLaunchResolver({
       store,
@@ -76,9 +82,16 @@ export async function permissionAcquisitionHost(
       resolveLaunchArgs: () => [],
       resolveAuthPolicy: () => ({ stripAuthEnv: false })
     }),
+    // The host learns the start proved itself only from this event, and holds sends until then.
+    onEvent: (event) => {
+      const mapped = structuredClaudeLifecycleEvent(event)
+      if (mapped) {
+        void host.handleAdapterEvent(mapped)
+      }
+    },
     openConnection: async (...args) => {
       const connection = await claude.openConnection(...args)
-      connection.initializationResult = () => new Promise(() => {})
+      connection.initializationResult = () => initialized
       return connection
     },
     readProcessStartTime: async () => 1
@@ -185,6 +198,7 @@ export async function permissionAcquisitionHost(
       return { ...fact, mode: fact.mode }
     },
     readOptions: () => host.readOptions(saved.sessionId),
+    answerInitialize: () => answerInitialize(),
     childPhase: () => host.collaboratorsForTests().sessions.get(saved.sessionId)?.child?.phase,
     storedIntent: async () =>
       (await readPersistedTestAgentSessionStore(root)).records[saved.sessionId],

@@ -90,7 +90,7 @@ export class OrcaRuntimeWithPruneMobileSessionTabGroupLayout extends OrcaRuntime
     snapshot = seedStructuredConversationTabPermissions(
       snapshot,
       (id) => host?.deps?.store?.getRecord(id),
-      (id) => (host ? readStructuredAgentSessionPermissionFact(host.deps, id) : undefined)
+      (id) => (host?.deps ? readStructuredAgentSessionPermissionFact(host.deps, id) : undefined)
     )
     return projectRuntimeMobileSessionTabs(snapshot, this.getMobileSessionProjectionHost())
   }

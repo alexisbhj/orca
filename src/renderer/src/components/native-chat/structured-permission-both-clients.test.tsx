@@ -99,11 +99,12 @@ it.each(['ask', 'bypass'] as const)(
         probe.result.current.nativeChatSessionOptions?.permissionPicker?.current
       ]
       expect(labels()).toEqual([initial, initial])
+      // The host holds a send until the start proves itself.
+      host.answerInitialize()
       await host.send()
       await vi.waitFor(() => expect(host.delivered()).toBe(1))
       expect(labels()).toEqual([host.launchMode(), host.launchMode()])
       expect(host.controls()).toEqual([])
-      expect(host.childPhase()).toBe('starting')
       expect(await host.storedIntent()).toMatchObject({
         options: { permissionMode: initial },
         permissionRevision: 0
