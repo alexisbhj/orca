@@ -47,7 +47,7 @@ export class PlacementLoadBand {
 
   constructor(
     private readonly random: () => number = Math.random,
-    private readonly log: (line: string) => void = (line) => console.warn(line)
+    private readonly log: (line: string) => void = (line) => console.info(line)
   ) {}
 
   // `sorted` is ascending by load ratio. Records the pick as intake; a pick
