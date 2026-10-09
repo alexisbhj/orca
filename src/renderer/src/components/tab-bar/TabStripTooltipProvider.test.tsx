@@ -154,5 +154,8 @@ describe('TabStripTooltipProvider', () => {
     act(() => screen.getByRole('button', { name: 'close' }).focus())
     expect(container.ownerDocument.querySelector('[data-tab-close-tooltip]')).not.toBeNull()
     expect(container.ownerDocument.querySelector('[data-tab-hover-card]')).toBeNull()
+    act(() => screen.getByRole('button', { name: 'close' }).parentElement?.focus())
+    expect(container.ownerDocument.querySelector('[data-tab-hover-card]')).not.toBeNull()
+    expect(container.ownerDocument.querySelector('[data-tab-close-tooltip]')).toBeNull()
   })
 })
