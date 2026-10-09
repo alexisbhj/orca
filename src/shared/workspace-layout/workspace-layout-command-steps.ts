@@ -73,11 +73,11 @@ export function updateTab(
 }
 
 export function leafIdsOf(tab: LayoutTerminalTab): string[] {
-  return tab.panes ? collectLayoutLeafIdsInOrder(tab.panes.root) : []
+  return collectLayoutLeafIdsInOrder(tab.panes.root)
 }
 
 export function boundPtyIds(tab: LayoutTab): string[] {
-  return tab.kind === 'terminal' ? Object.values(tab.panes?.ptyIdsByLeafId ?? {}) : []
+  return tab.kind === 'terminal' ? Object.values(tab.panes.ptyIdsByLeafId ?? {}) : []
 }
 
 export function paneKeysOf(tab: LayoutTerminalTab): string[] {

@@ -18,7 +18,7 @@ function workspacePaneKeys(workspace: WorkspaceLayout): string[] {
 
 function boundPty(workspace: WorkspaceLayout, paneKey: string): string | undefined {
   const pane = locatePane(workspace, paneKey)
-  return pane ? pane.tab.panes?.ptyIdsByLeafId?.[pane.leafId] : undefined
+  return pane?.tab.panes.ptyIdsByLeafId?.[pane.leafId]
 }
 
 /** Idempotent: starts or restores a pane that has no live terminal. */
@@ -38,16 +38,16 @@ export function restartPane(
   command: CommandOf<'restartPane'>
 ): Applied {
   const pane = locatePane(model.workspaces[command.workspace]!, command.paneKey)
-  if (!pane?.tab.panes) {
+  if (!pane) {
     return refuse('pane_not_found')
   }
   const { tab, leafId } = pane
-  const ptyId = tab.panes!.ptyIdsByLeafId?.[leafId]
-  const ptyIdsByLeafId = { ...tab.panes!.ptyIdsByLeafId }
+  const ptyId = tab.panes.ptyIdsByLeafId?.[leafId]
+  const ptyIdsByLeafId = { ...tab.panes.ptyIdsByLeafId }
   delete ptyIdsByLeafId[leafId]
   const updated = updateTab(model, command.workspace, {
     ...tab,
-    panes: { ...tab.panes!, ptyIdsByLeafId }
+    panes: { ...tab.panes, ptyIdsByLeafId }
   })
   if (!updated.ok) {
     return updated

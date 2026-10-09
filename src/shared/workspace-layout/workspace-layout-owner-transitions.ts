@@ -118,10 +118,8 @@ export function renameWorkspace(
   if (model.workspaces[to]) {
     return null
   }
-  const workspaces = {
-    ...model.workspaces,
-    [to]: { ...workspace, worktreeId: renamed(workspace.worktreeId, from, to) }
-  }
+  const worktreeId = renamed(workspace.worktreeId, from, to)
+  const workspaces = { ...model.workspaces, [to]: { ...workspace, worktreeId } }
   delete workspaces[from]
   const { records } = model
   const rekey = <T>(record: KeyedRecord<T>): KeyedRecord<T> =>
@@ -140,6 +138,18 @@ export function renameWorkspace(
           Object.entries(records.sleepingByPaneKey).map(([key, record]) => [
             key,
             { ...record, worktreeId: renamed(record.worktreeId, from, to) }
+          ])
+        ),
+      // Removal and partition moves select closed-tab records by worktree id.
+      closedTerminalTabTombstones:
+        records.closedTerminalTabTombstones &&
+        Object.fromEntries(
+          Object.entries(records.closedTerminalTabTombstones).map(([tabId, tombstone]) => [
+            tabId,
+            {
+              ...tombstone,
+              worktreeId: renamed(tombstone.worktreeId, workspace.worktreeId, worktreeId)
+            }
           ])
         ),
       defaultTabsAppliedByWorkspace: rekey(records.defaultTabsAppliedByWorkspace),

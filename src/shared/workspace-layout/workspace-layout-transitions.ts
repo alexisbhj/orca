@@ -65,7 +65,7 @@ function boundElsewhere(
     workspace.tabs.some(
       (tab) =>
         tab.kind === 'terminal' &&
-        Object.entries(tab.panes?.ptyIdsByLeafId ?? {}).some(([leafId, ptyId]) => {
+        Object.entries(tab.panes.ptyIdsByLeafId ?? {}).some(([leafId, ptyId]) => {
           const key = paneKeyOf(tab.entityId, leafId)
           const incarnationId = model.records.incarnationsByPaneKey?.[key]
           return key !== paneKey && isSameTerminal({ ptyId, incarnationId }, binding)
@@ -81,7 +81,7 @@ function processStarted(
 ): Applied {
   const workspace = model.workspaces[transition.workspace]
   const pane = workspace && locatePane(workspace, transition.paneKey)
-  if (!pane?.tab.panes) {
+  if (!pane) {
     return refuse('pane_not_found')
   }
   if (boundElsewhere(model, transition.paneKey, transition)) {
@@ -91,8 +91,8 @@ function processStarted(
   const bound = updateTab(model, transition.workspace, {
     ...tab,
     panes: {
-      ...tab.panes!,
-      ptyIdsByLeafId: { ...tab.panes!.ptyIdsByLeafId, [leafId]: transition.ptyId }
+      ...tab.panes,
+      ptyIdsByLeafId: { ...tab.panes.ptyIdsByLeafId, [leafId]: transition.ptyId }
     }
   })
   if (!bound.ok || transition.incarnationId === undefined) {
@@ -110,7 +110,7 @@ function sshLeaseTerminated(model: WorkspaceLayoutModel, ptyIds: readonly string
   let next = model
   for (const [key, workspace] of Object.entries(model.workspaces)) {
     for (const tab of workspace.tabs) {
-      if (tab.kind !== 'terminal' || !tab.panes?.ptyIdsByLeafId) {
+      if (tab.kind !== 'terminal' || !tab.panes.ptyIdsByLeafId) {
         continue
       }
       const bindings = Object.entries(tab.panes.ptyIdsByLeafId)

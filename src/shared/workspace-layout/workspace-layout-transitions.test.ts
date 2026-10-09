@@ -138,6 +138,37 @@ describe('layout transitions', () => {
     expect(renamed.ok && renamed.model.workspaces['repo-1::/renamed']!.worktreeId).toBe(
       'repo-1::/renamed'
     )
+    // Closed-tab records follow, so removing the renamed workspace still clears them.
+    const withClosed = {
+      ...model,
+      records: {
+        ...model.records,
+        closedTerminalTabTombstones: {
+          closed: { closedAt: 1, worktreeId: WS, reason: 'user' as const }
+        }
+      }
+    }
+    const renamedWithClosed = applyLayoutTransition(
+      withClosed,
+      { type: 'identityRenamed', from: WS, to: 'repo-1::/renamed' },
+      context
+    )
+    expect(
+      renamedWithClosed.ok &&
+        renamedWithClosed.model.records.closedTerminalTabTombstones!.closed!.worktreeId
+    ).toBe('repo-1::/renamed')
+    const removedRenamed =
+      renamedWithClosed.ok &&
+      applyLayoutTransition(
+        renamedWithClosed.model,
+        { type: 'ownerRemoved', workspaces: ['repo-1::/renamed'] },
+        context
+      )
+    expect(
+      removedRenamed &&
+        removedRenamed.ok &&
+        removedRenamed.model.records.closedTerminalTabTombstones
+    ).toEqual({})
     const occupied = build(
       context,
       [{ type: 'createTerminalTab', workspace: 'repo-1::/other' }],

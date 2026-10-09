@@ -6,14 +6,12 @@ import type { LayoutContentTab, WorkspaceLayoutModel } from './workspace-layout-
 import { withWorkspace } from './workspace-layout-removal'
 import { placeContentTab } from './workspace-layout-tab-commands'
 
-/** Names its host on disk, as the window's tab opens do for the workspace they open in. */
 function contentTab(
   context: LayoutContext,
   fields: Pick<LayoutContentTab, 'kind' | 'entityId'> & Partial<LayoutContentTab>
 ): LayoutContentTab {
   return {
     id: context.mintId(),
-    namesExecutionHost: true,
     createdAt: context.now(),
     customTitle: null,
     color: null,

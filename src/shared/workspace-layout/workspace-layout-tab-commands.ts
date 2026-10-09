@@ -191,7 +191,7 @@ export function setChatPane(
   command: CommandOf<'setChatPane'>
 ): Applied {
   const tab = findTerminal(model.workspaces[command.workspace]!, command.tabId)
-  if (!tab?.panes) {
+  if (!tab) {
     return refuse('tab_not_found')
   }
   if (command.leafId !== null && !layoutContainsLeafId(tab.panes.root, command.leafId)) {

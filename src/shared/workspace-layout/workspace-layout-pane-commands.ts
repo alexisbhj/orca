@@ -3,6 +3,7 @@
 
 import { withoutKey } from './stored-record-fields'
 import { getNextTerminalOrdinal } from './terminal-tab-ordinal'
+import { rekeyPaneRecords } from './workspace-layout-pane-records'
 import {
   equalizeLayout,
   insertLeafBeside,
@@ -22,10 +23,8 @@ import {
 import type { CommandOf, LayoutContext } from './workspace-layout-command-types'
 import {
   paneKeyOf,
-  type LayoutTerminalPanes,
   type LayoutTerminalTab,
-  type WorkspaceLayoutModel,
-  type WorkspaceLayoutRecords
+  type WorkspaceLayoutModel
 } from './workspace-layout-model'
 import {
   advanceTopologyRevision,
@@ -35,12 +34,9 @@ import {
 
 type PaneCommand = { workspace: string; tabId: string }
 
-function paneTab(
-  model: WorkspaceLayoutModel,
-  command: PaneCommand
-): (LayoutTerminalTab & { panes: LayoutTerminalPanes }) | null {
+function paneTab(model: WorkspaceLayoutModel, command: PaneCommand): LayoutTerminalTab | null {
   const tab = findTerminal(model.workspaces[command.workspace]!, command.tabId)
-  return tab?.panes?.root ? { ...tab, panes: tab.panes } : null
+  return tab?.panes.root ? tab : null
 }
 
 export function splitPane(
@@ -79,10 +75,10 @@ export function splitPane(
 /** Closing a pane that is already gone succeeds; the last pane closes its tab. */
 export function closePane(model: WorkspaceLayoutModel, command: CommandOf<'closePane'>): Applied {
   const tab = findTerminal(model.workspaces[command.workspace]!, command.tabId)
-  if (!tab || (tab.panes && !layoutContainsLeafId(tab.panes.root, command.leafId))) {
+  if (!tab || !layoutContainsLeafId(tab.panes.root, command.leafId)) {
     return applied(model, { alreadyClosed: true })
   }
-  const ptyId = tab.panes?.ptyIdsByLeafId?.[command.leafId]
+  const ptyId = tab.panes.ptyIdsByLeafId?.[command.leafId]
   const retired = retireTerminalPane(
     model,
     { workspaceKey: command.workspace, tab },
@@ -172,30 +168,6 @@ export function renamePane(model: WorkspaceLayoutModel, command: CommandOf<'rena
   return updateTab(model, command.workspace, { ...tab, panes: { ...tab.panes, titlesByLeafId } })
 }
 
-function rekeyPaneRecords(
-  records: WorkspaceLayoutRecords,
-  from: string,
-  to: string,
-  tabId: string
-): WorkspaceLayoutRecords {
-  const next = { ...records }
-  const incarnation = records.incarnationsByPaneKey?.[from]
-  if (incarnation !== undefined) {
-    next.incarnationsByPaneKey = {
-      ...withoutKey(records.incarnationsByPaneKey, from),
-      [to]: incarnation
-    }
-  }
-  const sleeping = records.sleepingByPaneKey?.[from]
-  if (sleeping) {
-    next.sleepingByPaneKey = {
-      ...withoutKey(records.sleepingByPaneKey, from),
-      [to]: { ...sleeping, paneKey: to, tabId }
-    }
-  }
-  return next
-}
-
 /** Drag-out (#25380): the pane keeps its id and terminal; only the tab half of its key changes. */
 export function movePaneToNewTab(
   model: WorkspaceLayoutModel,
@@ -249,7 +221,7 @@ export function movePaneToNewTab(
       titlesByLeafId: withoutKey(tab.panes.titlesByLeafId, leafId)
     }
   }
-  if (source.panes?.chatLeafId === leafId) {
+  if (source.panes.chatLeafId === leafId) {
     delete source.panes.chatLeafId
   }
   const sourceGroup = workspace.groups.find((group) => group.tabOrder.includes(tab.id))
