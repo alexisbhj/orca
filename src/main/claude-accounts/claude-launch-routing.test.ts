@@ -11,6 +11,7 @@ import {
   withClaudeProfileTerminalEnv
 } from './claude-profile-installed-router'
 import { ClaudeProfileRouter, type ClaudeProfileRouterSettings } from './claude-profile-router'
+import { prepareLocalCommitMessageAgentEnv } from '../text-generation/commit-message-agent-environment'
 import { claudeStructuredAuthPolicyForSettings } from './claude-structured-auth-policy'
 import { applyClaudeEnvPatch } from './environment'
 
@@ -81,7 +82,6 @@ async function launchHomes(f: ReturnType<typeof coveredAccount>) {
       getClaudeConfigDirectory: () => f.router.systemDefaultHome()
     }),
     chatAuth: claudeStructuredAuthPolicyForSettings(f.settings),
-    terminalStripsAuth: f.router.preparation().stripAuthEnv,
     usage: f.router.preparation().configDir,
     inactiveUsage: f.router.accountUsagePreparation('a').configDir
   }
@@ -118,7 +118,6 @@ describe('one router decision for every Claude launch', () => {
       chatEnv: undefined,
       chatRecord: f.systemHome,
       chatAuth: { account: 'system' },
-      terminalStripsAuth: false,
       usage: f.systemHome,
       inactiveUsage: f.systemHome
     })
@@ -131,34 +130,59 @@ describe('one router decision for every Claude launch', () => {
       chatRecord: f.accountHome,
       // A shell proxy's key stays with its address on the account too.
       chatAuth: { account: 'managed' },
-      terminalStripsAuth: false,
       usage: f.accountHome,
       inactiveUsage: f.accountHome
     })
   })
 
-  it("keeps a shell proxy's key with its address on a signed-in account's launches", async () => {
-    const f = coveredAccount()
-    signIn(f.accountHome, 'a@example.test')
-    const shell = {
-      PATH: '/usr/bin',
-      ANTHROPIC_BASE_URL: 'https://proxy.example.test',
-      ANTHROPIC_API_KEY: 'proxy-key',
-      ANTHROPIC_AUTH_TOKEN: 'proxy-token'
+  // The shell function's half is in claude-shell-function.test.ts; WSL's in the WSL router test.
+  it.each(['signed-in account', 'System default fallback'])(
+    "keeps a shell proxy's key with its address on every launch: %s",
+    async (scenario) => {
+      const f = coveredAccount()
+      if (scenario === 'signed-in account') {
+        signIn(f.accountHome, 'a@example.test')
+      }
+      const home = scenario === 'signed-in account' ? f.accountHome : undefined
+      const shell = {
+        ANTHROPIC_BASE_URL: 'https://proxy.example.test',
+        ANTHROPIC_API_KEY: 'proxy-key',
+        ANTHROPIC_AUTH_TOKEN: 'proxy-token'
+      }
+      // A terminal applies the launch's patch to its own env and deletes nothing more.
+      const terminal = applyClaudeEnvPatch(
+        { PATH: '/usr/bin', ...shell },
+        (await f.router.prepareLaunch()).envPatch
+      )
+      expect(terminal).toMatchObject(shell)
+      expect(terminal.CLAUDE_CONFIG_DIR).toBe(home)
+      const chat = await resolveClaudeStructuredInvocation({
+        resolveCommand: () => 'claude',
+        resolveInheritedEnv: async () => ({ PATH: '/usr/bin', ...shell }),
+        resolveAuthPolicy: () => claudeStructuredAuthPolicyForSettings(f.settings)
+      })
+      expect(chat.env).toMatchObject(shell)
+      const saved = Object.fromEntries(Object.keys(shell).map((key) => [key, process.env[key]]))
+      Object.assign(process.env, shell)
+      try {
+        const commit = await prepareLocalCommitMessageAgentEnv('claude', {
+          prepareForClaudeLaunch: () => f.router.prepareLaunch()
+        })
+        expect(commit).toMatchObject({ ok: true, env: shell })
+        if (home) {
+          expect(commit.ok && commit.env?.CLAUDE_CONFIG_DIR).toBe(home)
+        }
+      } finally {
+        for (const [key, value] of Object.entries(saved)) {
+          if (value === undefined) {
+            delete process.env[key]
+          } else {
+            process.env[key] = value
+          }
+        }
+      }
     }
-    const prepared = await f.router.prepareLaunch()
-    // The env patch every launcher (terminal, commit message, split) applies to its own env.
-    const env = applyClaudeEnvPatch({ ...shell }, prepared.envPatch, {
-      stripAuthEnv: prepared.stripAuthEnv
-    })
-    expect(env).toMatchObject({ ...shell, CLAUDE_CONFIG_DIR: f.accountHome })
-    const chat = await resolveClaudeStructuredInvocation({
-      resolveCommand: () => 'claude',
-      resolveInheritedEnv: async () => ({ ...shell }),
-      resolveAuthPolicy: () => claudeStructuredAuthPolicyForSettings(f.settings)
-    })
-    expect(chat).toMatchObject({ env: shell, account: 'managed' })
-  })
+  )
 
   // Terminals, chats, AI commit messages and automations launch through
   // ClaudeRuntimeAuthService.prepareForClaudeLaunch; usage through prepareForRateLimitFetch.

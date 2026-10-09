@@ -120,7 +120,6 @@ describe('ClaudeProfileRouter', () => {
     signIn(f.userHome, 'A@Example.test')
     await expect(f.router.prepareLaunch()).resolves.toMatchObject({
       configDir: join(f.userHome, '.claude'),
-      stripAuthEnv: false,
       provenance: 'system'
     })
     expect(f.router.preparation().envPatch).not.toHaveProperty('CLAUDE_CONFIG_DIR')
@@ -133,8 +132,7 @@ describe('ClaudeProfileRouter', () => {
     // After the account signs in to its own folder, the next launch uses it.
     signIn(f.home('a'), 'a@example.test')
     await expect(f.router.prepareLaunch()).resolves.toMatchObject({
-      configDir: f.home('a'),
-      stripAuthEnv: false
+      configDir: f.home('a')
     })
     expect(readFileSync(f.router.pointerPath, 'utf8')).toBe(f.home('a'))
     expect(f.router.coveredBySystemDefault('a')).toBe(false)
@@ -353,7 +351,6 @@ describe('ClaudeProfileRouter', () => {
     mkdirSync(f.home('a'), { recursive: true })
     expect(f.router.preparation()).toMatchObject({
       configDir: f.home('a'),
-      stripAuthEnv: false,
       envPatch: {
         ORCA_CLAUDE_PROFILE_POINTER: f.router.pointerPath,
         CLAUDE_CONFIG_DIR: f.home('a'),
@@ -363,7 +360,6 @@ describe('ClaudeProfileRouter', () => {
     f.settings.activeClaudeManagedAccountId = null
     expect(f.router.preparation()).toMatchObject({
       configDir: resolve('/user/own'),
-      stripAuthEnv: false,
       envPatch: { ORCA_CLAUDE_PROFILE_POINTER: f.router.pointerPath }
     })
     expect(f.router.preparation().envPatch).not.toHaveProperty('CLAUDE_CONFIG_DIR')

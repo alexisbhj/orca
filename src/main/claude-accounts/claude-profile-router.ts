@@ -324,8 +324,6 @@ export class ClaudeProfileRouter {
       wslDistro: null,
       wslLinuxConfigDir: null,
       envPatch: this.launchEnv(),
-      // Why never: a shell proxy's key must travel with its ANTHROPIC_BASE_URL, as on System default.
-      stripAuthEnv: false,
       provenance: home ? `profile:${profile?.accountId}` : 'system'
     }
   }
@@ -358,7 +356,6 @@ export class ClaudeProfileRouter {
       return {
         configDir: this.systemDefaultHome(),
         envPatch: {},
-        stripAuthEnv: false,
         provenance: 'system'
       }
     }
@@ -366,7 +363,6 @@ export class ClaudeProfileRouter {
     return {
       configDir: home,
       envPatch: { CLAUDE_CONFIG_DIR: home },
-      stripAuthEnv: false,
       provenance: `profile:${accountId}`
     }
   }

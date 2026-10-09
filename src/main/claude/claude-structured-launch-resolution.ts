@@ -160,7 +160,7 @@ export async function resolveClaudeStructuredInvocation(
   // Why never strip: a shell proxy's key must travel with its ANTHROPIC_BASE_URL, on every account.
   return {
     command: sources.command,
-    env: claudeChildEnv(sources, false, decorateEnv),
+    env: claudeChildEnv(sources, decorateEnv),
     account: auth.account
   }
 }

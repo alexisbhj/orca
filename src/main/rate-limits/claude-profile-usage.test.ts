@@ -53,7 +53,6 @@ function profile() {
     authPreparation: {
       configDir: home,
       envPatch: { CLAUDE_CONFIG_DIR: home },
-      stripAuthEnv: true,
       provenance: 'profile:fake'
     }
   }
@@ -66,7 +65,7 @@ function systemDefault() {
   return {
     home,
     options: {
-      authPreparation: { configDir: home, envPatch: {}, stripAuthEnv: false, provenance: 'system' }
+      authPreparation: { configDir: home, envPatch: {}, provenance: 'system' }
     }
   }
 }
@@ -200,7 +199,6 @@ it("reads System default's own CLAUDE_CONFIG_DIR Keychain item before the unsuff
       resolveClaudeOAuthCredentialReadOptions({
         configDir: inherited,
         envPatch: {},
-        stripAuthEnv: false,
         provenance: 'system'
       })
     )
@@ -223,7 +221,6 @@ it("names System default's Keychain item from the login shell's CLAUDE_CONFIG_DI
       resolveClaudeOAuthCredentialReadOptions({
         configDir: '/shell/claude-config',
         envPatch: {},
-        stripAuthEnv: false,
         provenance: 'system'
       })?.keychainConfigDir
     ).toBe('/shell/claude-config')
@@ -250,7 +247,6 @@ it('reads an inactive WSL account where the WSL router says its launches would r
     runtime: 'wsl' as const,
     wslDistro: 'Ubuntu',
     envPatch: {},
-    stripAuthEnv: true,
     provenance: 'wsl:Ubuntu:system'
   }
   wslRouter.accountUsagePreparation.mockResolvedValueOnce(authPreparation)

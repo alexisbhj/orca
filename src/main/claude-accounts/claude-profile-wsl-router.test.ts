@@ -43,6 +43,7 @@ import {
 import type { ClaudeProfileRouterSettings } from './claude-profile-router'
 import { prepareClaudeProfileDirectory } from './claude-profile-paths'
 import { ClaudeWslProfileRouter } from './claude-profile-wsl-router'
+import { applyClaudeEnvPatch } from './environment'
 import { wslClaudeProfile } from './claude-profile-wsl-paths'
 
 // Why skipped on Windows: the guest is Linux; these run its scripts and Node bundle as the guest.
@@ -307,6 +308,18 @@ describe.skipIf(!posixHost)('ClaudeWslProfileRouter', () => {
     await expect(f.router.prepareLaunch('Ubuntu')).resolves.toMatchObject({
       wslLinuxConfigDir: f.profileHome
     })
+  })
+
+  it("keeps a shell proxy's key with its address on WSL launches, account or System default", async () => {
+    const f = fixture()
+    mkdirSync(f.profileHome, { recursive: true })
+    writeFileSync(join(f.profileHome, '..', 'profile.json'), '{}')
+    const shell = { ANTHROPIC_BASE_URL: 'https://proxy.example.test', ANTHROPIC_API_KEY: 'k' }
+    for (const selected of ['a', null]) {
+      f.wsl.Ubuntu = selected
+      const prepared = await f.router.prepareLaunch('Ubuntu')
+      expect(applyClaudeEnvPatch({ ...shell }, prepared.envPatch)).toMatchObject(shell)
+    }
   })
 
   it('launches System default from the guest ~/.claude with no account env', async () => {

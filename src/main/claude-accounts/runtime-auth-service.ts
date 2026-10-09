@@ -54,7 +54,6 @@ export class ClaudeRuntimeAuthService {
       return {
         configDir: '',
         envPatch: {},
-        stripAuthEnv: true,
         provenance: 'profile:unavailable',
         usageError: error instanceof Error ? error.message : String(error)
       }

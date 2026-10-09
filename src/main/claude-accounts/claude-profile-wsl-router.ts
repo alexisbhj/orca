@@ -210,7 +210,6 @@ export class ClaudeWslProfileRouter {
           ? { CLAUDE_CONFIG_DIR: profile.home, [CLAUDE_INJECTED_CONFIG_DIR_ENV]: profile.home }
           : {})
       },
-      stripAuthEnv: true,
       provenance: profile ? `profile:${profile.accountId}:wsl:${distro}` : `wsl:${distro}:system`
     }
   }
