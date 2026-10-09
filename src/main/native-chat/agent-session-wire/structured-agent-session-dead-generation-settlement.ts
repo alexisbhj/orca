@@ -250,7 +250,7 @@ export async function settleStaleStructuredAgentSessionState(input: {
       return null
     }
     const fence = journal.itemFence(item.itemId)
-    // An earlier settle's `unverifiable` turn is revised only by a death naming its owner.
+    // An earlier settle's `unverifiable` turn is revised by a death naming its owner or by its replaced runtime.
     if (
       unverifiable
         ? fence !== undefined && fence === input.deathEvidence?.ownerFence
