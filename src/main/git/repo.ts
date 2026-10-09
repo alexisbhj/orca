@@ -17,7 +17,6 @@ export {
   getGitRepoRoot,
   getGitRepoRootAsync,
   getLinkedWorktreeMainRepoRoot,
-  getLinkedWorktreeMainRepoRootAsync,
   normalizeGitRepoRootForInputPath
 } from './repo-detection'
 export {

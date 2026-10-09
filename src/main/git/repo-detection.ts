@@ -264,7 +264,3 @@ export function getGitRepoRootAsync(path: string): Promise<string> {
 export function getLinkedWorktreeMainRepoRoot(path: string): string | null {
   return runGitRepoCommandsSync(getLinkedWorktreeMainRepoRootCommands(path))
 }
-
-export function getLinkedWorktreeMainRepoRootAsync(path: string): Promise<string | null> {
-  return runGitRepoCommands(getLinkedWorktreeMainRepoRootCommands(path))
-}

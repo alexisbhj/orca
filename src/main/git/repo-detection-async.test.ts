@@ -7,8 +7,6 @@ import { runProcess } from '../../shared/child-process/run-process'
 import {
   getGitRepoRoot,
   getGitRepoRootAsync,
-  getLinkedWorktreeMainRepoRoot,
-  getLinkedWorktreeMainRepoRootAsync,
   inspectGitRepoForRegistration,
   inspectGitRepoForRegistrationAsync,
   isGitRepo,
@@ -37,7 +35,6 @@ async function expectSameDetection(path: string): Promise<void> {
   expect(await inspectGitRepoForRegistrationAsync(path)).toEqual(
     inspectGitRepoForRegistration(path)
   )
-  expect(await getLinkedWorktreeMainRepoRootAsync(path)).toBe(getLinkedWorktreeMainRepoRoot(path))
 }
 
 describe('asynchronous repository detection with real Git', () => {
