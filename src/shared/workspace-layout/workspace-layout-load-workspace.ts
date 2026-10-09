@@ -1,5 +1,5 @@
 import type { Tab } from '../tab-types'
-import type { TerminalTab } from '../terminal-tab-types'
+import type { TerminalLayoutSnapshot, TerminalTab } from '../terminal-tab-types'
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
 import { childRecord, pickStoredFields } from './stored-record-fields'
 import { resolveGroupOrder, type OrderCandidate } from './workspace-layout-load-order'
@@ -30,16 +30,50 @@ function takeRows({ session, key, terminalHomes, normalizations }: WorkspaceLoad
   return rows
 }
 
+/** A pane key's leaf for this tab, from the records that name one (the old window's leaf). */
+function recordedLeafId(session: WorkspaceSessionState, tabId: string): string | undefined {
+  const leafIds = new Set(
+    [
+      ...Object.keys(session.terminalPtyIncarnationsByPaneKey ?? {}),
+      ...Object.keys(session.sleepingAgentSessionsByPaneKey ?? {}),
+      ...Object.keys(session.terminalSurfaceTombstonesByPaneKey ?? {})
+    ].flatMap((paneKey) =>
+      paneKey.startsWith(`${tabId}:`) ? [paneKey.slice(tabId.length + 1)] : []
+    )
+  )
+  return leafIds.size === 1 ? [...leafIds][0] : undefined
+}
+
+/**
+ * A row saved before pane layouts existed becomes a one-pane tab bound to the row's terminal,
+ * as today's window restores it; the pane reuses the leaf the records name, else a new one.
+ */
+function legacyLayout(
+  session: WorkspaceSessionState,
+  row: TerminalTab,
+  args: WorkspaceLoadArgs
+): TerminalLayoutSnapshot {
+  const leafId = recordedLeafId(session, row.id) ?? args.context.mintLeafId()
+  args.normalizations.push({
+    rule: 'legacy_row_given_pane',
+    workspaceKey: args.key,
+    ids: [row.id, leafId]
+  })
+  return {
+    root: { type: 'leaf', leafId },
+    activeLeafId: leafId,
+    expandedLeafId: null,
+    ...(row.ptyId ? { ptyIdsByLeafId: { [leafId]: row.ptyId } } : {})
+  }
+}
+
 function loadPanes(
   session: WorkspaceSessionState,
   row: TerminalTab,
   tab: Omit<LayoutTerminalTab, 'panes'>,
   args: WorkspaceLoadArgs
 ): LayoutTerminalTab {
-  const layout = session.terminalLayoutsByTabId?.[tab.entityId]
-  if (!layout) {
-    return { ...tab, panes: null, ...(row.ptyId ? { legacyPtyId: row.ptyId } : {}) }
-  }
+  const layout = session.terminalLayoutsByTabId?.[tab.entityId] ?? legacyLayout(session, row, args)
   args.view.panes[tab.entityId] = {
     activeLeafId: layout.activeLeafId,
     expandedLeafId: layout.expandedLeafId
@@ -78,7 +112,9 @@ function reporterFor(args: WorkspaceLoadArgs, tabId: string): TabLoadReport {
         field
       }),
     foreignHost: () =>
-      args.normalizations.push({ rule: 'execution_host_disagrees', workspaceKey, ids: [tabId] })
+      args.normalizations.push({ rule: 'execution_host_disagrees', workspaceKey, ids: [tabId] }),
+    hostFilled: () =>
+      args.normalizations.push({ rule: 'execution_host_filled', workspaceKey, ids: [tabId] })
   }
 }
 
@@ -101,8 +137,17 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
     merged.add(row.id)
     tabIds.add(tab.id)
     tabs.push(tab)
+    // One live title: the tab-bar label when there is one (the row's is often a stale default).
+    if (entry && entry.label !== row.title) {
+      normalizations.push({
+        rule: 'row_and_tab_bar_disagree',
+        workspaceKey: key,
+        ids: [tab.id],
+        field: 'title'
+      })
+    }
     args.facts.terminalRows[row.id] = {
-      title: row.title,
+      title: entry?.label ?? row.title,
       ...pickStoredFields(row, ['generation'])
     }
     candidates.push({
@@ -145,7 +190,9 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
         createdAt: entry.createdAt
       })
     }
-    childRecord(args.facts.tabLabels, key)[entry.id] = entry.label
+    if (entry.contentType !== 'terminal') {
+      childRecord(args.facts.tabLabels, key)[entry.id] = entry.label
+    }
     if (entry.lastFocusedAt !== undefined) {
       childRecord(args.view.lastFocusedAt, key)[entry.id] = entry.lastFocusedAt
     }

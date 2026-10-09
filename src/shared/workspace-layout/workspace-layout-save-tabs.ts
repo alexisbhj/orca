@@ -29,9 +29,6 @@ export type WorkspaceSaveScope = {
 
 /** The row's terminal: the focused pane's, else the first bound pane's, else none. */
 export function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
-  if (!tab.panes) {
-    return tab.legacyPtyId ?? null
-  }
   const bindings = tab.panes.ptyIdsByLeafId ?? {}
   const focused = view.panes[tab.entityId]?.activeLeafId
   if (focused && bindings[focused] !== undefined) {
@@ -43,6 +40,13 @@ export function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): strin
   return firstBound === undefined ? null : bindings[firstBound]!
 }
 
+/** The one live title, written as both the row title and the tab-bar label. */
+function terminalTitle(tab: LayoutTerminalTab, facts: LayoutContentFacts): string {
+  return (
+    facts.terminalRows[tab.entityId]?.title ?? tab.customTitle ?? tab.terminal.defaultTitle ?? ''
+  )
+}
+
 export function saveTerminalRow(
   tab: LayoutTerminalTab,
   sortOrder: number,
@@ -52,7 +56,7 @@ export function saveTerminalRow(
   return {
     id: tab.entityId,
     ptyId: rowPtyId(tab, scope.view),
-    title: row?.title ?? tab.customTitle ?? tab.terminal.defaultTitle ?? '',
+    title: terminalTitle(tab, scope.facts),
     ...pickStoredFields(tab.terminal, ['defaultTitle']),
     worktreeId: scope.worktreeId,
     ...(tab.generatedTitle !== undefined ? { generatedTitle: tab.generatedTitle } : {}),
@@ -79,18 +83,16 @@ export function saveTabBarEntry(
 ): Tab {
   const { workspaceKey, facts } = scope
   const label =
-    facts.tabLabels[workspaceKey]?.[tab.id] ??
-    (tab.kind === 'terminal' ? facts.terminalRows[tab.entityId]?.title : undefined) ??
-    ''
+    tab.kind === 'terminal'
+      ? terminalTitle(tab, facts)
+      : (facts.tabLabels[workspaceKey]?.[tab.id] ?? '')
   const lastFocusedAt = scope.view.lastFocusedAt[workspaceKey]?.[tab.id]
   return {
     id: tab.id,
     entityId: tab.entityId,
     groupId: placement.groupId,
     worktreeId: scope.worktreeId,
-    ...(tab.namesExecutionHost
-      ? { executionHostId: tabExecutionHostId(tab, scope.editorFiles, scope.hostId) }
-      : {}),
+    executionHostId: tabExecutionHostId(tab, scope.editorFiles, scope.hostId),
     contentType: tab.kind,
     label,
     ...(tab.generatedTitle !== undefined ? { generatedLabel: tab.generatedTitle } : {}),

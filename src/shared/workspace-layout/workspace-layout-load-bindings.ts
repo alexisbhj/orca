@@ -2,6 +2,8 @@
 
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
 import { withoutKey } from './stored-record-fields'
+import type { DesktopLayoutView, LayoutContentFacts } from './workspace-layout-beside'
+import { rekeyPaneRecords } from './workspace-layout-pane-records'
 import { isSameTerminal } from './terminal-owner-invariants'
 import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 import type {
@@ -19,7 +21,7 @@ import { advanceTopologyRevision, retireExitedSurface } from './workspace-layout
 function terminalTabsInOrder(model: WorkspaceLayoutModel) {
   return Object.entries(model.workspaces).flatMap(([workspaceKey, workspace]) =>
     tabsInOrder(workspace).flatMap((tab) =>
-      tab.kind === 'terminal' && tab.panes ? [{ workspaceKey, tab, panes: tab.panes }] : []
+      tab.kind === 'terminal' ? [{ workspaceKey, tab, panes: tab.panes }] : []
     )
   )
 }
@@ -50,12 +52,37 @@ function renameLeaf(panes: LayoutTerminalPanes, from: string, to: string): Layou
   return next
 }
 
+/** Moves what the view and side data key by the old leaf to the new one. */
+function rekeyLeafBeside(
+  tabId: string,
+  from: string,
+  to: string,
+  beside: { view: DesktopLayoutView; facts: LayoutContentFacts }
+): void {
+  const selection = beside.view.panes[tabId]
+  if (selection?.activeLeafId === from) {
+    selection.activeLeafId = to
+  }
+  if (selection?.expandedLeafId === from) {
+    selection.expandedLeafId = to
+  }
+  const scrollback = beside.facts.scrollback[tabId]
+  for (const field of ['buffersByLeafId', 'scrollbackRefsByLeafId'] as const) {
+    const byLeaf = scrollback?.[field]
+    if (scrollback && byLeaf && Object.hasOwn(byLeaf, from)) {
+      scrollback[field] = { ...withoutKey(byLeaf, from), [to]: byLeaf[from]! }
+    }
+  }
+}
+
 /**
  * One pane id in two tabs: the tab first in tab order keeps it; the other gets a new, unbound
- * pane in the same place. Kept apart so the owner's choice of which tab keeps it is one edit.
+ * pane in the same place, and its records follow it. Kept apart so the owner's choice of which
+ * tab keeps it is one edit.
  */
 export function reassignPanesInTwoTabs(
   model: WorkspaceLayoutModel,
+  beside: { view: DesktopLayoutView; facts: LayoutContentFacts },
   context: WorkspaceLayoutLoadContext,
   normalizations: LayoutLoadNormalization[]
 ): void {
@@ -70,6 +97,13 @@ export function reassignPanesInTwoTabs(
       }
       const fresh = context.mintLeafId()
       next = renameLeaf(next, leafId, fresh)
+      model.records = rekeyPaneRecords(
+        model.records,
+        paneKeyOf(tab.entityId, leafId),
+        paneKeyOf(tab.entityId, fresh),
+        tab.entityId
+      )
+      rekeyLeafBeside(tab.entityId, leafId, fresh, beside)
       owners.set(fresh, tab.entityId)
       normalizations.push({
         rule: 'pane_in_two_tabs_reassigned',

@@ -118,9 +118,9 @@ export type TerminalRowFacts = Pick<TerminalTab, 'title' | 'generation'>
 
 /** Facts views or the PTY host report; the runtime keeps them beside the layout. */
 export type LayoutContentFacts = Pick<WorkspaceSessionState, FactSessionField> & {
-  /** Workspace key → tab id → tab-bar label. */
+  /** Workspace key → tab id → tab-bar label of a non-terminal tab (a terminal's is its title). */
   tabLabels: Record<string, Record<string, string>>
-  /** Terminal tab id → live title and remount generation. */
+  /** Terminal tab id → live title (written as row title and tab-bar label) and remount generation. */
   terminalRows: Record<string, TerminalRowFacts>
   /** Terminal tab id → saved scrollback. */
   scrollback: Record<

@@ -36,16 +36,19 @@ export type TabLoadReport = {
   disagree: (field: string) => void
   /** The entry names an execution host other than the one derived from its owner. */
   foreignHost: () => void
+  /** The entry names no execution host; the Serializer writes the derived one. */
+  hostFilled: () => void
 }
 
 function contentFields(entry: Tab, ownerHostId: ExecutionHostId, report: TabLoadReport) {
-  if (entry.executionHostId !== undefined && entry.executionHostId !== ownerHostId) {
+  if (entry.executionHostId === undefined) {
+    report.hostFilled()
+  } else if (entry.executionHostId !== ownerHostId) {
     report.foreignHost()
   }
   return {
     id: entry.id,
     entityId: entry.entityId,
-    ...(entry.executionHostId !== undefined ? { namesExecutionHost: true as const } : {}),
     createdAt: entry.createdAt,
     customTitle: entry.customLabel,
     color: entry.color,

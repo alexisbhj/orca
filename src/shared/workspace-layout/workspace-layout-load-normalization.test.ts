@@ -15,6 +15,7 @@ import {
   leaf,
   SSH_KEY
 } from './workspace-layout-session.test-fixture'
+import { sleepingRecord } from './workspace-layout-profile.test-fixture'
 
 const onDisk = (session: WorkspaceSessionState): WorkspaceSessionState =>
   JSON.parse(JSON.stringify(session))
@@ -171,9 +172,16 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.terminalLayoutsByTabId['tab-b'] = {
       ...stored.terminalLayoutsByTabId['tab-b']!,
       root: { type: 'leaf', leafId: leaf(1) },
+      activeLeafId: leaf(1),
+      expandedLeafId: leaf(1),
       ptyIdsByLeafId: { [leaf(1)]: 'pty-b' },
-      titlesByLeafId: { [leaf(1)]: 'logs' }
+      titlesByLeafId: { [leaf(1)]: 'logs' },
+      buffersByLeafId: { [leaf(1)]: 'scrollback-b' }
     }
+    stored.tabsByWorktree[GIT_KEY]![1]!.ptyId = 'pty-b'
+    const sleeping = sleepingRecord(GIT_KEY, 'tab-b', leaf(1))
+    stored.sleepingAgentSessionsByPaneKey = { [sleeping.paneKey]: sleeping }
+    stored.terminalPtyIncarnationsByPaneKey = { [`tab-b:${leaf(1)}`]: 'inc-b' }
     expect(rules(stored)).toEqual(['pane_in_two_tabs'])
     const loaded = load(stored)
     expect(loaded.normalizations.map((entry) => entry.rule)).toEqual([
@@ -181,9 +189,19 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     ])
     const saved = saveWorkspaceLayout(loaded)
     const moved = saved.terminalLayoutsByTabId['tab-b']!
-    expect(moved.root).toEqual({ type: 'leaf', leafId: expect.not.stringMatching(leaf(1)) })
+    const fresh = loaded.normalizations[0]!.ids[3]!
+    expect(moved.root).toEqual({ type: 'leaf', leafId: fresh })
     expect(moved.ptyIdsByLeafId).toEqual({})
-    expect(Object.values(moved.titlesByLeafId ?? {})).toEqual(['logs'])
+    expect(moved.titlesByLeafId).toEqual({ [fresh]: 'logs' })
+    // Everything keyed by the old pane follows it, so no record or view entry is orphaned.
+    expect(moved).toMatchObject({
+      activeLeafId: fresh,
+      expandedLeafId: fresh,
+      buffersByLeafId: { [fresh]: 'scrollback-b' }
+    })
+    expect(Object.keys(saved.sleepingAgentSessionsByPaneKey!)).toEqual([`tab-b:${fresh}`])
+    expect(saved.sleepingAgentSessionsByPaneKey![`tab-b:${fresh}`]!.paneKey).toBe(`tab-b:${fresh}`)
+    expect(saved.terminalPtyIncarnationsByPaneKey).toEqual({ [`tab-b:${fresh}`]: 'inc-b' })
     expect(saved.terminalLayoutsByTabId['tab-a']!.ptyIdsByLeafId).toEqual({ [leaf(1)]: 'pty-a' })
     expect(rules(saved)).toEqual([])
   })
@@ -333,9 +351,54 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     expect(saved.terminalSurfaceTombstonesByPaneKey).toBeUndefined()
   })
 
-  it('carries a legacy row with no pane layout and an unowned pane layout through unchanged', () => {
+  it('gives a legacy row with no pane layout one pane bound to its terminal, and reports it', () => {
     const stored = twoTabs()
     delete stored.terminalLayoutsByTabId['tab-b']
+    const loaded = load(stored)
+    const [report] = loaded.normalizations
+    expect(report).toEqual({
+      rule: 'legacy_row_given_pane',
+      workspaceKey: GIT_KEY,
+      ids: ['tab-b', expect.any(String)]
+    })
+    const saved = saveWorkspaceLayout(loaded)
+    const leafId = report!.ids[1]!
+    expect(saved.terminalLayoutsByTabId['tab-b']).toEqual({
+      root: { type: 'leaf', leafId },
+      activeLeafId: leafId,
+      expandedLeafId: null,
+      ptyIdsByLeafId: { [leafId]: 'pty-b' }
+    })
+    expect(saved.tabsByWorktree[GIT_KEY]![1]!.ptyId).toBe('pty-b')
+    expect(rules(saved)).toEqual([])
+    expect(load(saved).normalizations).toEqual([])
+  })
+
+  it("reuses the legacy row's recorded pane, so its records and tombstone still apply", () => {
+    const stored = twoTabs()
+    delete stored.terminalLayoutsByTabId['tab-b']
+    stored.terminalSurfaceTombstonesByPaneKey = {
+      [`tab-b:${leaf(5)}`]: {
+        worktreeId: GIT_KEY,
+        parentTabId: 'tab-b',
+        leafId: leaf(5),
+        ptyId: 'pty-b',
+        incarnationId: 'inc',
+        retiredAt: 1
+      }
+    }
+    const loaded = load(stored)
+    expect(loaded.normalizations.map((entry) => [entry.rule, entry.ids])).toEqual([
+      ['legacy_row_given_pane', ['tab-b', leaf(5)]],
+      ['legacy_tombstone_applied', [`tab-b:${leaf(5)}`]]
+    ])
+    expect(saveWorkspaceLayout(loaded).tabsByWorktree[GIT_KEY]!.map((row) => row.id)).toEqual([
+      'tab-a'
+    ])
+  })
+
+  it('carries a pane layout with no terminal tab through unchanged', () => {
+    const stored = twoTabs()
     stored.terminalLayoutsByTabId['tab-gone'] = {
       root: { type: 'leaf', leafId: leaf(7) },
       activeLeafId: leaf(7),
