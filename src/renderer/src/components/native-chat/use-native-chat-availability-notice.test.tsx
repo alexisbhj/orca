@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useNativeChatAvailabilityNotice } from './use-native-chat-availability-notice'
 import { agentSessionFailureWords } from '../../../../shared/agent-session-failure-words'
 import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
-import { agentJournalItemKey } from '../../../../shared/agent-session-journal-item-key'
+import type { AgentSessionFailureFact } from '../../../../shared/agent-session-failure'
+import {
+  agentJournalItemKey,
+  agentJournalSubmissionKey
+} from '../../../../shared/agent-session-journal-item-key'
 import { structuredAgentSessionStartFailureRowIdentity } from '../../../../shared/structured-agent-session-start-failure-row-key'
 import {
   structuredAgentSessionDeliveryNotices,
@@ -84,7 +88,7 @@ it('keeps one auth explanation while an unechoed message still reads as unsent',
   expect([...notices.values()].map((notice) => notice.text)).toEqual(['Your message was not sent.'])
 })
 
-it.each(['launch', 'history'] as const)(
+it.each(['launch', 'history', 'send'] as const)(
   'leaves a missing Codex explanation to its existing %s refusal',
   (surface) => {
     const refusal = {
@@ -109,15 +113,93 @@ it.each(['launch', 'history'] as const)(
         )
       }
     }
+    const rejection: AgentSessionFailureFact = { kind: 'startFailed', refusal }
+    const sentKey = agentJournalSubmissionKey('sent')
+    const sentRow: AgentJournalRenderItem = {
+      itemId: sentKey,
+      revision: 1,
+      sequence: 1,
+      observedAt: 1,
+      body: { kind: 'message', role: 'user', blocks: [] }
+    }
     const { result } = renderHook(() =>
       useNativeChatAvailabilityNotice({
         agent: 'codex',
         agentLabel: 'Codex',
         unavailable: { reason: 'cliMissing' },
         launchFailure: surface === 'launch' ? refusal : null,
-        journalItems: surface === 'history' ? [row] : []
+        journalItems: surface === 'history' ? [row] : surface === 'send' ? [sentRow] : [],
+        ...(surface === 'send'
+          ? {
+              submissions: [
+                {
+                  clientMessageId: 'sent',
+                  submittedAt: 1,
+                  dispatchState: 'rejected' as const,
+                  rejection
+                }
+              ],
+              deliveryNotices: new Map([[sentKey, { text: 'line' }]])
+            }
+          : {})
       })
     )
     expect(result.current).toBeNull()
   }
 )
+
+// A signed-out Pi turns the send away before any turn: that send's own line says it.
+it("steps aside while the newest send's own line says the notice's reason", () => {
+  const sent = (
+    id: string,
+    order: { at: number; sequence?: number },
+    rejected?: 'notSignedIn' | 'providerRejected'
+  ) => ({
+    clientMessageId: id,
+    submittedAt: order.at,
+    ...(order.sequence === undefined ? {} : { submittedSequence: order.sequence }),
+    dispatchState: rejected ? ('rejected' as const) : ('accepted' as const),
+    ...(rejected ? { rejection: { kind: rejected } } : {})
+  })
+  const lines = (...ids: string[]) =>
+    new Map(ids.map((id) => [agentJournalSubmissionKey(id), { text: 'line' }]))
+  const rows = (...ids: string[]): AgentJournalRenderItem[] =>
+    ids.map((id, index) => ({
+      itemId: agentJournalSubmissionKey(id),
+      revision: 1,
+      sequence: index + 1,
+      observedAt: index + 1,
+      body: { kind: 'message', role: 'user', text: id, blocks: [] }
+    }))
+  const notice = (
+    submissions: ReturnType<typeof sent>[],
+    deliveryNotices = lines('a', 'b'),
+    journalItems = rows('a', 'b')
+  ) =>
+    renderHook(() =>
+      useNativeChatAvailabilityNotice({
+        agent: 'pi',
+        agentLabel: 'Pi',
+        unavailable: { reason: 'notSignedIn' },
+        launchFailure: null,
+        journalItems,
+        submissions,
+        deliveryNotices
+      })
+    ).result.current
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')])).toBeNull()
+  expect(notice([sent('a', { at: 1 }, 'providerRejected')])?.text).toContain('/login')
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn'), sent('b', { at: 2 })])?.text).toContain(
+    '/login'
+  )
+  // Its line gone (a returned card deleted, the row trimmed): the notice is the only guidance.
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')], lines())?.text).toContain('/login')
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')], lines('a'), rows())?.text).toContain(
+    '/login'
+  )
+  // The host's send order decides, not a clock that moved back.
+  expect(
+    notice([sent('a', { at: 5, sequence: 1 }, 'notSignedIn'), sent('b', { at: 2, sequence: 2 })])
+      ?.text
+  ).toContain('/login')
+})

@@ -1,8 +1,16 @@
 import { useMemo, useState } from 'react'
 import type { AgentSessionUnavailable } from '../../../../shared/agent-session-availability'
-import { readAgentSessionFailureFact } from '../../../../shared/agent-session-failure'
-import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
+import {
+  readAgentSessionFailureFact,
+  type AgentSessionFailureFact
+} from '../../../../shared/agent-session-failure'
+import type {
+  AgentJournalRenderItem,
+  AgentJournalSubmission
+} from '../../../../shared/agent-session-journal-types'
 import type { AgentType } from '../../../../shared/agent-status-types'
+import { agentJournalSubmissionKey } from '../../../../shared/agent-session-journal-item-key'
+import { inSendOrder } from '../../../../shared/native-chat-send-order'
 import { agentSessionRefusalReasonWords } from '../../../../shared/agent-session-refusal-reason-words'
 import type { AgentSessionWriteRefusal } from '../../../../shared/agent-session-write-failure'
 import type { AgentSessionRefusalReference } from '../../../../shared/agent-session-wire-refusals'
@@ -20,6 +28,13 @@ function isMissingCodexInstallationRefusal(
   )
 }
 
+/** The availability reason a failure already states: a missing Codex reads as `cliMissing`. */
+function statedReason(failure: AgentSessionFailureFact | undefined): string | null {
+  return isMissingCodexInstallationRefusal(failure?.refusal)
+    ? 'cliMissing'
+    : (failure?.kind ?? null)
+}
+
 /** Why the chat's latest start failed, unless a turn has run since. */
 function failedStartReason(items: readonly AgentJournalRenderItem[] | undefined): string | null {
   let reason: string | null = null
@@ -29,24 +44,47 @@ function failedStartReason(items: readonly AgentJournalRenderItem[] | undefined)
     } else if (item.body.kind === 'status') {
       const failure = readAgentSessionFailureFact(item.body.failure)
       if (isStructuredAgentSessionStartFailureRow(item.itemId) || failure?.kind === 'notSignedIn') {
-        reason = isMissingCodexInstallationRefusal(failure?.refusal)
-          ? 'cliMissing'
-          : (failure?.kind ?? null)
+        reason = statedReason(failure)
       }
     }
   }
   return reason
 }
 
+type NoticeSubmission = Pick<
+  AgentJournalSubmission,
+  'clientMessageId' | 'dispatchState' | 'rejection' | 'submittedAt' | 'submittedSequence'
+>
+
+/** Why the newest send was turned away, while that send's own line on screen says so: its row is
+ *  loaded and carries the line. */
+function shownRejectionReason(
+  submissions: readonly NoticeSubmission[],
+  shownLines: ReadonlyMap<string, unknown>,
+  items: readonly AgentJournalRenderItem[]
+): string | null {
+  const newest = inSendOrder(submissions, (submission) => submission).at(-1)
+  const key = newest && agentJournalSubmissionKey(newest.clientMessageId)
+  return newest?.dispatchState === 'rejected' &&
+    key !== undefined &&
+    shownLines.has(key) &&
+    items.some((item) => item.itemId === key)
+    ? statedReason(readAgentSessionFailureFact(newest.rejection))
+    : null
+}
+
 /** The host's verdict on why no chat can start here, as a notice that never holds Send: the
  *  verdict can be wrong while a send would work. Dismissed per verdict, so a changed or returning
- *  one shows again; left out while the chat's failed start already says the same reason. */
+ *  one shows again; left out while the chat's failed start or newest send already says it. */
 export function useNativeChatAvailabilityNotice(input: {
   unavailable: AgentSessionUnavailable | null | undefined
   agent: AgentType
   agentLabel: string
   launchFailure: AgentSessionWriteRefusal | null
   journalItems: readonly AgentJournalRenderItem[] | undefined
+  submissions?: readonly NoticeSubmission[]
+  /** The lines under the chat's messages, by message key: a refused send's says why. */
+  deliveryNotices?: ReadonlyMap<string, unknown>
 }): NativeChatComposerNotice | null {
   const { unavailable, journalItems } = input
   const key = !unavailable
@@ -59,6 +97,15 @@ export function useNativeChatAvailabilityNotice(input: {
     setDismissal({ key, dismissed: false })
   }
   const rowReason = useMemo(() => failedStartReason(journalItems), [journalItems])
+  const sendReason = useMemo(
+    () =>
+      shownRejectionReason(
+        input.submissions ?? [],
+        input.deliveryNotices ?? new Map(),
+        journalItems ?? []
+      ),
+    [input.submissions, input.deliveryNotices, journalItems]
+  )
   if (!unavailable || (dismissal.key === key && dismissal.dismissed)) {
     return null
   }
@@ -68,7 +115,11 @@ export function useNativeChatAvailabilityNotice(input: {
     : launchWords && 'fact' in launchWords
       ? launchWords.fact
       : null
-  if (launchReason === unavailable.reason || rowReason === unavailable.reason) {
+  if (
+    launchReason === unavailable.reason ||
+    rowReason === unavailable.reason ||
+    sendReason === unavailable.reason
+  ) {
     return null
   }
   return {

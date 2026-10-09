@@ -28,6 +28,7 @@ type Controller = ReturnType<typeof useStructuredAgentSession>
 
 export function NativeChatStructuredSessionControls({
   props,
+  chatWorktreeId,
   agentLabel,
   startFailures,
   composerRef,
@@ -49,6 +50,7 @@ export function NativeChatStructuredSessionControls({
   onLinkClick
 }: {
   props: Omit<NativeChatStructuredViewProps, 'mode'>
+  chatWorktreeId: string | null
   agentLabel: string
   startFailures: readonly AgentSessionFailureFact[]
   composerRef: RefObject<NativeChatComposerHandle | null>
@@ -86,6 +88,7 @@ export function NativeChatStructuredSessionControls({
       {/* Host-held drafts, never transcript rows. Above the status area, so running shells and agents sit next to the composer. */}
       <NativeChatQueuedMessageList
         controller={submits.queuedMessages}
+        chatWorktreeId={chatWorktreeId}
         agentName={agentLabel}
         statedFailures={startFailures}
         steerHeld={stopControls.stopping}
