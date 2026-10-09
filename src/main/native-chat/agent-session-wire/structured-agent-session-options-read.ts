@@ -56,8 +56,7 @@ async function readStructuredAgentSessionOptionsAtRest(
   // account's default; a built-in list's default is a guess, so with none the client keeps its own.
   const model =
     saved.model ??
-    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id) ??
-    ''
+    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id)
   // As a live child answers: the pick, else the model's default where the agent reports that.
   const effort =
     saved.effort ??
@@ -70,7 +69,7 @@ async function readStructuredAgentSessionOptionsAtRest(
       ? { fastModeSupport: catalog.fastModeSupport }
       : {}),
     current: {
-      model,
+      ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       ...(typeof fastMode === 'boolean' ? { fastMode } : {})
     }

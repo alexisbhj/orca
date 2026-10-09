@@ -105,14 +105,14 @@ export function grokModelCatalogFromState(state: SessionModelState): AgentSessio
 /** The models `initialize` computed, else `x.ai/models/list`; neither creates a session. */
 export async function readGrokModelCatalog(
   initialized: InitializeResponse,
-  connection: { requestExtension(method: string, params: unknown): Promise<unknown> }
+  connection: { requestSessionFreeExtension(method: string, params: unknown): Promise<unknown> }
 ): Promise<AgentSessionModelOption[]> {
   const fromInitialize = SessionModelStateSchema.safeParse(initialized._meta?.modelState)
   if (fromInitialize.success && fromInitialize.data.availableModels.length > 0) {
     return grokModelCatalogFromState(fromInitialize.data)
   }
   const reply = modelsListReplySchema.safeParse(
-    await connection.requestExtension('x.ai/models/list', {})
+    await connection.requestSessionFreeExtension('x.ai/models/list', {})
   )
   if (
     !reply.success ||

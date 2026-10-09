@@ -40,7 +40,9 @@ export type AcpModelDiscovery =
       kind: 'initialize'
       read(
         initialized: InitializeResponse,
-        connection: { requestExtension(method: string, params: unknown): Promise<unknown> }
+        connection: {
+          requestSessionFreeExtension(method: string, params: unknown): Promise<unknown>
+        }
       ): Promise<AgentSessionModelOption[]>
       /** The listing marks the model the account is configured to run as its default. */
       listingNamesConfiguredModel: boolean

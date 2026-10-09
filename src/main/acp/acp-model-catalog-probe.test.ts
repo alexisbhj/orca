@@ -77,7 +77,8 @@ function scriptedGrok(initializeMeta: Record<string, unknown>): {
         const runtime = new AcpSessionRuntime(agent.stdout, agent.stdin)
         return {
           initialize: () => runtime.initialize(),
-          requestExtension: (method, params) => runtime.requestExtension(method, params),
+          requestSessionFreeExtension: (method, params) =>
+            runtime.requestSessionFreeExtension(method, params),
           close: async () => {
             closes++
             runtime.close()

@@ -20,7 +20,7 @@ describe('a live Grok listing', () => {
       stop: vi.fn(),
       providerStarted: vi.fn()
     }
-    const { host } = await openAttachedHostRig({}, modelCatalog)
+    const { host } = await openAttachedHostRig({}, undefined, modelCatalog)
 
     await host.readOptions(SESSION)
 

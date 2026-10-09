@@ -22,7 +22,7 @@ import type { InitializeResponse } from './generated/acp-protocol.generated'
 /** The part of an ACP connection a session-free listing may use: no session method is reachable. */
 export type AcpModelCatalogConnection = {
   initialize(): Promise<InitializeResponse>
-  requestExtension(method: string, params: unknown): Promise<unknown>
+  requestSessionFreeExtension(method: string, params: unknown): Promise<unknown>
   close(): Promise<unknown>
 }
 

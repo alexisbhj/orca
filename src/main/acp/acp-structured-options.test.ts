@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { AcpStructuredOptions, restoreAcpSessionOptions } from './acp-structured-options'
 import { GROK_ACP_DIALECT } from './acp-dialects/grok-dialect'
@@ -149,6 +150,17 @@ describe('what a new session with no pick says about the configured default', ()
     options.adoptSession({ configOptions }, 'new')
     await restoreAcpSessionOptions(connection, options, { effort: 'low' })
     expect(options.configuredDefault()).toEqual({ modelId: 'model-b' })
+  })
+
+  it('says nothing when the agent reports no model, so no empty default is saved', () => {
+    const noModel = JSON.parse(
+      readFileSync(new URL('./fixtures/omp-v17-windows-new-no-model.json', import.meta.url), 'utf8')
+    )
+    const options = new AcpStructuredOptions()
+    options.adoptSession(noModel, 'new')
+    expect(options.configuredDefault()).toBeUndefined()
+    options.adoptSession({ models: { currentModelId: '', availableModels: [] } }, 'new')
+    expect(options.configuredDefault()).toBeUndefined()
   })
 
   it('retires a saved default when the session runs a model it does not list', () => {
