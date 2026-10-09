@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { RelayAssignmentStore } from './assignment-store.js'
+import { openInMemoryRelayDatabase } from './database.js'
 import {
+  readSeatFeedCells,
   SHADOW_SEAT_RECENTLY_LEFT_MAX_HOSTS,
   ShadowSeatDirectory,
   startShadowSeatPoller,
@@ -9,8 +12,18 @@ import {
 
 const INCARNATION = '11111111-1111-4111-8111-111111111111'
 const CELLS: SeatFeedCell[] = [
-  { cellId: 'cell-a', cellUrl: 'https://cell-a.example.test', region: 'us-central1' },
-  { cellId: 'cell-b', cellUrl: 'https://cell-b.example.test', region: 'asia-east2' }
+  {
+    cellId: 'cell-a',
+    cellUrl: 'https://cell-a.example.test',
+    region: 'us-central1',
+    requiredForComplete: true
+  },
+  {
+    cellId: 'cell-b',
+    cellUrl: 'https://cell-b.example.test',
+    region: 'asia-east2',
+    requiredForComplete: true
+  }
 ]
 
 function feed(overrides: Partial<SeatFeedResponse> = {}): SeatFeedResponse {
@@ -40,7 +53,11 @@ function json(body: unknown, status = 200): Response {
 
 type Responder = (url: URL) => Response | Promise<Response>
 
-function poller(responders: Record<string, Responder>, cells: 'all' | string[] = 'all') {
+function poller(
+  responders: Record<string, Responder>,
+  cells: 'all' | string[] = 'all',
+  listCells: () => Promise<SeatFeedCell[]> = async () => CELLS
+) {
   let now = 1_000
   const requests: URL[] = []
   const identityToken = vi.fn(async () => 'token-1')
@@ -58,7 +75,7 @@ function poller(responders: Record<string, Responder>, cells: 'all' | string[] =
       shadowSeatFeedCells: cells
     },
     {
-      listCells: async () => CELLS,
+      listCells,
       fetch: fetchImpl,
       identityToken,
       now: () => now,
@@ -296,6 +313,32 @@ describe('startShadowSeatPoller', () => {
     expect(cell.directory.isComplete()).toBe(true)
   })
 
+  it('completes without a cell that is dead, empty or isolated', async () => {
+    const cell = poller({ 'cell-a': () => json(feed({ seq: 1, full: [] })) }, 'all', async () => [
+      CELLS[0]!,
+      { ...CELLS[1]!, requiredForComplete: false }
+    ])
+    await cell.tick()
+    cell.stop()
+    expect(cell.directory.cellState('cell-b')).toMatchObject({ status: 'pending' })
+    expect(cell.directory.isComplete()).toBe(true)
+  })
+
+  it('backs off cell-list reads while the database fails', async () => {
+    const listCells = vi.fn(async (): Promise<SeatFeedCell[]> => {
+      throw new Error('pool timeout')
+    })
+    const cell = poller({}, 'all', listCells)
+    for (let second = 0; second < 40; second += 1) {
+      await cell.tick()
+      cell.advance(1_000)
+    }
+    cell.stop()
+    // Retries at +1, +2, +4, +8, +16 s, then at most every 30 s.
+    expect(listCells.mock.calls.length).toBeLessThanOrEqual(7)
+    expect(listCells.mock.calls.length).toBeGreaterThanOrEqual(5)
+  })
+
   it('treats a malformed or mislabelled body as unverifiable', async () => {
     const cell = poller({
       'cell-a': () => json({ v: 2 }),
@@ -342,5 +385,47 @@ describe('startShadowSeatPoller', () => {
     expect(directory.summary(20).recentlyLeftHosts).toBe(SHADOW_SEAT_RECENTLY_LEFT_MAX_HOSTS)
     expect(directory.recentlyLeftOf('user-a', 'host-0', 20)).toEqual([])
     expect(directory.recentlyLeftOf('user-a', `host-${hosts - 1}`, 20)).toHaveLength(1)
+  })
+})
+
+describe('readSeatFeedCells', () => {
+  it('requires only live, unisolated cells with capacity among the enabled ones', async () => {
+    const database = await openInMemoryRelayDatabase()
+    const store = new RelayAssignmentStore(database, () => 100_000)
+    await store.reconcileCells(
+      ['cell-live', 'cell-stale', 'cell-isolated', 'cell-empty', 'cell-nobeat'].map((id) => ({
+        id,
+        url: `https://${id}.example.test`,
+        capacityRequests: id === 'cell-empty' ? 0 : 10
+      }))
+    )
+    for (const [cellId, heartbeatAt] of [
+      ['cell-live', 90_000],
+      ['cell-stale', 10_000],
+      ['cell-isolated', 90_000],
+      ['cell-empty', 90_000]
+    ] as const) {
+      await database.query(
+        `INSERT INTO relay_cell_runtime
+         (cell_id, cell_url, cell_incarnation, started_at, ready, observed_requests,
+          last_heartbeat_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [cellId, `https://${cellId}.example.test`, 'inc', 1, 1, 0, heartbeatAt, heartbeatAt]
+      )
+    }
+    await database.query(
+      `UPDATE relay_cell_admission SET roll_isolated_at = ? WHERE cell_id = ?`,
+      [50_000, 'cell-isolated']
+    )
+
+    const cells = await readSeatFeedCells(database, 100_000)
+
+    expect(cells.map((cell) => [cell.cellId, cell.requiredForComplete])).toEqual([
+      ['cell-empty', false],
+      ['cell-isolated', false],
+      ['cell-live', true],
+      ['cell-nobeat', false],
+      ['cell-stale', false]
+    ])
   })
 })

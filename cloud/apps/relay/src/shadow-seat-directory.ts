@@ -20,6 +20,10 @@ const RECENTLY_LEFT_PER_HOST = 4
 // Google identity tokens live an hour; one per poll would be 26 metadata reads a second.
 const IDENTITY_TOKEN_REUSE_MS = 10 * 60_000
 const SUMMARY_INTERVAL_MS = 60_000
+// The assignment store's default heartbeat freshness.
+const SHADOW_SEAT_HEARTBEAT_TTL_MS = 45_000
+const CELL_LIST_RETRY_BASE_MS = 1_000
+const CELL_LIST_RETRY_MAX_MS = SHADOW_SEAT_CELL_LIST_REFRESH_MS
 // A drain backlog drains over a few polls rather than holding one slot indefinitely.
 const MAX_PAGES_PER_POLL = 5
 
@@ -61,7 +65,13 @@ const SeatFeedSchema = z.object({
 })
 export type SeatFeedResponse = z.infer<typeof SeatFeedSchema>
 
-export type SeatFeedCell = { cellId: string; cellUrl: string; region: RelayRegion }
+export type SeatFeedCell = {
+  cellId: string
+  cellUrl: string
+  region: RelayRegion
+  // Heartbeat-fresh, with capacity, and not roll-isolated: completeness waits only on these.
+  requiredForComplete: boolean
+}
 
 export type ShadowSeat = {
   cellId: string
@@ -110,10 +120,13 @@ export class ShadowSeatDirectory {
   private readonly hosts = new Map<string, Map<string, ShadowSeat>>()
   // Insertion order is age order: a touched host is re-inserted at the end.
   private readonly recentlyLeft = new Map<string, RecentlyLeftSeat[]>()
+  private required = new Set<string>()
 
   // Cells no longer listed are forgotten with their seats; new ones start pending.
-  setCells(cellIds: readonly string[]): void {
+  // `required` defaults to every listed cell.
+  setCells(cellIds: readonly string[], required: Iterable<string> = cellIds): void {
     const wanted = new Set(cellIds)
+    this.required = new Set([...required].filter((cellId) => wanted.has(cellId)))
     for (const [cellId, cursor] of this.cells) {
       if (wanted.has(cellId)) continue
       for (const key of cursor.seats.keys()) this.unindex(key, cellId)
@@ -185,11 +198,12 @@ export class ShadowSeatDirectory {
     cursor.lastFailure = reason
   }
 
-  // Every listed cell has answered (a feed or a 404) since this director started.
+  // Every live cell has answered (a feed or a 404) since this director started;
+  // a dead, empty or isolated cell must not hold the measurement back.
   isComplete(): boolean {
-    if (this.cells.size === 0) return false
-    for (const cursor of this.cells.values()) {
-      if (cursor.lastAnsweredAt === undefined) return false
+    if (this.required.size === 0) return false
+    for (const cellId of this.required) {
+      if (this.cells.get(cellId)?.lastAnsweredAt === undefined) return false
     }
     return true
   }
@@ -352,12 +366,19 @@ export class ShadowSeatDirectory {
   }
 }
 
-export async function readSeatFeedCells(database: RelayDatabase): Promise<SeatFeedCell[]> {
+export async function readSeatFeedCells(
+  database: RelayDatabase,
+  now: number,
+  heartbeatTtlMs: number = SHADOW_SEAT_HEARTBEAT_TTL_MS
+): Promise<SeatFeedCell[]> {
   // Every enabled cell in any admission state: a draining cell still seats hosts.
   const rows = await database.query(
-    `SELECT cell.cell_id, cell.cell_url, region.region
+    `SELECT cell.cell_id, cell.cell_url, cell.capacity_requests, region.region,
+            admission.roll_isolated_at, runtime.ready, runtime.last_heartbeat_at
      FROM relay_cells cell
      LEFT JOIN relay_cell_regions region ON region.cell_id = cell.cell_id
+     LEFT JOIN relay_cell_admission admission ON admission.cell_id = cell.cell_id
+     LEFT JOIN relay_cell_runtime runtime ON runtime.cell_id = cell.cell_id
      WHERE cell.enabled = 1
      ORDER BY cell.cell_id ASC`
   )
@@ -366,7 +387,12 @@ export async function readSeatFeedCells(database: RelayDatabase): Promise<SeatFe
     return {
       cellId: String(row.cell_id),
       cellUrl: String(row.cell_url),
-      region: region.success ? region.data : RELAY_DEFAULT_REGION
+      region: region.success ? region.data : RELAY_DEFAULT_REGION,
+      requiredForComplete:
+        Number(row.capacity_requests) > 0 &&
+        (row.roll_isolated_at === null || row.roll_isolated_at === undefined) &&
+        Number(row.ready) === 1 &&
+        Number(row.last_heartbeat_at) > now - heartbeatTtlMs
     }
   })
 }
@@ -413,6 +439,8 @@ export function startShadowSeatPoller(
   let cells: SeatFeedCell[] = []
   let cellsReadAt: number | undefined
   let cellListInFlight = false
+  let cellListFailures = 0
+  let cellListRetryAt = 0
   let token: { value: Promise<string>; at: number } | undefined
   let lastSummaryAt = now()
   let stopped = false
@@ -433,18 +461,28 @@ export function startShadowSeatPoller(
   const refreshCells = async (): Promise<void> => {
     if (cellListInFlight) return
     if (cellsReadAt !== undefined && now() - cellsReadAt < SHADOW_SEAT_CELL_LIST_REFRESH_MS) return
+    if (now() < cellListRetryAt) return
     cellListInFlight = true
     try {
       const listed = await options.listCells()
       cells =
         selection === 'all' ? listed : listed.filter((cell) => selection.includes(cell.cellId))
-      directory.setCells(cells.map((cell) => cell.cellId))
+      directory.setCells(
+        cells.map((cell) => cell.cellId),
+        cells.filter((cell) => cell.requiredForComplete).map((cell) => cell.cellId)
+      )
       cellsReadAt = now()
+      cellListFailures = 0
     } catch (error) {
       // Keep polling the last list; the database being down is not the cells being down.
+      // Back off so a stalled database is not asked once a second on a 3-connection pool.
+      cellListFailures += 1
+      const backoffMs = CELL_LIST_RETRY_BASE_MS * 2 ** (cellListFailures - 1)
+      cellListRetryAt = now() + Math.min(CELL_LIST_RETRY_MAX_MS, backoffMs)
       log(
         JSON.stringify({
           event: 'orca_relay_shadow_seat_cell_list_failed',
+          failures: cellListFailures,
           reason: error instanceof Error ? error.message : 'unknown'
         })
       )

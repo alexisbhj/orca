@@ -121,7 +121,7 @@ const regionalRehomeWorker = startRegionalRehomeWorker(config, assignments, {
   })
 })
 const shadowSeatPoller = startShadowSeatPoller(config, {
-  listCells: () => readSeatFeedCells(database)
+  listCells: () => readSeatFeedCells(database, Date.now())
 })
 const heartbeat = startCellHeartbeat(config, {
   ready,
