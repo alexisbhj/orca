@@ -2,7 +2,9 @@
 // views report, and fields this module passes through untouched. The Loader splits a session into
 // these and the layout; the Serializer joins them back into today's on-disk shape.
 
+import type { SleepingAgentSessionRecord } from '../agent-session-resume'
 import type { BrowserWorkspace } from '../browser-workspace-types'
+import type { ClosedTerminalTabTombstonesByTabId } from '../closed-terminal-tab-tombstones'
 import type { TabGroup } from '../tab-types'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../terminal-tab-types'
 import type { PersistedOpenFile, WorkspaceSessionState } from '../workspace-session-state-types'
@@ -134,4 +136,7 @@ export type LayoutContentFacts = Pick<WorkspaceSessionState, FactSessionField> &
 export type CarriedSessionFields = Pick<WorkspaceSessionState, CarriedSessionField> & {
   /** Pane layouts with no terminal tab; kept as stored so the rules check still reports them. */
   unownedTerminalLayouts: Record<string, TerminalLayoutSnapshot>
+  /** Records naming no loaded workspace, kept as stored. */
+  unplacedSleepingRecords: Record<string, SleepingAgentSessionRecord>
+  unplacedClosedTabs: ClosedTerminalTabTombstonesByTabId
 }

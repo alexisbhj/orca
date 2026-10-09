@@ -6,10 +6,7 @@ import type { DesktopLayoutView, LayoutContentFacts } from './workspace-layout-b
 import { rekeyPaneRecords } from './workspace-layout-pane-records'
 import { isSameTerminal } from './terminal-owner-invariants'
 import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
-import type {
-  LayoutLoadNormalization,
-  WorkspaceLayoutLoadContext
-} from './workspace-layout-load-types'
+import type { WorkspaceLayoutLoadContext } from './workspace-layout-load-types'
 import {
   paneKeyOf,
   tabsInOrder,
@@ -83,12 +80,12 @@ function rekeyLeafBeside(
 export function reassignPanesInTwoTabs(
   model: WorkspaceLayoutModel,
   beside: { view: DesktopLayoutView; facts: LayoutContentFacts },
-  context: WorkspaceLayoutLoadContext,
-  normalizations: LayoutLoadNormalization[]
-): void {
+  context: WorkspaceLayoutLoadContext
+): WorkspaceLayoutModel {
+  let next = model
   const owners = new Map<string, string>()
   for (const { workspaceKey, tab, panes } of terminalTabsInOrder(model)) {
-    let next = panes
+    let tabPanes = panes
     for (const leafId of collectLayoutLeafIdsInOrder(panes.root)) {
       const owner = owners.get(leafId)
       if (owner === undefined || owner === tab.entityId) {
@@ -96,33 +93,26 @@ export function reassignPanesInTwoTabs(
         continue
       }
       const fresh = context.mintLeafId()
-      next = renameLeaf(next, leafId, fresh)
-      model.records = rekeyPaneRecords(
-        model.records,
+      tabPanes = renameLeaf(tabPanes, leafId, fresh)
+      next = rekeyPaneRecords(
+        next,
+        workspaceKey,
         paneKeyOf(tab.entityId, leafId),
-        paneKeyOf(tab.entityId, fresh),
-        tab.entityId
+        paneKeyOf(tab.entityId, fresh)
       )
       rekeyLeafBeside(tab.entityId, leafId, fresh, beside)
       owners.set(fresh, tab.entityId)
-      normalizations.push({
-        rule: 'pane_in_two_tabs_reassigned',
-        workspaceKey,
-        ids: [leafId, owner, tab.entityId, fresh]
-      })
     }
     // Loaded objects are fresh copies, so replacing panes in place touches no stored data.
-    tab.panes = next
+    tab.panes = tabPanes
   }
+  return next
 }
 
 /** One terminal bound in two panes: the first pane in tab order keeps it, the other is unbound. */
-export function unbindDuplicateTerminals(
-  model: WorkspaceLayoutModel,
-  normalizations: LayoutLoadNormalization[]
-): void {
-  const owners: { ptyId: string; incarnationId?: string; paneKey: string }[] = []
-  for (const { workspaceKey, tab, panes } of terminalTabsInOrder(model)) {
+export function unbindDuplicateTerminals(model: WorkspaceLayoutModel): void {
+  const owners: { ptyId: string; incarnationId?: string }[] = []
+  for (const { tab, panes } of terminalTabsInOrder(model)) {
     const bindings = panes.ptyIdsByLeafId
     if (!bindings) {
       continue
@@ -132,17 +122,10 @@ export function unbindDuplicateTerminals(
       if (ptyId === undefined) {
         continue
       }
-      const paneKey = paneKeyOf(tab.entityId, leafId)
-      const incarnationId = model.records.incarnationsByPaneKey?.[paneKey]
-      const binding = { ptyId, incarnationId, paneKey }
-      const owner = owners.find((candidate) => isSameTerminal(candidate, binding))
-      if (owner) {
+      const incarnationId = model.records.incarnationsByPaneKey?.[paneKeyOf(tab.entityId, leafId)]
+      const binding = { ptyId, incarnationId }
+      if (owners.some((candidate) => isSameTerminal(candidate, binding))) {
         delete bindings[leafId]
-        normalizations.push({
-          rule: 'terminal_in_two_panes_unbound',
-          workspaceKey,
-          ids: [ptyId, owner.paneKey, paneKey]
-        })
       } else {
         owners.push(binding)
       }
@@ -153,14 +136,10 @@ export function unbindDuplicateTerminals(
 /** Legacy per-surface tombstones: applied as today's retirement would, then never written again. */
 export function applyLegacySurfaceTombstones(
   model: WorkspaceLayoutModel,
-  session: WorkspaceSessionState,
-  normalizations: LayoutLoadNormalization[]
+  session: WorkspaceSessionState
 ): WorkspaceLayoutModel {
   let next = model
-  for (const [paneKey, tombstone] of Object.entries(
-    session.terminalSurfaceTombstonesByPaneKey ?? {}
-  )) {
-    normalizations.push({ rule: 'legacy_tombstone_applied', ids: [paneKey] })
+  for (const tombstone of Object.values(session.terminalSurfaceTombstonesByPaneKey ?? {})) {
     // Clearing a tombstone must not drop the authority it gave older builds' save merge.
     next = { ...next, records: advanceTopologyRevision(next.records, tombstone.worktreeId) }
     next = retireExitedSurface(next, { ...tombstone, terminalTabId: tombstone.parentTabId }).model

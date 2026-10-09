@@ -11,22 +11,19 @@ import type { LayoutBrowserTab, LayoutEditorFile, LayoutTab } from './workspace-
 
 /**
  * Every record of a workspace names its worktree id. Stored data can disagree: the value most
- * records name is kept (the key when none names one) and the others are reported.
+ * records name is kept (the key when none names one).
  */
-export function resolveWorktreeId({ session, key, normalizations }: WorkspaceLoadArgs): string {
-  const named: { id: string; worktreeId: string }[] = [
+export function resolveWorktreeId({ session, key }: WorkspaceLoadArgs): string {
+  const named: { worktreeId: string }[] = [
     ...(session.tabsByWorktree?.[key] ?? []),
     ...(session.unifiedTabs?.[key] ?? []),
     ...(session.tabGroups?.[key] ?? []),
-    ...(session.openFilesByWorktree?.[key] ?? []).map((file) => ({
-      id: file.filePath,
-      worktreeId: file.worktreeId
-    })),
+    ...(session.openFilesByWorktree?.[key] ?? []),
     ...(session.browserTabsByWorktree?.[key] ?? [])
   ]
   const counts = new Map<string, number>()
-  for (const record of named) {
-    counts.set(record.worktreeId, (counts.get(record.worktreeId) ?? 0) + 1)
+  for (const { worktreeId: id } of named) {
+    counts.set(id, (counts.get(id) ?? 0) + 1)
   }
   let worktreeId = key
   let most = 0
@@ -36,21 +33,12 @@ export function resolveWorktreeId({ session, key, normalizations }: WorkspaceLoa
       most = count
     }
   }
-  const others = named.filter((record) => record.worktreeId !== worktreeId)
-  if (others.length > 0) {
-    normalizations.push({
-      rule: 'worktree_id_disagrees',
-      workspaceKey: key,
-      ids: others.map((record) => record.id),
-      field: 'worktreeId'
-    })
-  }
   return worktreeId
 }
 
 /**
  * Preview is one fact per editor tab, stored on both the tab and its file. Where the two disagree
- * the tab is permanent, which can never drop a draft, and the disagreement is reported.
+ * the tab is permanent, which can never drop a draft.
  */
 export function loadEditorFiles(
   args: WorkspaceLoadArgs,
@@ -69,15 +57,6 @@ export function loadEditorFiles(
     const fileTabs = tabs.filter((tab) => tab.kind === 'editor' && tab.entityId === file.filePath)
     // The file's copy is true when any of its tabs is preview (split groups share one file).
     const demoted = file.isPreview === true ? [] : fileTabs.filter((tab) => tab.isPreview)
-    const dropped = file.isPreview === true && !fileTabs.some((tab) => tab.isPreview)
-    if (demoted.length > 0 || dropped) {
-      args.normalizations.push({
-        rule: 'preview_flag_disagrees',
-        workspaceKey: key,
-        ids: [file.filePath, ...demoted.map((tab) => tab.id)],
-        field: 'isPreview'
-      })
-    }
     for (const tab of demoted) {
       // Loaded tabs are fresh copies, so this touches no stored data.
       delete tab.isPreview

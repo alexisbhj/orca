@@ -1,7 +1,9 @@
 // Serializer: the layout model and what is kept beside it, written as today's session partition so
 // older builds read the same documents. Every redundant field is derived from the one model.
 
+import type { SleepingAgentSessionRecord } from '../agent-session-resume'
 import type { BrowserWorkspace } from '../browser-workspace-types'
+import type { ClosedTerminalTabTombstonesByTabId } from '../closed-terminal-tab-tombstones'
 import type { Tab, TabGroup, TabGroupLayoutNode } from '../tab-types'
 import type { TerminalTab } from '../terminal-tab-types'
 import type { PersistedOpenFile, WorkspaceSessionState } from '../workspace-session-state-types'
@@ -14,7 +16,7 @@ import {
   VIEW_SESSION_FIELDS
 } from './workspace-layout-beside'
 import type { LoadedWorkspaceLayout } from './workspace-layout-load-types'
-import { tabsInOrder, type WorkspaceLayout } from './workspace-layout-model'
+import { tabIdOfPaneKey, tabsInOrder, type WorkspaceLayout } from './workspace-layout-model'
 import { saveTabBarEntry, saveTerminalLayout, saveTerminalRow } from './workspace-layout-save-tabs'
 
 type WorkspaceMaps = {
@@ -43,10 +45,10 @@ function saveWorkspace(
     facts,
     view
   }
-  // Rows follow the one tab order: the rules and older readers expect the row list in that order.
+  // Rows and tab-bar entries follow the one tab order, as the rules and older readers expect.
   const ordered = tabsInOrder(workspace)
-  const unplaced = workspace.tabs.filter((tab) => !ordered.includes(tab))
-  const rows = [...ordered, ...unplaced]
+  const tabs = [...ordered, ...workspace.tabs.filter((tab) => !ordered.includes(tab))]
+  const rows = tabs
     .flatMap((tab) => (tab.kind === 'terminal' ? [tab] : []))
     .map((tab, index) => saveTerminalRow(tab, index, scope))
   const placement = new Map<string, { groupId: string; index: number }>()
@@ -54,7 +56,7 @@ function saveWorkspace(
     group.tabOrder.forEach((tabId, index) => placement.set(tabId, { groupId: group.id, index }))
   }
   const entries: Tab[] = []
-  for (const tab of workspace.tabs) {
+  for (const tab of tabs) {
     const place = placement.get(tab.id)
     if (tab.kind === 'terminal') {
       session.terminalLayoutsByTabId[tab.entityId] = saveTerminalLayout(tab, facts, view)
@@ -116,6 +118,31 @@ function saveWorkspace(
   }
 }
 
+/** Sleeping and closed-tab records, their pane key, tab and workspace filled from where they sit. */
+function saveWorkspaceRecords({
+  layout,
+  carried
+}: LoadedWorkspaceLayout): Partial<WorkspaceSessionState> {
+  const sleeping: Record<string, SleepingAgentSessionRecord> = {
+    ...carried.unplacedSleepingRecords
+  }
+  const closed: ClosedTerminalTabTombstonesByTabId = { ...carried.unplacedClosedTabs }
+  for (const { worktreeId, sleepingByPaneKey, closedTerminalTabs } of Object.values(
+    layout.workspaces
+  )) {
+    for (const [paneKey, entry] of Object.entries(sleepingByPaneKey ?? {})) {
+      sleeping[paneKey] = { paneKey, tabId: tabIdOfPaneKey(paneKey), worktreeId, ...entry }
+    }
+    for (const [tabId, entry] of Object.entries(closedTerminalTabs ?? {})) {
+      closed[tabId] = { ...entry, worktreeId }
+    }
+  }
+  return {
+    ...(Object.keys(sleeping).length > 0 ? { sleepingAgentSessionsByPaneKey: sleeping } : {}),
+    ...(Object.keys(closed).length > 0 ? { closedTerminalTabTombstonesByTabId: closed } : {})
+  }
+}
+
 export function saveWorkspaceLayout(loaded: LoadedWorkspaceLayout): WorkspaceSessionState {
   const { layout, desktopView: view, facts, carried } = loaded
   const { records } = layout
@@ -139,14 +166,9 @@ export function saveWorkspaceLayout(loaded: LoadedWorkspaceLayout): WorkspaceSes
     ...pickStoredFields(facts, FACT_SESSION_FIELDS),
     ...pickStoredFields(carried, CARRIED_SESSION_FIELDS),
     ...maps,
-    ...(records.sleepingByPaneKey
-      ? { sleepingAgentSessionsByPaneKey: records.sleepingByPaneKey }
-      : {}),
+    ...saveWorkspaceRecords(loaded),
     ...(records.incarnationsByPaneKey
       ? { terminalPtyIncarnationsByPaneKey: records.incarnationsByPaneKey }
-      : {}),
-    ...(records.closedTerminalTabTombstones
-      ? { closedTerminalTabTombstonesByTabId: records.closedTerminalTabTombstones }
       : {}),
     ...(records.defaultTabsAppliedByWorkspace
       ? { defaultTerminalTabsAppliedByWorktreeId: records.defaultTabsAppliedByWorkspace }

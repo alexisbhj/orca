@@ -60,7 +60,7 @@ describe('workspace layout Loader and Serializer', () => {
       const stored = build()
       const before = structuredClone(stored)
       const { loaded, saved } = roundTrip(hostId, stored)
-      expect(loaded.normalizations).toEqual([])
+      expect(loaded.changes).toEqual([])
       expect(onDisk(saved)).toEqual(onDisk(stored))
       // The Loader never edits the Store's object.
       expect(stored).toEqual(before)
@@ -70,7 +70,7 @@ describe('workspace layout Loader and Serializer', () => {
   it.each(PROFILES)('%s: a second round trip changes nothing', (_name, hostId, build) => {
     const once = roundTrip(hostId, build()).saved
     const twice = roundTrip(hostId, once)
-    expect(twice.loaded.normalizations).toEqual([])
+    expect(twice.loaded.changes).toEqual([])
     expect(onDisk(twice.saved)).toEqual(onDisk(once))
   })
 

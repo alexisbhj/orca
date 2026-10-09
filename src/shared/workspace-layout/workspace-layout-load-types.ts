@@ -5,42 +5,13 @@ import type {
   DesktopLayoutView,
   LayoutContentFacts
 } from './workspace-layout-beside'
+import type { LayoutLoadChange } from './workspace-layout-load-report'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
-
-/** One fixed rule the Loader applied to stored data that disagreed with itself. */
-export type LayoutLoadNormalization = {
-  rule:
-    | 'duplicate_group_dropped'
-    | 'duplicate_tab_dropped'
-    | 'empty_group_dropped'
-    | 'execution_host_disagrees'
-    | 'execution_host_filled'
-    | 'group_lists_missing_tab'
-    | 'group_minted'
-    | 'group_tree_pruned'
-    | 'legacy_row_given_pane'
-    | 'legacy_tombstone_applied'
-    | 'pane_in_two_tabs_reassigned'
-    | 'preview_flag_disagrees'
-    | 'row_and_tab_bar_disagree'
-    | 'row_terminal_rederived'
-    | 'tab_appended_to_group'
-    | 'tab_bar_entry_without_row_dropped'
-    | 'tab_id_reminted'
-    | 'tab_in_two_workspaces_dropped'
-    | 'tab_listed_twice'
-    | 'terminal_in_two_panes_unbound'
-    | 'worktree_id_disagrees'
-  workspaceKey?: string
-  ids: string[]
-  /** The record field the rule chose a value for, when it names one. */
-  field?: string
-}
 
 export type WorkspaceLayoutLoadContext = {
   /** Mints ids for groups and tabs the stored data lacks or repeats. */
   mintId: () => string
-  /** Mints pane ids (UUIDs) for a pane id two tabs repeat. */
+  /** Mints pane ids (UUIDs) for a pane id two tabs repeat, or a legacy row's one pane. */
   mintLeafId: () => string
 }
 
@@ -53,7 +24,8 @@ export type LoadedWorkspaceLayout = {
 }
 
 export type WorkspaceLayoutLoadResult = LoadedWorkspaceLayout & {
-  normalizations: LayoutLoadNormalization[]
+  /** Every on-disk value the next save writes differently from what was loaded. */
+  changes: LayoutLoadChange[]
 }
 
 export type WorkspaceLoadArgs = {
@@ -65,5 +37,4 @@ export type WorkspaceLoadArgs = {
   context: WorkspaceLayoutLoadContext
   view: DesktopLayoutView
   facts: LayoutContentFacts
-  normalizations: LayoutLoadNormalization[]
 }
