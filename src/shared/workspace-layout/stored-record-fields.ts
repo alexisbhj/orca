@@ -22,7 +22,3 @@ export function omitStoredFields<T extends object, K extends keyof T>(
   }
   return omitted
 }
-
-export function isEmptyRecord(record: object | undefined): boolean {
-  return !record || Object.keys(record).length === 0
-}
