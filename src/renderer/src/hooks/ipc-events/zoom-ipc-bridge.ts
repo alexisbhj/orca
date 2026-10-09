@@ -7,7 +7,6 @@ import { stepUIZoomLevel } from '../../../../shared/ui-zoom-level'
 import { useAppStore } from '../../store'
 import { resolveZoomTarget } from '../resolve-zoom-target'
 import { requestPdfZoom } from '@/components/editor/pdf-zoom-request'
-import { isActiveEditorFileVirtual } from '@/store/slices/editor/tabs/editor-tab-content-type'
 
 export function registerZoomIpcBridge(unsubs: (() => void)[]): void {
   // Zoom handling for menu accelerators and keyboard fallback paths.
@@ -19,7 +18,6 @@ export function registerZoomIpcBridge(unsubs: (() => void)[]): void {
       const target = resolveZoomTarget({
         activeView,
         activeTabType,
-        activeEditorIsVirtual: isActiveEditorFileVirtual(store),
         activeElement: document.activeElement
       })
       if (target === 'chat') {

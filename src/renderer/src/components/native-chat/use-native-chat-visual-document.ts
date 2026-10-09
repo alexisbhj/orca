@@ -67,13 +67,11 @@ async function loadWithRetries(
 
 /**
  * The visual's current document. Starts from the cached revision when there is one, then asks the
- * host (revalidating it) each time it becomes `enabled` or `refreshKey` changes. A later failure
- * keeps a document already shown.
+ * host (revalidating it) once `enabled`. A later failure keeps a document already shown.
  */
 export function useNativeChatVisualDocument(
   identity: NativeChatVisualIdentity,
-  enabled: boolean,
-  refreshKey = 0
+  enabled: boolean
 ): NativeChatVisualDocumentState {
   const { sessionId, file } = identity
   const environmentId =
@@ -95,7 +93,7 @@ export function useNativeChatVisualDocument(
     const abort = new AbortController()
     void loadWithRetries(identityNow, abort.signal, setState)
     return () => abort.abort()
-  }, [enabled, environmentId, file, sessionId, refreshKey])
+  }, [enabled, environmentId, file, sessionId])
 
   return state
 }

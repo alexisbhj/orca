@@ -323,13 +323,7 @@ describe('workspace-tab-palette-search', () => {
       relativePath: 'CI / Typecheck',
       mode: 'check-details'
     })
-    const chatVisualFile = makeOpenFile({
-      id: 'wt-1::chat-visual::session-1::latency.html',
-      filePath: 'wt-1::chat-visual::session-1::latency.html',
-      relativePath: 'Latency by region',
-      mode: 'chat-visual'
-    })
-    const files = [editorFile, diffFile, conflictReviewFile, checkDetailsFile, chatVisualFile]
+    const files = [editorFile, diffFile, conflictReviewFile, checkDetailsFile]
     const entries = buildEntries({
       unifiedTabsByWorktree: {
         'wt-1': [
@@ -352,11 +346,6 @@ describe('workspace-tab-palette-search', () => {
             id: 'check-tab',
             entityId: checkDetailsFile.id,
             contentType: 'check-details'
-          }),
-          makeUnifiedTab({
-            id: 'visual-tab',
-            entityId: chatVisualFile.id,
-            contentType: 'chat-visual'
           })
         ]
       },
@@ -365,7 +354,7 @@ describe('workspace-tab-palette-search', () => {
         'wt-1': [
           makeGroup({
             activeTabId: 'editor-tab',
-            tabOrder: ['editor-tab', 'diff-tab', 'conflict-tab', 'check-tab', 'visual-tab']
+            tabOrder: ['editor-tab', 'diff-tab', 'conflict-tab', 'check-tab']
           })
         ]
       }
@@ -375,17 +364,11 @@ describe('workspace-tab-palette-search', () => {
       'editor',
       'diff',
       'conflict-review',
-      'check-details',
-      'chat-visual'
+      'check-details'
     ])
     expect(searchWorkspaceTabs(entries, 'staged diff')[0]?.tabId).toBe('diff-tab')
     expect(searchWorkspaceTabs(entries, 'conflict review')[0]?.tabId).toBe('conflict-tab')
     expect(searchWorkspaceTabs(entries, 'typecheck')[0]?.tabId).toBe('check-tab')
-    expect(searchWorkspaceTabs(entries, 'latency')[0]?.tabId).toBe('visual-tab')
-    // A virtual tab's path is an internal id: never shown, never matched.
-    const visualEntry = entries.find((entry) => entry.tab.id === 'visual-tab')
-    expect(visualEntry?.secondaryText).toBe('')
-    expect(searchWorkspaceTabs(entries, 'session-1')).toEqual([])
   })
 
   it('attaches live, retained, and sleeping agent metadata only to matching terminal tabs', () => {

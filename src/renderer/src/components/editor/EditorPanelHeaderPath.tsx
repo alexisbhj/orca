@@ -21,7 +21,6 @@ import {
 } from '@/lib/reveal-in-file-manager'
 import { useAppStore } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
-import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
 import { CLOSE_ALL_CONTEXT_MENUS_EVENT } from '@/lib/close-all-context-menus'
 import { useEditorHeaderFileRename } from './editor-header-file-rename'
 import { getEditorHeaderCopyState } from './editor-header'
@@ -48,7 +47,8 @@ export function EditorPanelHeaderPath({
   const headerCopyState = getEditorHeaderCopyState(activeFile)
   const displayPath = splitPathForDisplay(headerCopyState.pathLabel)
   const canCopyHeaderPath = headerCopyState.copyText !== null
-  const isVirtualEditorTab = isVirtualEditorFile(activeFile)
+  // Why: virtual editor tabs use synthetic ids instead of on-disk paths.
+  const isVirtualEditorTab = activeFile.mode === 'check-details'
   const revealBlocked = useAppStore((s) =>
     isRevealInFileManagerBlocked(s.settings, {
       connectionId:

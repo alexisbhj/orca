@@ -37,16 +37,10 @@ export function createRecentlyClosedEditorTabs(
         }
       }))
       const { position, reopenId, ...file } = next
-      // Why: the visual opener owns one-tab-per-visual across splits and its id; openFile would add a runtime owner and dedupe per group only.
-      const restoredFileId =
-        file.mode === 'chat-visual' && file.chatVisual
-          ? get().openChatVisualTab(worktreeId, file.chatVisual, {
-              newTabGroupId: position?.groupId
-            })
-          : get().openFile(file, {
-              targetGroupId: position?.groupId,
-              reopenId
-            })
+      const restoredFileId = get().openFile(file, {
+        targetGroupId: position?.groupId,
+        reopenId
+      })
       restoreRecentlyClosedTabPosition(get, worktreeId, restoredFileId, position)
       return true
     },
@@ -172,7 +166,11 @@ export function createRecentlyClosedEditorTabs(
         const positionIndex = createRecentlyClosedTabPositionIndex(s, activeWorktreeId)
         for (const f of [...closingFiles].toReversed()) {
           // Why: skip untitled non-dirty files (deleted from disk after close) and ephemeral preview tabs so the reopen stack has no vanished/junk paths.
-          if (untitledIdsToDelete.has(f.id) || f.mode === 'markdown-preview') {
+          if (
+            untitledIdsToDelete.has(f.id) ||
+            f.mode === 'markdown-preview' ||
+            f.mode === 'chat-visual'
+          ) {
             continue
           }
           const { id: _id, isDirty: _dirty, mirroredFromRuntimeSession: _mirrored, ...snap } = f

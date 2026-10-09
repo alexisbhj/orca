@@ -3,13 +3,12 @@ import TerminalPaneOverlayLayer from './terminal-pane/TerminalPaneOverlayLayer'
 import { RetainedBrowserPaneOverlayLayer } from './browser-pane/assemble-chrome/BrowserPaneOverlayLayer'
 import EmulatorPaneOverlayLayer from './emulator-pane/EmulatorPaneOverlayLayer'
 import StructuredAgentSessionPaneOverlayLayer from './native-chat/StructuredAgentSessionPaneOverlayLayer'
-import ChatVisualPaneOverlayLayer from './native-chat/ChatVisualPaneOverlayLayer'
 import AiVaultSessionDropLayer from './tab-group/AiVaultSessionDropLayer'
 
 /**
- * The retained pane hosts for one workspace: terminal, browser, emulator, structured-chat and
- * chat-visual panes anchored onto the group tree's pane bodies, plus the vault drop layer. Shared
- * by every host of the group tree so pane lifecycle (retention, parking, guest paint) has one owner.
+ * The retained pane hosts for one workspace: terminal, browser, emulator and structured-chat
+ * panes anchored onto the group tree's pane bodies, plus the vault drop layer. Shared by every
+ * host of the group tree so pane lifecycle (retention, parking, guest paint) has one owner.
  */
 export function WorkspacePaneOverlayLayers({
   worktreeId,
@@ -66,7 +65,6 @@ export function WorkspacePaneOverlayLayers({
         worktreeId={worktreeId}
         isWorktreeActive={isVisible}
       />
-      <ChatVisualPaneOverlayLayer worktreeId={worktreeId} isWorktreeActive={isVisible} />
       <AiVaultSessionDropLayer worktreeId={worktreeId} enabled={isVisible} />
     </>
   )

@@ -17,11 +17,9 @@ function closestFocusedElement(element: unknown, selector: string): unknown {
 export function resolveZoomTarget(args: {
   activeView: TopLevelView
   activeTabType: WorkspaceVisibleTabType
-  /** The active editor tab has no text surface (CI check details, chat visual). */
-  activeEditorIsVirtual?: boolean
   activeElement: unknown
 }): 'terminal' | 'editor' | 'simulator' | 'chat' | 'ui' {
-  const { activeView, activeTabType, activeEditorIsVirtual = false, activeElement } = args
+  const { activeView, activeTabType, activeElement } = args
   const terminalInputFocused =
     typeof activeElement === 'object' &&
     activeElement !== null &&
@@ -53,8 +51,7 @@ export function resolveZoomTarget(args: {
   if (chatFocused) {
     return 'chat'
   }
-  // Why: editor font zoom changes nothing visible on a virtual tab, so it falls through to app zoom.
-  if ((activeTabType === 'editor' && !activeEditorIsVirtual) || editorFocused) {
+  if (activeTabType === 'editor' || editorFocused) {
     return 'editor'
   }
   // Why: terminal zoom is focus-owned. After the user clicks app chrome or

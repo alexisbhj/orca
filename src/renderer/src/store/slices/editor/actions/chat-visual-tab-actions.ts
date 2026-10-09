@@ -10,50 +10,33 @@ export function createChatVisualTabActions(
   get: EditorGet
 ): Pick<EditorSlice, 'openChatVisualTab'> {
   return {
-    openChatVisualTab: (worktreeId, visual, options) => {
+    openChatVisualTab: (worktreeId, visual) => {
       const id = buildChatVisualTabId(worktreeId, visual)
       const label = visual.title ?? visual.file
-      set((s) => {
-        const file: OpenFile = {
-          id,
-          filePath: id,
-          relativePath: label,
-          worktreeId,
-          language: 'plaintext',
-          isDirty: false,
-          mode: 'chat-visual',
-          chatVisual: visual
-        }
-        const exists = s.openFiles.some((f) => f.id === id)
-        return {
-          // Why: a later message can retitle or rewrite the same visual; the nonce makes its open tab re-ask the host.
-          openFiles: exists
-            ? s.openFiles.map((f) =>
-                f.id === id
-                  ? {
-                      ...f,
-                      relativePath: label,
-                      chatVisual: visual,
-                      fileContentReloadNonce: (f.fileContentReloadNonce ?? 0) + 1
-                    }
-                  : f
-              )
-            : [...s.openFiles, file],
-          ...buildEditorActiveResult(s, worktreeId, id)
-        }
-      })
-      const state = get()
-      const openTabs = (state.unifiedTabsByWorktree?.[worktreeId] ?? []).filter(
+      const file: OpenFile = {
+        id,
+        filePath: id,
+        relativePath: label,
+        worktreeId,
+        language: 'plaintext',
+        isDirty: false,
+        mode: 'chat-visual',
+        chatVisual: visual
+      }
+      set((s) => ({
+        // Replacing an open record takes the newest title a later message gave the visual.
+        openFiles: s.openFiles.some((f) => f.id === id)
+          ? s.openFiles.map((f) => (f.id === id ? file : f))
+          : [...s.openFiles, file],
+        ...buildEditorActiveResult(s, worktreeId, id)
+      }))
+      // Why: focus the visual in whichever split holds it; default placement targets the chat's group and would add a second tab there.
+      const openTab = (get().unifiedTabsByWorktree?.[worktreeId] ?? []).find(
         (tab) => tab.contentType === 'chat-visual' && tab.entityId === id
       )
-      for (const tab of openTabs) {
-        if (tab.label !== label) {
-          state.setTabLabel?.(tab.id, label)
-        }
+      if (openTab && openTab.label !== label) {
+        get().setTabLabel?.(openTab.id, label)
       }
-      // Why: focus the visual in whichever split holds it; default placement targets the chat's group and would duplicate it there.
-      const activeGroupId = state.activeGroupIdByWorktree?.[worktreeId]
-      const openTab = openTabs.find((tab) => tab.groupId === activeGroupId) ?? openTabs[0]
       void openWorkspaceEditorItem(
         get(),
         id,
@@ -61,9 +44,8 @@ export function createChatVisualTabActions(
         label,
         'chat-visual',
         undefined,
-        openTab?.groupId ?? options?.newTabGroupId
+        openTab?.groupId
       )
-      return id
     }
   }
 }
