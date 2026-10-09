@@ -56,6 +56,7 @@ import {
 import { agentLaunchWorkspaceFactory } from './agent-launch-worktree-creation'
 import { activeAgentLaunchesFor } from './agent-launch-active-operations'
 import { announceSettledLaunchFollowUps } from './agent-launch-follow-ups'
+import { assertAgentLaunchTargetAuthorized } from './agent-launch-target-authorization'
 import { clientRendersStructuredAgent } from './structured-agent-session-policy'
 import { resolveUnlaunchedIntent } from './agent-launch-intent-resolution'
 import {
@@ -307,6 +308,7 @@ export const AGENT_LAUNCH_METHODS = [
       if (!supportsAgentLaunch(context)) {
         throw new Error('agent_launch_replay_unsupported')
       }
+      assertAgentLaunchTargetAuthorized(params.target, context)
       requireDesktopPromptCompatibility(params, context)
       try {
         return await runReplaySafeAgentLaunch(params, context)
@@ -338,6 +340,7 @@ export const AGENT_LAUNCH_METHODS = [
       if (!supportsAgentLaunch(context)) {
         throw new Error('agent_launch_unsupported')
       }
+      assertAgentLaunchTargetAuthorized(params.target, context)
       requireDesktopPromptCompatibility(params, context)
       if (!params.operationId) {
         return runLegacyAgentLaunch(params, context)

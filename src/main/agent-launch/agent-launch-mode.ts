@@ -133,6 +133,8 @@ export function decideAgentLaunchMode(args: {
   placement: AgentLaunchModePlacement
   prompt?: AgentLaunchPrompt
   settings: AgentLaunchModeSettings | null | undefined
+  /** Host-internal: the caller's contract is a terminal handle, so the chat default cannot apply. */
+  terminalOnly?: boolean
   vocabulary?: AgentLaunchModeVocabulary
   /** Registered agents (beyond Claude and Codex) this surface can open as structured; defaults to
    *  every agent this host registers. */
@@ -141,7 +143,7 @@ export function decideAgentLaunchMode(args: {
   const { placement, settings } = args
   const vocabulary = args.vocabulary ?? DEFAULT_LAUNCH_VOCABULARY
   // Desktop startup transport preserves the terminal choice already made at the click.
-  if (isDesktopNewTabPrompt(args.prompt) || !isNativeChatEnabled(settings)) {
+  if (args.terminalOnly || isDesktopNewTabPrompt(args.prompt) || !isNativeChatEnabled(settings)) {
     return {
       mode: 'terminal',
       preferred: 'terminal',
