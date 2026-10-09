@@ -5,14 +5,29 @@ import type { RelayConfig } from './config.js'
 import { openInMemoryRelayDatabase } from './database.js'
 import { ShadowSeatDirectory } from './shadow-seat-directory.js'
 
-vi.mock('./admin-token-verifier.js', () => ({
-  createAdminTokenVerifier: () => async (token: string) => token === 'deploy-token',
-  createReadOnlyAdminTokenVerifier: () => async () => false,
-  createRegionalRehomeControlApplyTokenVerifier: () => async () => false,
-  createRegionalRehomeRuntimeTokenVerifier: () => async () => false,
-  createRegionalRehomeTokenVerifier: () => async () => false,
-  createRuntimeTokenVerifier: () => async () => false
-}))
+vi.mock('./admin-token-verifier.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./admin-token-verifier.js')>()
+  const identities = new Map<string, Parameters<typeof actual.relayAdminIdentityMayAccess>[0]>([
+    ['deploy-token', 'deploy'],
+    ['monitor-token', 'monitor'],
+    ['fence-token', 'fence'],
+    ['capacity-token', 'capacity']
+  ])
+  return {
+    ...actual,
+    // The real route allow-list behind a token-to-identity stub.
+    createAdminTokenVerifier: () => async (token: string, route?: string) => {
+      const identity = identities.get(token)
+      if (identity === undefined) return false
+      return !route || actual.relayAdminIdentityMayAccess(identity, route)
+    },
+    createReadOnlyAdminTokenVerifier: () => async () => false,
+    createRegionalRehomeControlApplyTokenVerifier: () => async () => false,
+    createRegionalRehomeRuntimeTokenVerifier: () => async () => false,
+    createRegionalRehomeTokenVerifier: () => async () => false,
+    createRuntimeTokenVerifier: () => async () => false
+  }
+})
 
 vi.mock('./relay-token-verifier.js', () => ({
   createRelayTokenVerifier: () => async () => null,
@@ -98,6 +113,20 @@ describe('POST /v1/admin/host-whereabouts', () => {
     expect(lookup).not.toHaveBeenCalled()
   })
 
+  it('lets the monitor and fence accounts read it, and not the capacity account', async () => {
+    const app = appWith(async () => ROW)
+    const body = { v: 1, relayHostId: HOST, userId: 'user-a' }
+    for (const token of ['deploy-token', 'monitor-token', 'fence-token']) {
+      const response = await app.request('/v1/admin/host-whereabouts', request(body, token))
+      expect(response.status).toBe(200)
+    }
+    const capacity = await app.request(
+      '/v1/admin/host-whereabouts',
+      request(body, 'capacity-token')
+    )
+    expect(capacity.status).toBe(401)
+  })
+
   it('returns the database row, the map seats, the verdict and the named cells', async () => {
     const lookup = vi.fn(async () => ROW)
     const app = appWith(lookup, { shadowSeats: directory() })
@@ -148,7 +177,14 @@ describe('POST /v1/admin/host-whereabouts', () => {
 
   it('judges the verdict as /v1/resolve would when the row names a dead cell', async () => {
     const shadow = directory()
-    shadow.setCells(['cell-a', 'cell-b'], ['cell-a', 'cell-b'], ['cell-b'])
+    // cell-a's heartbeat had already run out when the cell list was read.
+    shadow.setCells(['cell-a', 'cell-b'], ['cell-a', 'cell-b'], {
+      readAt: Date.now(),
+      expiresAt: new Map([
+        ['cell-a', Date.now() - 1],
+        ['cell-b', Date.now() + 60_000]
+      ])
+    })
     const app = appWith(async () => ROW, { shadowSeats: shadow })
 
     const response = await app.request(

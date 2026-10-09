@@ -1539,7 +1539,9 @@ export function createRelayApp(
             ? classifyShadowSeat(
                 shadow,
                 identity,
-                database && shadow.isHeartbeatLive(database.cellId) ? database : null,
+                database && shadow.cellLiveness(database.cellId, now) !== 'unlive'
+                  ? database
+                  : null,
                 now
               )
             : null
