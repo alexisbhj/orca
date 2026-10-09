@@ -6,8 +6,10 @@ import { installFakeAppEnvironment } from '../../../config/scripts/vitest-host-p
 import { runProcess, spawnProcess } from '../../shared/child-process/run-process'
 import { structuredSessionChildIdentityEnv } from '../runtime/structured-session-child-identity-env'
 import { resolveBundledOrcadRuntime } from './orcad-bundled-runtime'
-import { ORCAD_NODE_RUNTIME_MARKER_FILENAME } from '../../shared/orcad-artifacts'
-import { resolveOrcadCliLauncher } from './orcad-cli-launcher'
+import {
+  ORCAD_NODE_RUNTIME_MARKER_FILENAME,
+  ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME
+} from '../../shared/orcad-artifacts'
 import { skipForMissingInputs } from './orcad-node-slot-fixture'
 import {
   killChildAndWait,
@@ -22,7 +24,7 @@ const runtime = existsSync(join(slotDir, ORCAD_NODE_RUNTIME_MARKER_FILENAME))
 const skip = skipForMissingInputs('artifact', runtime ? [] : ['a Node orcad slot in out/orcad'])
 
 it.skipIf(skip)(
-  'a session child runs the shipped CLI against its owning server',
+  'a session child runs the server CLI against its owning server',
   async () => {
     const root = mkdtempSync(join(tmpdir(), 'orcad-cli-'))
     const home = join(root, 'home')
@@ -87,8 +89,12 @@ it.skipIf(skip)(
           reject(new Error(`server exited ${String(code)}: ${stderr.slice(-2000)}`))
         })
       })
-      const launcher = resolveOrcadCliLauncher(slotDir)
-      expect(launcher).not.toBeNull()
+      // The server writes its profile launcher on Unix; Windows ships a native one in the slot.
+      const launcher =
+        process.platform === 'win32'
+          ? join(slotDir, ...ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME.split('/'))
+          : join(userData, 'cli', 'bin', 'orca')
+      expect(existsSync(launcher)).toBe(true)
       installFakeAppEnvironment({
         getPath: () => userData,
         isPackaged: () => true,

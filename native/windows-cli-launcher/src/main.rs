@@ -27,7 +27,9 @@ fn main() {
             launcher.display()
         ))
     };
-    let (runtime_path, cli_path, headless) = if resources_directory.join("orca-cli.js").is_file() {
+    // A headless server slot ships the CLI at out/cli/index.js beside its pinned Node reference.
+    let server_cli_path = resources_directory.join("out").join("cli").join("index.js");
+    let (runtime_path, cli_path, headless) = if server_cli_path.is_file() {
         let runtime_sha = fs::read_to_string(resources_directory.join(".runtime-node"))
             .unwrap_or_else(|error| fail(&format!("Unable to read the Orca runtime: {error}")));
         let runtime_sha = runtime_sha.trim();
@@ -43,7 +45,7 @@ fn main() {
                 .join("runtimes")
                 .join(format!("node-{runtime_sha}"))
                 .join("node.exe"),
-            resources_directory.join("orca-cli.js"),
+            server_cli_path,
             true,
         )
     } else {

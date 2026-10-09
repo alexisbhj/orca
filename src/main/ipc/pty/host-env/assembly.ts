@@ -4,11 +4,7 @@ import {
   isPiCompatibleAgentType
 } from '../../../../shared/pi-agent-kind'
 import { applyTerminalGitCredentialPromptGuard } from '../../terminal-git-credential-guard'
-import { getAppEnvironment } from '../../../../shared/app-environment'
-import {
-  bindOrcaCliToExecutionHost,
-  ORCA_CLI_OWNING_HOST_ENV
-} from '../../../../shared/cli-execution-host-env'
+import { ORCA_CLI_OWNING_HOST_ENV } from '../../../../shared/cli-execution-host-env'
 import { ensureOpenCodeStartupPromptForLaunch } from '../../../opencode/opencode-startup-prompt-installer'
 import { mimoCodeHookService } from '../../../mimo/hook-service'
 import { agentHookServer } from '../../../agent-hooks/server'
@@ -284,17 +280,12 @@ export function buildPtyHostEnv(
     }
     delete baseEnv.ORCA_CLI_COMMAND
   }
-  const hostLauncher = !opts.isWsl ? getAppEnvironment().getCliLauncherPath?.() : null
-  const launcher = prependOrcaCliDirToChildPath(baseEnv, {
+  prependOrcaCliDirToChildPath(baseEnv, {
     isPackaged: opts.isPackaged,
     userDataPath: opts.userDataPath,
     resourcesPath: opts.resourcesPath,
-    launcherPath: hostLauncher
+    skipHostLauncher: opts.isWsl
   })
-  if (hostLauncher && launcher) {
-    baseEnv.ORCA_CLI_COMMAND = launcher
-    bindOrcaCliToExecutionHost(baseEnv, opts.userDataPath)
-  }
 
   if (
     opts.routeBrowserOpensToClient === true &&

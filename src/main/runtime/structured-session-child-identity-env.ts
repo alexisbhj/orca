@@ -86,8 +86,7 @@ function applyThisAppCli(env: Record<string, string>): void {
   const launcher = prependOrcaCliDirToChildPath(env, {
     isPackaged,
     userDataPath,
-    resourcesPath: process.resourcesPath ?? null,
-    launcherPath: app.getCliLauncherPath?.()
+    resourcesPath: process.resourcesPath ?? null
   })
   if (launcher) {
     env.ORCA_CLI_COMMAND = launcher

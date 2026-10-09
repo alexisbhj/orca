@@ -8,7 +8,7 @@
 // the original "stale daemon serves new client" bug.
 
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as RelayInstallMarkerModule from './ssh-relay-install-marker'
 
 vi.mock('electron', () => ({
@@ -64,7 +64,9 @@ import type { SshConnection } from './ssh-connection'
 import { REMOTE_INSTALL_ORDER_OK } from './remote-install-previous-version'
 
 function makeMockConnection(): SshConnection {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The fixture mocks every connection method used by the legacy deployment path.
   return {
+    getTarget: () => ({ id: 'legacy-target', remoteRuntime: 'legacy' }),
     canRunConcurrentExecCommands: vi.fn().mockReturnValue(false),
     exec: vi.fn().mockResolvedValue({
       on: vi.fn(),
@@ -100,8 +102,11 @@ function makeMockConnection(): SshConnection {
 }
 
 describe('cross-version isolation', () => {
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     vi.clearAllMocks()
+    // The host-npm path is opt-in; these cases cover it.
+    vi.stubEnv('ORCA_SSH_REMOTE_RUNTIME', 'legacy')
   })
 
   it('a v2 deploy never references the v1 install dir or v1 socket path', async () => {

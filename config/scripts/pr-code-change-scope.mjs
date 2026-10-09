@@ -28,7 +28,7 @@ export const PR_CHECK_JOBS = [
   'orcad_browser',
   'mobile_web_app',
   'cross-version-wire',
-  'managed_hook_node18',
+  'managed_hook_node24',
   'package',
   'package_windows'
 ]
@@ -243,7 +243,7 @@ const CROSS_VERSION_WIRE_PREFIXES = [
 ]
 
 const MANAGED_HOOK_PREFIXES = [
-  'config/scripts/smoke-managed-hook-runtime-node18',
+  'config/scripts/smoke-managed-hook-runtime-node24',
   'config/scripts/build-relay',
   'src/relay/',
   'src/shared/agent-hook',
@@ -350,7 +350,8 @@ const LINUX_PACKAGE_TESTS = [
   'src/main/browser/browser-route-tcp-egress.electron.test.ts',
   'src/main/browser/browser-route-webrtc-egress.electron.test.ts',
   'src/main/browser/browser-route-h3-egress.electron.test.ts',
-  'src/main/browser/browser-route-dns-prefetch.electron.test.ts'
+  'src/main/browser/browser-route-dns-prefetch.electron.test.ts',
+  'src/main/persistence/profile-state/profile-state-writer-stall.electron.test.ts'
 ]
 
 const WINDOWS_PACKAGE_TESTS = [
@@ -372,6 +373,9 @@ const WINDOWS_PACKAGE_TESTS = [
   'src/main/agent-hooks/windows-hook-payload-delivery.test.ts',
   'src/main/jcode/hook-gate-script.test.ts',
   'src/main/agent-hooks/windows-direct-cmd-hook-command.test.ts',
+  'src/main/agent-hooks/windows-cmd-hook-command-unicode.test.ts',
+  'src/main/agent-hooks/windows-batch-hook-launcher.test.ts',
+  'src/main/agent-hooks/windows-powershell-hook-launcher.test.ts',
   'src/main/codex/windows-hook-command.test.ts',
   'src/main/codex/windows-hook-upgrade.test.ts',
   'src/main/codex/hook-service-managed-install.test.ts',
@@ -532,7 +536,7 @@ function jobDetector(job) {
       return changesMobileWebApp
     case 'cross-version-wire':
       return (files) => files.some((file) => matchesPrefix(file, CROSS_VERSION_WIRE_PREFIXES))
-    case 'managed_hook_node18':
+    case 'managed_hook_node24':
       return (files) => files.some((file) => matchesPrefix(file, MANAGED_HOOK_PREFIXES))
     case 'package':
       return (files) => files.some(isLinuxPackagePath)
@@ -561,8 +565,17 @@ function isProductBundlePath(file, extraPrefixes) {
   return matchesPrefix(file, extraPrefixes)
 }
 
+// This shared fixture is consumed only by unit suites and their placement rig.
+export function isUnitTestSupportSource(file) {
+  return file === 'src/renderer/src/runtime/web-session-tabs-sync-test-harness.ts'
+}
+
 function isTestFile(file) {
-  return /\.(?:test|spec)\.(?:js|cjs|mjs|ts|tsx)$/.test(file) || file.includes('/__tests__/')
+  return (
+    isUnitTestSupportSource(file) ||
+    /\.(?:test|spec)\.(?:js|cjs|mjs|ts|tsx)$/.test(file) ||
+    file.includes('/__tests__/')
+  )
 }
 
 function isDesktopIrrelevantPath(file) {

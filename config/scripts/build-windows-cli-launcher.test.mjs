@@ -196,8 +196,9 @@ describe('Windows CLI launcher', () => {
       mkdirSync(dirname(runtime), { recursive: true })
       copyFileSync(process.execPath, runtime)
       writeFileSync(join(slot, '.runtime-node'), `${'a'.repeat(64)}\n`)
+      mkdirSync(join(slot, 'out', 'cli'), { recursive: true })
       writeFileSync(
-        join(slot, 'orca-cli.js'),
+        join(slot, 'out', 'cli', 'index.js'),
         'console.log(JSON.stringify({argv:process.argv.slice(2),profile:process.env.ORCA_USER_DATA_PATH,launcher:process.env.ORCA_CLI_COMMAND,owningHost:process.env.ORCA_CLI_OWNING_HOST,desktopMarker:process.env.ORCA_WINDOWS_PACKAGED_CLI_LAUNCHER??null}))'
       )
       const build = spawnSync(

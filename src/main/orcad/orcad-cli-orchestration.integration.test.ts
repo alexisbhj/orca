@@ -1,16 +1,43 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { runProcess } from '../../shared/child-process/run-process'
+import {
+  ORCAD_CLI_ENTRY_FILENAME,
+  ORCAD_NODE_RUNTIME_MARKER_FILENAME,
+  ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME
+} from '../../shared/orcad-artifacts'
 import { ORCHESTRATION_CONTRACT_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
-import { resolveOrcadCliLauncher } from './orcad-cli-launcher'
+import { buildUnixCliLauncher } from '../cli/cli-dev-launcher'
+import { resolveBundledOrcadRuntime } from './orcad-bundled-runtime'
 import { skipForMissingInputs } from './orcad-node-slot-fixture'
 
-const launcher = resolveOrcadCliLauncher(resolve('out/orcad'))
-const skip = skipForMissingInputs('artifact', launcher ? [] : ['the packaged server CLI'])
+const slotDir = resolve('out/orcad')
+const cliEntry = join(slotDir, ...ORCAD_CLI_ENTRY_FILENAME.split('/'))
+const windowsLauncher = join(slotDir, ...ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME.split('/'))
+const runtime = existsSync(join(slotDir, ORCAD_NODE_RUNTIME_MARKER_FILENAME))
+  ? resolveBundledOrcadRuntime(slotDir)
+  : null
+const hasCli =
+  runtime !== null &&
+  existsSync(cliEntry) &&
+  (process.platform !== 'win32' || existsSync(windowsLauncher))
+const skip = skipForMissingInputs('artifact', hasCli ? [] : ['the packaged server CLI'])
+
+/** The launcher the server would hand its children, pinned to `userData`. */
+function serverCliLauncher(userData: string): string {
+  if (process.platform === 'win32') {
+    return windowsLauncher
+  }
+  const launcher = join(userData, 'orca')
+  writeFileSync(launcher, buildUnixCliLauncher(runtime!, cliEntry, userData, 'node'), {
+    mode: 0o700
+  })
+  return launcher
+}
 
 it.skipIf(skip)(
   'the packaged launcher delivers ask and resume RPCs to its owning host',
@@ -62,6 +89,7 @@ it.skipIf(skip)(
     })
     try {
       await new Promise<void>((ready) => server.listen(endpoint, ready))
+      const launcher = serverCliLauncher(root)
       writeFileSync(
         join(root, 'orca-runtime.json'),
         JSON.stringify({
@@ -88,7 +116,7 @@ it.skipIf(skip)(
         CODEX_HOME: join(home, 'codex'),
         CLAUDE_CONFIG_DIR: join(home, 'claude'),
         ORCA_USER_DATA_PATH: root,
-        ORCA_CLI_COMMAND: launcher!,
+        ORCA_CLI_COMMAND: launcher,
         ORCA_ENVIRONMENT: 'stale-shell-selection',
         ORCA_PAIRING_CODE: 'stale-pairing',
         ORCA_BACKGROUND_LAUNCH: '1',
@@ -99,7 +127,7 @@ it.skipIf(skip)(
         ['--resume', 'msg_1']
       ]) {
         const result = await runProcess({
-          program: launcher!,
+          program: launcher,
           args: ['orchestration', 'ask', '--from', 'term_worker', flag, value, '--json'],
           env,
           cwd: home,
@@ -116,7 +144,7 @@ it.skipIf(skip)(
         expect(request.params).not.toHaveProperty('compatibilityWindowsCommand')
       }
       const version = await runProcess({
-        program: launcher!,
+        program: launcher,
         args: ['--version'],
         env,
         timeoutMs: 15_000
