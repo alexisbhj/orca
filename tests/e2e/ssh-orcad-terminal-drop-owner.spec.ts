@@ -187,28 +187,15 @@ test('managed Files drag into a desktop terminal cannot name an unrelated deskto
       executionHostId: toRuntimeExecutionHostId(environment.id),
       workspaceId: seeded.worktreeId
     })
-    await expect
-      .poll(async () => {
-        const refused = await page
-          .getByText('Drop files from the same host as this terminal.', { exact: true })
-          .count()
-        const echo = (await terminalText(page, floatingId)).split('REMOTE_DROP_RESULT').at(-1) ?? ''
-        return refused > 0 || echo.includes(filePath)
-      })
-      .toBe(true)
     const refused = page.getByText('Drop files from the same host as this terminal.', {
       exact: true
     })
-    if (await refused.count()) {
-      await page.keyboard.press('Control+c')
-      await expect(refused).toBeVisible()
-    } else {
-      await page.keyboard.insertText("; printf '\\nREMOTE_DROP_COMPLETED\\n'")
-      await page.keyboard.press('Enter')
-      await expect
-        .poll(() => terminalText(page, floatingId))
-        .toMatch(/\nREMOTE_DROP_COMPLETED\s*\n/)
-    }
+    await expect(refused).toBeVisible()
+    expect((await terminalText(page, floatingId)).split('REMOTE_DROP_RESULT').at(-1)).not.toContain(
+      filePath
+    )
+    await focusTerminalTab(page, floatingId)
+    await page.keyboard.press('Control+c')
     const content = await terminalText(page, floatingId)
     console.log('[managed-drop-actual-native-shell]', content)
     const refusalToast = page.locator('[data-sonner-toast]').filter({ has: refused })
