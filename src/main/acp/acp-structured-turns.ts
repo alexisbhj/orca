@@ -18,7 +18,10 @@ import {
   type AgentJournalDispatchRejection
 } from '../../shared/agent-session-failure-words'
 import type { AgentJournalItemIdentity } from '../../shared/agent-session-journal-types'
-import type { StructuredAgentSessionCommandRun } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
+import type {
+  AgentSessionCommandAdmission,
+  StructuredAgentSessionCommandRun
+} from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { ACP_COMPACT_PROMPT } from './acp-compaction-turn'
 import { AcpAgentError, AcpConnectionClosedError } from './acp-errors'
 import type { AcpStructuredConnection } from './acp-structured-connection'
@@ -112,8 +115,9 @@ export class AcpStructuredTurns {
   }
 
   /** A `/compact` in the command turn the host opened. The host settles its message, so nothing
-   *  here does; the answer ends the turn, or the child's end does. */
-  compact(command: StructuredAgentSessionCommandRun): void {
+   *  here does; the answer ends the turn, or the child's end does. The prompt's write is the
+   *  receipt. */
+  async compact(command: StructuredAgentSessionCommandRun): Promise<AgentSessionCommandAdmission> {
     if (this.active || this.ended) {
       throw new Error(`${this.deps.agentName} is still working`)
     }
@@ -136,6 +140,7 @@ export class AcpStructuredTurns {
       lane.forgetCommand(command.turnId)
       throw error
     }
+    return { state: 'accepted', providerIdentity: null }
   }
 
   /** The agent took the send: its turn's first event, or its answer, arrived. */

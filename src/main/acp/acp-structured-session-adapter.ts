@@ -31,8 +31,7 @@ import {
   ProviderAcquisitionStarts,
   type ProviderStartAttempt
 } from '../provider-process/provider-acquisition-starts'
-import type { AcpStructuredConnection } from './acp-structured-connection'
-import { waitForAcpExit } from './acp-structured-connection'
+import { waitForAcpExit, type AcpStructuredConnection } from './acp-structured-connection'
 import { AcpConnectionClosedError } from './acp-errors'
 import { awaitAcpTurnEnd, interruptAcpTurn, windDownAcpTurn } from './acp-structured-stop'
 import { acpDispatchPrompt } from './acp-prompt-content'
@@ -43,6 +42,7 @@ import {
 } from './acp-structured-session-adapter-deps'
 import { writeAcpSessionOption } from './acp-structured-options'
 import { readAcpRecoveryHistory } from './acp-recovery-history'
+import { withLiveCatalogListing } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
 import { stopAcpChildren, acpChildStopCapabilities } from './acp-structured-child-stop'
 
 export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapter {
@@ -171,11 +171,8 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     return { state: 'admitted' }
   }
 
-  /** The prompt's write is the receipt; the agent's answer ends the command's turn. */
-  compact: NonNullable<StructuredAgentSessionAdapter['compact']> = async (input) => {
+  compact: NonNullable<StructuredAgentSessionAdapter['compact']> = async (input) =>
     this.live(input.sessionId).turns.compact(input.command)
-    return { state: 'accepted', providerIdentity: null }
-  }
 
   cancelTurn: StructuredAgentSessionAdapter['cancelTurn'] = async (input) => {
     const session = this.live(input.sessionId)
@@ -218,6 +215,7 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     if (!write) {
       throw new Error(`${session.spec.agent} offers no session option named ${input.key}`)
     }
+    session.options.notePick(input.key)
     // Bounded, and abandoned by a close or Stop: the session's queue waits on it.
     await writeAcpSessionOption(session.connection, session.options, write, {
       agent: session.spec.agent,
@@ -227,8 +225,10 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
     return session.options.reported()
   }
 
-  readOptions = async (input: { sessionId: string; fence: number }) =>
-    this.live(input.sessionId).options.read()
+  readOptions = async (input: { sessionId: string; fence: number }) => {
+    const { options } = this.live(input.sessionId)
+    return withLiveCatalogListing(options.read(), options.configuredDefault())
+  }
 
   readOptionRestoreFailures = (sessionId: string): readonly string[] =>
     this.sessions.get(sessionId)?.restoreSkipped ?? []
@@ -245,8 +245,7 @@ export class AcpStructuredSessionAdapter implements StructuredAgentSessionAdapte
 
   closeSession = (sessionId: string): Promise<boolean> => this.close(sessionId)
   disposeSession = (sessionId: string): Promise<boolean> => this.close(sessionId)
-  releaseAcquisition = (input: { sessionId: string }): Promise<boolean> =>
-    this.close(input.sessionId)
+  releaseAcquisition = (input: { sessionId: string }) => this.close(input.sessionId)
   /** After a sink failure: the exit is recovered as unexpected. */
   forceCloseSession = (sessionId: string): Promise<boolean> => this.stop(sessionId, false)
 
