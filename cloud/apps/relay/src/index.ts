@@ -38,6 +38,9 @@ const database = await openRelayDatabaseAtBoot({
   appliesPostgresSchema: config.role !== 'cell'
 })
 await reconcileCellAdmissionAtStartup(config, new RelayAssignmentStore(database))
+const shadowSeatPoller = startShadowSeatPoller(config, {
+  listCells: () => readSeatFeedCells(database, Date.now())
+})
 const {
   server,
   sessions,
@@ -48,7 +51,9 @@ const {
   connectionSnapshot,
   ready,
   cellIncarnation
-} = createRelayServer(config, database)
+} = createRelayServer(config, database, {
+  shadowSeats: shadowSeatPoller?.directory
+})
 // Same owner as the assignment sweep: the cleanup only expires credentials that every reader
 // already re-checks at read time, so running it in all 23 cells multiplied one table scan by 23
 // without changing any answer.
@@ -119,9 +124,6 @@ const regionalRehomeWorker = startRegionalRehomeWorker(config, assignments, {
     ...observability.regionalRehomeRuntimeSafety(),
     ...readRelayDatabasePoolPressure(database)
   })
-})
-const shadowSeatPoller = startShadowSeatPoller(config, {
-  listCells: () => readSeatFeedCells(database, Date.now())
 })
 const heartbeat = startCellHeartbeat(config, {
   ready,
