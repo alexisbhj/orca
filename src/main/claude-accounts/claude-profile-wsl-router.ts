@@ -17,8 +17,8 @@ import { claudeProfileMarkerPath, type ClaudeProfileDescriptor } from './claude-
 import type { ClaudeProfileRouterSettings } from './claude-profile-router'
 import { claudeProfileMissing, claudeProfileSetupFailed } from './claude-profile-launch-errors'
 import {
-  claudeStateLogin,
   isSameClaudeLogin,
+  readClaudeFolderLoginAsync,
   type ClaudeFolderLogin
 } from './claude-account-folder'
 import { wslClaudeProfile, wslClaudeProfilePointer } from './claude-profile-wsl-paths'
@@ -242,15 +242,8 @@ export class ClaudeWslProfileRouter {
 }
 
 /** The login a guest state file names, read over the share like the marker. */
-async function guestLogin(distro: string, stateFile: string): Promise<ClaudeFolderLogin | null> {
-  try {
-    const state: unknown = JSON.parse(await readFile(toWindowsWslPath(stateFile, distro), 'utf8'))
-    return state && typeof state === 'object' && !Array.isArray(state)
-      ? claudeStateLogin(Object.fromEntries(Object.entries(state)))
-      : null
-  } catch {
-    return null
-  }
+function guestLogin(distro: string, stateFile: string): Promise<ClaudeFolderLogin | null> {
+  return readClaudeFolderLoginAsync(toWindowsWslPath(stateFile, distro))
 }
 
 // Why over the distro's share: a launch must not wait on a guest process for two stats.
