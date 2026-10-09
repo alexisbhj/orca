@@ -74,6 +74,8 @@ let routePathname = ''
 /** Set for a host-area page, which opens any workspace of its host in-page: those keys are read
  *  from the shell on demand and may be written. */
 let readWorkspaceKey: ((key: string) => Promise<string | null>) | null = null
+/** Keys this document wrote, answered from `values`: the shell may not have the notify yet. */
+const writtenHere = new Set<string>()
 
 /** Called once by the entry, before anything renders, with what `init` carried. */
 export function publishPageStorage(
@@ -85,6 +87,7 @@ export function publishPageStorage(
   forWorkspaceKeyReader: ((key: string) => Promise<string | null>) | null = null
 ): void {
   values.clear()
+  writtenHere.clear()
   oversizeKeys = new Set(forOversizeKeys)
   for (const [key, value] of Object.entries(entries)) {
     values.set(key, value)
@@ -96,7 +99,9 @@ export function publishPageStorage(
 }
 
 function getItem(key: string): Promise<string | null> {
-  return readWorkspaceKey !== null && isHostWorkspaceStorageKey(key, hostId)
+  return readWorkspaceKey !== null &&
+    isHostWorkspaceStorageKey(key, hostId) &&
+    !writtenHere.has(key)
     ? readWorkspaceKey(key)
     : Promise.resolve(values.get(key) ?? null)
 }
@@ -125,6 +130,7 @@ function accept(key: string, value: string | null): PageStorageRefusal | null {
   if (!write(key, value)) {
     return 'not-delivered'
   }
+  writtenHere.add(key)
   if (value === null) {
     values.delete(key)
   } else {

@@ -136,6 +136,19 @@ describe('the per-workspace keys of a host-area page', () => {
     }
   })
 
+  it('reads back its own write before the shell has applied it, a removal included', async () => {
+    const { applyWrites } = await hostAreaPage()
+    await pageAsyncStorage.setItem(NEVER_STORED, '["new"]')
+    await pageAsyncStorage.removeItem(CHAT_TABS)
+    // The shell has not applied either yet: its store still holds the old values.
+    expect(store.get(CHAT_TABS)).toBe('["tab-1"]')
+    expect(await pageAsyncStorage.getItem(NEVER_STORED)).toBe('["new"]')
+    expect(await pageAsyncStorage.getItem(CHAT_TABS)).toBeNull()
+    await applyWrites()
+    expect(store.get(NEVER_STORED)).toBe('["new"]')
+    expect(store.has(CHAT_TABS)).toBe(false)
+  })
+
   it("refuses another host's key, to read or to write", async () => {
     const { view, pair, settled, applyWrites } = await hostAreaPage()
     await pageAsyncStorage.setItem(OTHER_HOST, '["x"]')
@@ -143,6 +156,10 @@ describe('the per-workspace keys of a host-area page', () => {
     await applyWrites()
     expect(store.get(OTHER_HOST)).toBe('["tab-9"]')
     await expect(view.readWorkspaceKey(OTHER_HOST)).rejects.toThrow()
+    // Refused over the bridge as an error, never as an unset key the page might overwrite.
+    const asked = pair.client.callNativeVerb('native.storage.read', { key: OTHER_HOST })
+    await pair.flush()
+    await expect(asked).rejects.toThrow()
     // The page reads it from its own `init` map, which never held it.
     expect(await settled(pageAsyncStorage.getItem(OTHER_HOST))).toBeNull()
   })
