@@ -473,7 +473,7 @@ describe('deployAndLaunchRelay on the pinned Node runtime', () => {
 
     expect(failure).toBeInstanceOf(RemoteRuntimeUnavailableError)
     expect(String(failure)).toContain('Windows host')
-    expect(String(failure)).toContain('install Node.js 18+')
+    expect(String(failure)).toContain('install Node.js 24+')
     expect(String(failure)).not.toContain('mounted noexec')
     expect(terminalUnavailableCauseFromError(failure)).toMatchObject({
       reason: 'no_runtime',
