@@ -228,7 +228,7 @@ export function structuredWorkerAgent(identity: StructuredWorkerIdentity): TuiAg
   }
   const running = structuredWorkerSession(identity)
   const provider = running.kind === 'unverifiable' ? undefined : running.record.provider
-  // Only an unreadable record lands here; it has no provider to report.
+  // An unreadable record or a provider this build doesn't know falls back to Claude.
   return isTuiAgent(provider) ? provider : 'claude'
 }
 
