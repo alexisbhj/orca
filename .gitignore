@@ -111,6 +111,11 @@ docs/**
 !docs/bug-reproductions/
 !docs/bug-reproductions/**
 !docs/STYLEGUIDE.md
+!docs/agents/
+!docs/agents/issue-tracker.md
+!docs/agents/triage-labels.md
+!docs/agents/domain.md
+!docs/agents/launch-contract.md
 !docs/audits/
 !docs/audits/crashpad-read-limit/
 !docs/audits/crashpad-read-limit/source-hashes.json

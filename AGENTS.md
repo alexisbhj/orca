@@ -133,3 +133,8 @@ Source-control and review changes must consider GitLab and other supported git p
 ## GitHub CLI Usage
 
 Be mindful of the user's `gh` CLI API rate limit — batch requests where possible and avoid unnecessary calls. All code, commands, and scripts must be compatible with macOS, Linux, and Windows.
+
+
+# Fork workflow
+
+For issues and spec delivery in `alexisbhj/orca`, read [issue tracker](docs/agents/issue-tracker.md), [triage labels](docs/agents/triage-labels.md), [domain docs](docs/agents/domain.md), and [launch contract](docs/agents/launch-contract.md). These add local delivery rules; all upstream instructions above remain applicable.
