@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { seedStructuredConversationTabPermissions } from './structured-conversation-tab-permission-seed'
 import { record } from '../native-chat/agent-session-wire/structured-agent-session-restart-resume-test-harness'
 import type { RuntimeMobileSessionTabsSnapshot } from '../../shared/runtime-types'
@@ -61,4 +61,34 @@ it('carries fixed derived intent on legacy tab seeds without changing the record
   expect(seeded.tabs[0]).toHaveProperty('permissionSeed', fact)
   expect(legacy.options).toEqual({})
   expect(snapshot.tabs[0]).not.toHaveProperty('permissionSeed')
+})
+
+it('lists the tab unseeded when the permission read throws, and keeps seeding the others', () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const other = { ...saved, sessionId: 'other-session', options: { permissionMode: 'bypass' } }
+  const twoTabs = {
+    ...snapshot,
+    tabs: [...snapshot.tabs, { ...snapshot.tabs[0], id: 'other', sessionId: other.sessionId }]
+  }
+  const seeded = seedStructuredConversationTabPermissions(
+    twoTabs,
+    (id) => (id === other.sessionId ? other : saved),
+    (id) => {
+      if (id === saved.sessionId) {
+        throw new TypeError('store.permissionRevision is not a function')
+      }
+      return undefined
+    }
+  )
+  expect(seeded.tabs.map((tab) => tab.id)).toEqual(['chat', 'other'])
+  expect(seeded.tabs[0]).not.toHaveProperty('permissionSeed')
+  expect(seeded.tabs[1]).toMatchObject({ permissionSeed: { mode: 'bypass' } })
+  expect(warn).toHaveBeenCalledOnce()
+  warn.mockRestore()
+})
+
+it('does not read the permission fact for a record from another workspace', () => {
+  const factFor = vi.fn(() => undefined)
+  seedStructuredConversationTabPermissions({ ...snapshot, worktree: 'other' }, () => saved, factFor)
+  expect(factFor).not.toHaveBeenCalled()
 })
