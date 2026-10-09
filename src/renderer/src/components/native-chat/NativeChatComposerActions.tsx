@@ -146,12 +146,14 @@ export function NativeChatComposerActions({
             {translate('components.native-chat.composer.attach', 'Attach file')}
           </TooltipContent>
         </Tooltip>
+        {/* Why: the chat's standing access mode keeps a fixed spot beside attach; the goal
+        chip comes and goes with the draft, so it follows rather than shifting the mode. */}
+        <NativeChatPermissionModePicker picker={permissionPicker} />
         {onExitGoalMode ? <NativeChatComposerGoalChip onExit={onExitGoalMode} /> : null}
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        {/* Why: keep session controls beside the actions they affect; the
-        model trigger is ordered last so only the context ring separates it from dictation. */}
-        <NativeChatPermissionModePicker picker={permissionPicker} />
+        {/* Why: the model trigger is ordered last so only the context ring separates it from
+        dictation. */}
         <NativeChatSessionOptionPickers
           surface={sessionOptionsSurface}
           snapshot={sessionOptionsSnapshot}

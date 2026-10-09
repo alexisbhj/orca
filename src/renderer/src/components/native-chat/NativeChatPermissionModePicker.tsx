@@ -46,6 +46,7 @@ function NativeChatPermissionModePickerInner({
   }
   const title = nativeChatPermissionPickerTitle()
   const currentLabel = nativeChatPermissionModeLabel(picker.current)
+  // `shrink` overrides the button's shrink-0 so a narrow composer truncates the mode name.
   return (
     <DropdownMenu>
       <Tooltip>
@@ -60,7 +61,7 @@ function NativeChatPermissionModePickerInner({
                 '{{value0}} {{value1}}',
                 { value0: title, value1: currentLabel }
               )}
-              className="max-w-40 min-w-0"
+              className="max-w-40 min-w-0 shrink"
             >
               <ModeName mode={picker.current} truncate />
               <ChevronDown className="size-3" />
