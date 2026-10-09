@@ -36,6 +36,8 @@ export class CodexBackgroundTaskTracker {
   private publishedState: AgentSessionBackgroundTaskState | null = null
   private readonly commands: CodexBackgroundCommandTracker
   private readonly childWork: CodexChildWorkEvidence
+  /** Whether this app-server can terminate a background command, learned once per app-server. */
+  private terminalStops: 'unknown' | 'probing' | 'supported' | 'unsupported' = 'unknown'
 
   constructor(
     private readonly primaryThreadId: string,
@@ -43,9 +45,43 @@ export class CodexBackgroundTaskTracker {
     private readonly childWorkSink?: CodexChildWorkSink
   ) {
     this.commands = new CodexBackgroundCommandTracker(primaryThreadId)
-    this.childWork = new CodexChildWorkEvidence(primaryThreadId, executions, (threadId) =>
-      this.commands.threadCommands(threadId)
+    this.childWork = new CodexChildWorkEvidence(
+      primaryThreadId,
+      executions,
+      (threadId) => this.commands.threadCommands(threadId),
+      () => this.stopsTerminals
     )
+  }
+
+  get stopsTerminals(): boolean {
+    return this.terminalStops === 'supported'
+  }
+
+  /** True once, when a running command first has a process a stop could name: the caller probes
+   *  the app-server then, and settles the answer here. */
+  beginTerminalStopProbe(): boolean {
+    if (this.terminalStops !== 'unknown' || !this.commands.holdsProcess) {
+      return false
+    }
+    this.terminalStops = 'probing'
+    return true
+  }
+
+  /** On yes, restates every running command so its record says it can be stopped; callers publish
+   *  the child work after. */
+  settleTerminalStopProbe(supported: boolean): void {
+    if (this.terminalStops !== 'probing') {
+      return
+    }
+    this.terminalStops = supported ? 'supported' : 'unsupported'
+    if (supported) {
+      this.childWork.restateCommands(this.commands.liveCommands())
+    }
+  }
+
+  /** The processes behind the named tasks that a stop reaches. */
+  backgroundProcesses(taskIds: readonly string[]): { threadId: string; processId: string }[] {
+    return this.stopsTerminals ? this.commands.backgroundProcesses(taskIds) : []
   }
 
   get state(): AgentSessionBackgroundTaskState | null {

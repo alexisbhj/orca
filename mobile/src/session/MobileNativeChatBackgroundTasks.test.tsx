@@ -288,6 +288,32 @@ describe('MobileNativeChatBackgroundTasks', () => {
     expect(stopButtons(mounted)[0]!.props.disabled).toBe(false)
   })
 
+  it('stops a backgrounded Codex command by its own id, and offers none on the subagent beside it', () => {
+    const stop = vi.fn(async () => undefined)
+    const mounted = mount(
+      tasksFor(
+        {
+          state: 'monitoring',
+          supportsTaskStop: true,
+          children: [
+            view('agent', { providerId: 'codex-agent:child-1', stoppable: false }),
+            view('cmd', {
+              kind: 'command',
+              providerId: 'codex-command:exec-1',
+              description: 'pnpm dev'
+            })
+          ]
+        },
+        { stop }
+      )
+    )
+    expand(mounted)
+    const buttons = stopButtons(mounted)
+    expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual(['Stop pnpm dev'])
+    act(() => buttons[0]!.props.onPress())
+    expect(stop).toHaveBeenCalledWith('codex-command:exec-1')
+  })
+
   it('offers Stop all only to a host with no per-row stop that still accepts one', async () => {
     let finish: () => void = () => {}
     const stop = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)))
