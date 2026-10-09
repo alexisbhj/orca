@@ -1,19 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const stored = vi.hoisted(() => new Map<string, string>())
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => stored.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      stored.set(key, value)
-    },
-    removeItem: async (key: string) => {
-      stored.delete(key)
-    }
-  }
-}))
-vi.mock('../layout/responsive-layout', () => ({ useResponsiveLayout: () => ({}) }))
-
+import { describe, expect, it } from 'vitest'
 import {
   computeMobileWebBundleId,
   MobileWebBundleRouteSchema
@@ -29,9 +14,12 @@ import {
   manifestFacts,
   run
 } from './mobile-web-shell-session-test-fixtures'
-import { hostAreaOwnerOf, resetHostAreaOwnersForTests } from './host-area-owner'
-import { pageCanOwnHostArea, routeViewOf, type MobileWebPageRoute } from './page-route-policy'
-import { nativeHostSidebarShown, shellSwitchDecision } from './shell-switch-decision'
+import {
+  hostAreaRoot,
+  pageCanOwnHostArea,
+  routeViewOf,
+  type MobileWebPageRoute
+} from './page-route-policy'
 
 const HOST_ROUTE = '/h/host-1'
 const SESSION_GRANTS = [
@@ -74,8 +62,8 @@ function desktopRoutes(declares: boolean): MobileWebPageRoute[] {
   ]
 }
 
-function hostAreaStateFor(routes: MobileWebPageRoute[] | null) {
-  const opened = run(createMobileWebShellSession(HOST_ROUTE, true), {
+function wideStateFor(routes: MobileWebPageRoute[] | null, pathname = HOST_ROUTE) {
+  const opened = run(createMobileWebShellSession(pathname, true), {
     type: 'gates-changed',
     // No bundle capability is a desktop that serves no page at all.
     gates: routes === null ? gates({ hostCapabilities: [] }) : gates()
@@ -89,11 +77,6 @@ function hostAreaStateFor(routes: MobileWebPageRoute[] | null) {
     { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) }
   ).session
 }
-
-beforeEach(() => {
-  stored.clear()
-  resetHostAreaOwnersForTests()
-})
 
 describe('the page declaring it can own the host area', () => {
   it('is a manifest field the desktop may write and an old phone reads past', () => {
@@ -148,25 +131,31 @@ describe('the wide host-area session', () => {
     })
   })
 
-  it('stays native for no page and for a page without the declaration, and records native', () => {
-    for (const routes of [null, desktopRoutes(false)]) {
-      const session = hostAreaStateFor(routes)
-      expect(session.state.kind).toBe('native-route')
-      expect(hostAreaOwnerOf(session.state.kind)).toBe('native')
+  it('stays native for no page and for a page without the declaration, host route or detail', () => {
+    for (const pathname of [HOST_ROUTE, '/h/host-1/session/wt-1']) {
+      for (const routes of [null, desktopRoutes(false)]) {
+        expect(wideStateFor(routes, pathname).state.kind).toBe('native-route')
+      }
     }
   })
 
-  it('fetches the declaring page and records it as the owner before it can paint', () => {
-    const session = hostAreaStateFor(desktopRoutes(true))
+  it('fetches the declaring page for the host route with every grant', () => {
+    const session = wideStateFor(desktopRoutes(true))
     expect(session.state.kind).toBe('fetching')
-    expect(hostAreaOwnerOf(session.state.kind)).toBe('page')
     expect(session.routeGrants).toContain('native.audio.start')
   })
 
-  it('records nothing while it has not read the bundle', () => {
-    expect(hostAreaOwnerOf('checking')).toBeNull()
-    expect(hostAreaOwnerOf('offline')).toBeNull()
-    expect(hostAreaOwnerOf('failed')).toBeNull()
+  it("serves a wide detail route under a declaring page with that route's own grants", () => {
+    const session = wideStateFor(desktopRoutes(true), '/h/host-1/files/wt-1')
+    expect(session.state.kind).toBe('fetching')
+    expect(session.routeGrants).toEqual(['navigate', 'storage', 'externalLink', 'haptics'])
+  })
+
+  it('finds the host route a pathname sits under', () => {
+    expect(hostAreaRoot('/h/host-1')).toBe('/h/host-1')
+    expect(hostAreaRoot('/h/host-1/session/wt-1')).toBe('/h/host-1')
+    expect(hostAreaRoot('/h/')).toBeNull()
+    expect(hostAreaRoot('/settings')).toBeNull()
   })
 })
 
@@ -208,25 +197,5 @@ describe('the init fact', () => {
     expect(parse(init(true))).toBe(true)
     expect(parse(init(undefined))).toBe(false)
     expect(parse({ ...init(undefined), ownsHostArea: 'all of it' })).toBe(false)
-  })
-})
-
-describe('who draws the wide sidebar natively', () => {
-  it('is the native layout unless the page owns the area, and nobody while unsure', () => {
-    expect(nativeHostSidebarShown(false, null)).toBe(true)
-    expect(nativeHostSidebarShown(false, 'page')).toBe(true)
-    expect(nativeHostSidebarShown(true, 'native')).toBe(true)
-    expect(nativeHostSidebarShown(true, 'page')).toBe(false)
-    expect(nativeHostSidebarShown(true, null)).toBe(false)
-    expect(nativeHostSidebarShown(null, 'native')).toBe(false)
-  })
-
-  it('keeps every detail switch native on a wide layout the page does not own', () => {
-    const route = { pathname: '/h/host-1/session/wt-1' }
-    expect(shellSwitchDecision(true, route, 'native')).toEqual({ kind: 'native' })
-    expect(shellSwitchDecision(true, route, null)).toEqual({ kind: 'pending' })
-    expect(shellSwitchDecision(true, route, 'page')).toEqual({ kind: 'shell', route })
-    // A phone is unchanged: no owner is consulted.
-    expect(shellSwitchDecision(true, route)).toEqual({ kind: 'shell', route })
   })
 })

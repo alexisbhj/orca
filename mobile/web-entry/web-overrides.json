@@ -179,7 +179,7 @@
     },
     {
       "file": "src/mobile-web-shell/host-sidebar-owner.web.ts",
-      "reason": "Natively the host sidebar's owner comes from the shell flag and the per-host record of what the desktop's page declared. Inside the page neither exists: the page draws the sidebar only when the shell's `init` says it owns the whole host area, never from its own width, because a detail-route page on a wide iPad sits beside the shell's sidebar."
+      "reason": "Natively the host sidebar steps aside only on the host route while that host's page session is serving, which the layout hears from the shell screen. Inside the page there is no shell screen: the page draws the sidebar only when the shell's `init` says it owns the whole host area, never from its own width, because a detail-route page on a wide iPad sits beside the shell's sidebar."
     },
     {
       "file": "src/session/use-notification-pane-navigation.web.ts",

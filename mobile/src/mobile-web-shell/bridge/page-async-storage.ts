@@ -67,6 +67,8 @@ let oversizeKeys: ReadonlySet<string> = new Set()
 let hostId = ''
 /** And the route, because two of the keys are scoped to the workspace the route names. */
 let routePathname = ''
+/** A host-area page reaches every workspace of its host in-page, so it may write each one's keys. */
+let hostArea = false
 
 /** Called once by the entry, before anything renders, with what `init` carried. */
 export function publishPageStorage(
@@ -74,7 +76,8 @@ export function publishPageStorage(
   writer: PageStorageWriter,
   forHostId: string,
   forRoutePathname: string,
-  forOversizeKeys: readonly string[] = []
+  forOversizeKeys: readonly string[] = [],
+  forHostArea = false
 ): void {
   values.clear()
   oversizeKeys = new Set(forOversizeKeys)
@@ -84,6 +87,7 @@ export function publishPageStorage(
   write = writer
   hostId = forHostId
   routePathname = forRoutePathname
+  hostArea = forHostArea
 }
 
 /**
@@ -94,7 +98,7 @@ export function publishPageStorage(
  * which is exactly the failure the grant exists to avoid.
  */
 function accept(key: string, value: string | null): PageStorageRefusal | null {
-  if (!isPageStorageKeyForRoute(key, hostId, routePathname)) {
+  if (!isPageStorageKeyForRoute(key, hostId, routePathname, hostArea)) {
     return 'not-allowed'
   }
   // The envelope's own bound, imported rather than restated: without it an oversized value is

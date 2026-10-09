@@ -216,11 +216,12 @@ export function grantsForRoute(
 export function routeViewOf(
   routes: readonly MobileWebPageRoute[] | undefined,
   pathname: string,
-  hostArea = false
+  wide = false
 ) {
   const entries = implementedPageRouteEntries(routes)
-  // Native unless the page declares it: an older page would draw its sidebar beside the native one.
-  if (hostArea && !pageCanOwnHostArea(routes, pathname)) {
+  const root = hostAreaRoot(pathname)
+  // Native unless the page declares it: an older page draws its own sidebar beside the native one.
+  if (wide && (root === null || !pageCanOwnHostArea(routes, root))) {
     return { pageRoutes: [], pageRouteGrants: [], routeGrants: [] }
   }
   return {
@@ -229,8 +230,15 @@ export function routeViewOf(
       pathname: route.pathname,
       grants: effectiveRouteGrants(route)
     })),
-    routeGrants: hostArea ? hostAreaGrants(entries) : grantsForRoute(routes, pathname)
+    routeGrants:
+      wide && pathname === root ? hostAreaGrants(entries) : grantsForRoute(routes, pathname)
   }
+}
+
+/** The `/h/<host>` route a pathname sits under, or null outside a host. */
+export function hostAreaRoot(pathname: string): string | null {
+  const [empty, h, host] = pathname.split('/')
+  return empty === '' && h === 'h' && host !== undefined && host !== '' ? `/h/${host}` : null
 }
 
 /** Whether this shell serves the host route's exact entry and it declares `canOwnHostArea`. */

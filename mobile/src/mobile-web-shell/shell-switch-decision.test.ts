@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('../layout/responsive-layout', () => ({ useResponsiveLayout: () => ({}) }))
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: {} }))
-
+import { describe, expect, it } from 'vitest'
 import { shellSwitchDecision } from './shell-switch-decision'
 
 const ROUTE = { pathname: '/h/host-1/files/wt-1' }

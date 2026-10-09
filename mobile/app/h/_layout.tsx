@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, StyleSheet, PanResponder } from 'react-native'
 import { useGlobalSearchParams, usePathname } from 'expo-router'
 import { colors } from '../../src/theme/mobile-theme'
@@ -14,6 +14,7 @@ import { HostProtocolGate } from '../../src/components/HostProtocolGate'
 import { HostScreen } from '../../src/host-screen/HostScreen'
 import { HostStack } from '../../src/navigation/host-stack'
 import { useHostSidebarDrawnHere } from '../../src/mobile-web-shell/host-sidebar-owner'
+import { HostLayoutClassContext } from '../../src/mobile-web-shell/host-layout-class'
 
 // Keep at least this much room for the detail pane when resizing the sidebar.
 const MIN_DETAIL_WIDTH = 320
@@ -65,8 +66,17 @@ export default function HostGroupLayout() {
   }, [windowWidth])
 
   const hideSidebar = useCallback(() => setSidebarOpen(false), [])
-  // One owner: the page only with the `ownsHostArea` init fact, native only when the page lacks it.
-  const sidebarDrawnHere = useHostSidebarDrawnHere(hostId ?? '')
+  // Set only by a wide host-area session that is serving, so a phone never re-renders for it.
+  const [hostAreaServedFor, setHostAreaServedFor] = useState<string | null>(null)
+  const layoutClass = useMemo(
+    () => ({ wide: isWideLayout, reportHostArea: setHostAreaServedFor }),
+    [isWideLayout]
+  )
+  const sidebarDrawnHere = useHostSidebarDrawnHere({
+    hostId: hostId ?? '',
+    pathname,
+    hostAreaServedFor
+  })
   const showSidebar = isWideLayout && !!hostId && sidebarDrawnHere
   const detailHasContent = !!hostId && pathname !== `/h/${hostId}`
   const canCollapseSidebar = showSidebar && detailHasContent
@@ -127,7 +137,9 @@ export default function HostGroupLayout() {
           </View>
         ) : null}
         <View style={styles.detail}>
-          <HostStack animation={showSidebar ? 'none' : 'default'} />
+          <HostLayoutClassContext.Provider value={layoutClass}>
+            <HostStack animation={showSidebar ? 'none' : 'default'} />
+          </HostLayoutClassContext.Provider>
         </View>
       </View>
     </HostProtocolGate>

@@ -1,12 +1,14 @@
 /**
  * Exactly one host sidebar on a wide layout, under every shell and page pairing, counted off the
- * real host layout rendered once natively and once per page document the shell would mount.
+ * real host layout rendered once natively and once per page document the shell would mount. Which
+ * sessions are served comes from the real reducer against each desktop's manifest.
  *
  * Two renderers are stand-ins because their code is not on this branch: the shipped shell's layout
  * drew whenever it was wide, and so did a page built before `canOwnHostArea`.
  */
+import { Profiler, useContext } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 type Renderer = 'native' | 'page' | 'shipped-shell' | 'old-page'
 
@@ -20,15 +22,17 @@ const env = vi.hoisted(
   (): {
     width: number
     height: number
+    pathname: string
     renderer: Renderer
-    flag: boolean
-    stored: Map<string, string>
+    hostAreaServing: boolean
+    reports: (string | null)[]
   } => ({
     width: 390,
     height: 844,
+    pathname: '/h/host-1',
     renderer: 'native',
-    flag: true,
-    stored: new Map<string, string>()
+    hostAreaServing: false,
+    reports: []
   })
 )
 
@@ -40,18 +44,7 @@ vi.mock('react-native', () => ({
 }))
 vi.mock('expo-router', () => ({
   useGlobalSearchParams: () => ({ hostId: 'host-1' }),
-  usePathname: () => '/h/host-1'
-}))
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => env.stored.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      env.stored.set(key, value)
-    },
-    removeItem: async (key: string) => {
-      env.stored.delete(key)
-    }
-  }
+  usePathname: () => env.pathname
 }))
 vi.mock('../theme/mobile-theme', () => ({ colors: {}, spacing: { md: 16, lg: 24 } }))
 vi.mock('../storage/preferences', () => ({
@@ -59,15 +52,30 @@ vi.mock('../storage/preferences', () => ({
   HOST_SIDEBAR_MAX_WIDTH: 480,
   HOST_SIDEBAR_MIN_WIDTH: 240,
   loadHostSidebarWidth: async () => 320,
-  saveHostSidebarWidth: async () => {},
-  mobileWebShellFlagCanBeOn: () => true,
-  loadMobileWebShellEnabled: async () => env.flag
+  saveHostSidebarWidth: async () => {}
 }))
 vi.mock('../components/HostProtocolGate', () => ({
   HostProtocolGate: ({ children }: { children: unknown }) => children
 }))
 vi.mock('../host-screen/HostScreen', () => ({ HostScreen: HostSidebar }))
-vi.mock('../navigation/host-stack', () => ({ HostStack: () => null }))
+// The host route's shell screen, reduced to the one thing it tells the layout.
+vi.mock('../navigation/host-stack', async () => {
+  const layoutClass = await import('./host-layout-class')
+  return {
+    HostStack: function HostAreaSession(): null {
+      const { wide, reportHostArea } = useContext(layoutClass.HostLayoutClassContext)
+      layoutClass.useReportedHostArea(
+        (hostId) => {
+          env.reports.push(hostId)
+          reportHostArea(hostId)
+        },
+        'host-1',
+        wide && env.hostAreaServing
+      )
+      return null
+    }
+  }
+})
 vi.mock('../transport/host-client-hooks', () => ({
   useDisconnectHostClient: () => () => {},
   useForceReconnect: () => null,
@@ -83,12 +91,12 @@ vi.mock('./host-sidebar-owner', async () => {
     './host-sidebar-owner.web'
   )
   return {
-    useHostSidebarDrawnHere: (hostId: string): boolean => {
+    useHostSidebarDrawnHere: (facts: import('./host-sidebar-owner').HostSidebarFacts): boolean => {
       switch (env.renderer) {
         case 'native':
-          return native.useHostSidebarDrawnHere(hostId)
+          return native.useHostSidebarDrawnHere(facts)
         case 'page':
-          return page.useHostSidebarDrawnHere(hostId)
+          return page.useHostSidebarDrawnHere(facts)
         case 'shipped-shell':
         case 'old-page':
           return true
@@ -107,18 +115,13 @@ import {
   manifestFacts,
   run
 } from './mobile-web-shell-session-test-fixtures'
-import {
-  hostAreaOwnerOf,
-  recordHostAreaOwner,
-  resetHostAreaOwnersForTests
-} from './host-area-owner'
 import type { MobileWebPageRoute } from './page-route-policy'
-import { shellSwitchDecision } from './shell-switch-decision'
 
 const IPAD = { width: 1180, height: 820 }
 const PHONE = { width: 390, height: 844 }
 const SIDEBAR = 320
-const DETAIL = { pathname: '/h/host-1/session/wt-1' }
+const HOST = '/h/host-1'
+const DETAIL = '/h/host-1/session/wt-1'
 
 type Shell = 'shipped' | 'new'
 type Page = 'none' | 'undeclared' | 'declared'
@@ -137,40 +140,39 @@ function pageRoutes(page: Page): MobileWebPageRoute[] | null {
   ]
 }
 
-/** The owner the real reducer records for the wide host-area session against this desktop. */
-function learnOwner(page: Page): void {
+/** Whether the real reducer serves this route from this desktop's page, at this layout class. */
+function served(page: Page, pathname: string, wide: boolean): boolean {
   const routes = pageRoutes(page)
-  const opened = run(createMobileWebShellSession('/h/host-1', true), {
+  const opened = run(createMobileWebShellSession(pathname, wide), {
     type: 'gates-changed',
     gates: routes === null ? gates({ hostCapabilities: [] }) : gates()
   }).session
-  const session =
-    routes === null
-      ? opened
-      : run(
-          opened,
-          { type: 'cache-read', generation: null },
-          { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) }
-        ).session
-  const owner = hostAreaOwnerOf(session.state.kind)
-  if (owner !== null) {
-    recordHostAreaOwner('host-1', owner)
+  if (routes === null) {
+    return opened.state.kind !== 'native-route'
   }
+  const read = run(
+    opened,
+    { type: 'cache-read', generation: null },
+    { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) }
+  ).session
+  return read.state.kind === 'fetching'
 }
 
 async function sidebarsIn(
   renderer: Renderer,
   viewport: { width: number; height: number },
-  ownsHostArea?: boolean
+  options: { pathname?: string; ownsHostArea?: boolean; hostAreaServing?: boolean } = {}
 ): Promise<number> {
   env.renderer = renderer
   env.width = viewport.width
   env.height = viewport.height
+  env.pathname = options.pathname ?? HOST
+  env.hostAreaServing = options.hostAreaServing ?? false
   const mounted: { tree: ReactTestRenderer | null } = { tree: null }
-  if (renderer === 'page') {
+  if (renderer === 'page' || renderer === 'old-page') {
     const pair = createFakeBridgePortPair({
-      route: { pathname: '/h/host-1' },
-      ...(ownsHostArea === undefined ? {} : { ownsHostArea })
+      route: { pathname: env.pathname },
+      ...(options.ownsHostArea === undefined ? {} : { ownsHostArea: options.ownsHostArea })
     })
     await pair.flush()
     await act(async () => {
@@ -185,45 +187,44 @@ async function sidebarsIn(
       mounted.tree = create(<HostGroupLayout />)
     })
   }
-  // Settles the flag and the owner record, both read after the first render.
   await act(async () => {})
   const count = mounted.tree?.root.findAllByType(HostSidebar).length ?? 0
   act(() => mounted.tree?.unmount())
   return count
 }
 
-/** Every sidebar on screen: the native layout's plus each page document's own. */
-async function countSidebars(shell: Shell, page: Page, wide: boolean) {
+/**
+ * Every sidebar on screen with the native stack showing `at`. `hostAreaBeneath` is a detail pushed
+ * over the host route (a handoff to a native screen), as opposed to one deep-linked in on its own.
+ */
+async function countSidebars(
+  shell: Shell,
+  page: Page,
+  wide: boolean,
+  at: string = HOST,
+  hostAreaBeneath = at === HOST
+) {
   const window = wide ? IPAD : PHONE
-  if (shell === 'new' && wide) {
-    learnOwner(page)
+  const pageCode: Renderer = page === 'declared' ? 'page' : 'old-page'
+  if (shell === 'shipped') {
+    const native = await sidebarsIn('shipped-shell', window, { pathname: at })
+    // The shipped wide host route is a native placeholder; every other route opens the page.
+    const opens = page !== 'none' && !(wide && at === HOST) && served(page, at, false)
+    const pane = wide ? { ...window, width: window.width - SIDEBAR } : window
+    return { native, pages: opens ? await sidebarsIn(pageCode, pane, { pathname: at }) : 0 }
   }
-  const native = await sidebarsIn(shell === 'new' ? 'native' : 'shipped-shell', window)
+  const hostAreaServing = wide && hostAreaBeneath && served(page, HOST, true)
+  const native = await sidebarsIn('native', window, { pathname: at, hostAreaServing })
   let pages = 0
-  if (page !== 'none') {
-    const pageRenderer: Renderer = page === 'declared' ? 'page' : 'old-page'
-    if (shell === 'new' && wide && env.stored.get('orca:hostAreaOwner:host-1') === 'page') {
-      // The host-area session, full width; detail routes open inside this same document.
-      pages += await sidebarsIn(pageRenderer, window, true)
-    } else if (
-      shell === 'shipped' ||
-      shellSwitchDecision(true, DETAIL, wide ? 'native' : undefined).kind === 'shell'
-    ) {
-      // A detail route's own session, beside the native sidebar when there is one.
-      const pane = wide ? { ...window, width: window.width - SIDEBAR } : window
-      pages += await sidebarsIn(pageRenderer, pane)
-    }
+  if (served(page, at, wide)) {
+    const hostArea = wide && at === HOST
+    const pane = wide && native > 0 ? { ...window, width: window.width - SIDEBAR } : window
+    pages = await sidebarsIn(pageCode, pane, { pathname: at, ownsHostArea: hostArea })
   }
   return { native, pages }
 }
 
-beforeEach(() => {
-  env.stored.clear()
-  env.flag = true
-  resetHostAreaOwnersForTests()
-})
-
-describe('host sidebars on screen, per shell, page and width', () => {
+describe('host sidebars on screen, per shell, page and width, on the host route', () => {
   const rows: [Shell, Page, boolean, { native: number; pages: number }][] = [
     ['shipped', 'none', false, { native: 0, pages: 0 }],
     ['shipped', 'undeclared', false, { native: 0, pages: 0 }],
@@ -232,14 +233,11 @@ describe('host sidebars on screen, per shell, page and width', () => {
     ['new', 'undeclared', false, { native: 0, pages: 0 }],
     ['new', 'declared', false, { native: 0, pages: 0 }],
     ['shipped', 'none', true, { native: 1, pages: 0 }],
-    // The one pairing nothing on this branch reaches: both sides are already released.
-    ['shipped', 'undeclared', true, { native: 1, pages: 1 }],
-    // A new page in an old shell: it never had the init fact, so it draws none (rule 1).
+    ['shipped', 'undeclared', true, { native: 1, pages: 0 }],
     ['shipped', 'declared', true, { native: 1, pages: 0 }],
     ['new', 'none', true, { native: 1, pages: 0 }],
-    // An old page against a new shell: the wide layout stays fully native.
     ['new', 'undeclared', true, { native: 1, pages: 0 }],
-    // The page owns the area: the native layout steps aside.
+    // The page owns the area: the native layout steps aside on this route only.
     ['new', 'declared', true, { native: 0, pages: 1 }]
   ]
 
@@ -248,38 +246,59 @@ describe('host sidebars on screen, per shell, page and width', () => {
   })
 })
 
+describe('host sidebars on a wide detail route', () => {
+  const rows: [string, Shell, Page, boolean, { native: number; pages: number }][] = [
+    // The one pairing nothing on this branch reaches: both sides are already released.
+    ['old app opening a detail', 'shipped', 'undeclared', false, { native: 1, pages: 1 }],
+    // A new page in an old shell never had the init fact, so it draws none.
+    ['old app opening a detail', 'shipped', 'declared', false, { native: 1, pages: 0 }],
+    ['deep link or notification', 'new', 'none', false, { native: 1, pages: 0 }],
+    ['deep link or notification', 'new', 'undeclared', false, { native: 1, pages: 0 }],
+    ['deep link or notification', 'new', 'declared', false, { native: 1, pages: 0 }],
+    ['narrow to wide with a detail pushed', 'new', 'declared', false, { native: 1, pages: 0 }],
+    ['handoff to a native screen', 'new', 'declared', true, { native: 1, pages: 0 }],
+    ['handoff to a native screen', 'new', 'undeclared', true, { native: 1, pages: 0 }]
+  ]
+
+  it.each(rows)('%s: %s shell, %s page', async (_case, shell, page, beneath, expected) => {
+    expect(await countSidebars(shell, page, true, DETAIL, beneath)).toEqual(expected)
+  })
+})
+
 describe('the page sidebar rule', () => {
   it('draws no sidebar in a wide viewport without the init fact', async () => {
     expect(await sidebarsIn('page', IPAD)).toBe(0)
-    expect(await sidebarsIn('page', IPAD, false)).toBe(0)
-    // A detail pane on a 13-inch iPad is still a wide viewport by itself.
+    expect(await sidebarsIn('page', IPAD, { ownsHostArea: false })).toBe(0)
     expect(await sidebarsIn('page', { width: 1366 - SIDEBAR, height: 1024 })).toBe(0)
   })
 
   it('draws one only when the shell gave it the host area, and only when wide', async () => {
-    expect(await sidebarsIn('page', IPAD, true)).toBe(1)
-    expect(await sidebarsIn('page', PHONE, true)).toBe(0)
+    expect(await sidebarsIn('page', IPAD, { ownsHostArea: true })).toBe(1)
+    expect(await sidebarsIn('page', PHONE, { ownsHostArea: true })).toBe(0)
   })
 })
 
-describe('the native layout on a wide layout', () => {
-  it('draws with the flag off whatever the record says', async () => {
-    env.flag = false
-    recordHostAreaOwner('host-1', 'page')
-    expect(await sidebarsIn('native', IPAD)).toBe(1)
-  })
-
-  it('reads a relaunch from the stored record without drawing first', async () => {
-    env.stored.set('orca:hostAreaOwner:host-1', 'page')
-    expect(await sidebarsIn('native', IPAD)).toBe(0)
-  })
-
-  it('crosses a layout-class change with one sidebar or none at every width', async () => {
-    recordHostAreaOwner('host-1', 'page')
-    for (const window of [IPAD, PHONE, IPAD, { width: 694, height: 1024 }]) {
-      const native = await sidebarsIn('native', window)
-      const page = await sidebarsIn('page', window, window.width >= 700)
-      expect(native + page).toBeLessThanOrEqual(1)
-    }
+describe('a phone', () => {
+  it('commits the layout no more often than it did, and reports nothing', async () => {
+    env.renderer = 'native'
+    env.width = PHONE.width
+    env.height = PHONE.height
+    env.pathname = HOST
+    env.hostAreaServing = true
+    env.reports.length = 0
+    let commits = 0
+    const mounted: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      mounted.tree = create(
+        <Profiler id="layout" onRender={() => (commits += 1)}>
+          <HostGroupLayout />
+        </Profiler>
+      )
+    })
+    await act(async () => {})
+    // Measured on the base layout too: the mount, the stored width and its re-clamp.
+    expect(commits).toBe(3)
+    expect(env.reports).toEqual([])
+    act(() => mounted.tree?.unmount())
   })
 })

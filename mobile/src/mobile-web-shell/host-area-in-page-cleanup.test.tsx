@@ -32,10 +32,13 @@ import { RpcClientProvider } from '../transport/client-context.web'
 import { useMobileDictation, type UseMobileDictationResult } from '../hooks/use-mobile-dictation'
 import { createNativeAudioCapture, type NativeAudioEngine } from '../platform/native-audio'
 import { subscribeMobileTerminalSafely } from '../session/mobile-terminal-stream-subscribe'
+import { useMobileSessionTerminalSubscriptionFoundation } from '../session/use-mobile-session-terminal-subscription-foundation'
 import { createFakeRpcClient, type FakeRpcClient } from './bridge-host-test-fakes'
 import { createFakeBridgePortPair } from './bridge/bridge-port-pair-test-harness'
 import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import { routeViewOf } from './page-route-policy'
+
+type FoundationScope = Parameters<typeof useMobileSessionTerminalSubscriptionFoundation>[0]
 
 const HOST_AREA_GRANTS = routeViewOf(
   [
@@ -100,23 +103,60 @@ beforeEach(() => {
 })
 
 describe('leaving a workspace inside the host-area page', () => {
-  it("ends the terminal stream on the device's client, which is what restores the PTY", async () => {
+  it('releases every terminal stream when the session root detaches, so the PTY is restored', async () => {
     const pair = hostAreaPair([])
     await pair.flush()
-    const unsubscribe = subscribeMobileTerminalSafely(
-      pair.client,
-      { terminal: 'pty-1', client: { id: 'phone' }, viewport: { cols: 60, rows: 30 } },
-      () => {},
-      () => {}
-    )
+    // The real teardown `setMobileSessionRootRef` runs when the session root's ref detaches.
+    const held: { clear: (() => void) | null } = { clear: null }
+    const terminalUnsubsRef = { current: new Map<string, () => void>() }
+    function SessionTerminals() {
+      const scope = {
+        setCoveredStreamRevision: () => {},
+        setTerminalKeyboardMetrics: () => {},
+        terminalCwdRef: { current: new Map() },
+        terminalRefs: { current: new Map() },
+        terminalUnsubsRef,
+        subscribingHandlesRef: { current: new Set() },
+        leaseOnlyHandlesRef: { current: new Set() },
+        initializedHandlesRef: { current: new Set() },
+        terminalDiagnosticsRef: { current: { clearTerminalCache: () => {} } },
+        viewportResubscribeBudgetRef: { current: { clear: () => {} } },
+        webReadyHandlesRef: { current: new Set() },
+        activeHandleRef: { current: null },
+        subscribeSeqRef: { current: new Map() },
+        layoutSeqRef: { current: new Map() },
+        nativeChatInputLeaseReadyRef: { current: false },
+        clearNativeChatInputLease: () => {},
+        showNativeChatRef: { current: false }
+      }
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the foundation destructures only the fields built above.
+      const typed = scope as unknown as FoundationScope
+      held.clear = useMobileSessionTerminalSubscriptionFoundation(typed).clearTerminalCache
+      return null
+    }
+    act(() => {
+      create(<SessionTerminals />)
+    })
+    for (const terminal of ['pty-1', 'pty-2']) {
+      terminalUnsubsRef.current.set(
+        terminal,
+        subscribeMobileTerminalSafely(
+          pair.client,
+          { terminal, client: { id: 'phone' }, viewport: { cols: 60, rows: 30 } },
+          () => {},
+          () => {}
+        )
+      )
+    }
     await pair.flush()
-    const [stream] = pair.rpc.streams
-    expect(stream?.method).toBe('terminal.subscribe')
-    unsubscribe()
+    expect(pair.rpc.streams.map((stream) => stream.method)).toEqual([
+      'terminal.subscribe',
+      'terminal.subscribe'
+    ])
+    act(() => held.clear?.())
     await pair.flush()
-    // The desktop's mobile subscriber goes with this stream, and with it the phone-size fit.
-    expect(stream?.unsubscribes).toBe(1)
-    expect(pair.rpc.streams).toHaveLength(1)
+    // The desktop's mobile subscriber goes with each stream, and with it the phone-size fit.
+    expect(pair.rpc.streams.map((stream) => stream.unsubscribes)).toEqual([1, 1])
   })
 
   it('closes the microphone and lets the screen sleep when the composer unmounts', async () => {

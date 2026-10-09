@@ -72,12 +72,12 @@ export function useMobileWebShellSession(args: {
   hostId: string
   /** The route this mount stands for, matched against the page routes the bundle declares. */
   routePathname: string
-  /** Opened to own the whole host area; see `MobileWebShellSession.hostArea`. */
-  hostArea?: boolean
+  /** A wide layout; see `MobileWebShellSession.wide`. A change rebuilds the session. */
+  wide?: boolean
   runtime?: MobileWebShellRuntime
 }): MobileWebShellSessionView {
   const { hostId, routePathname } = args
-  const hostArea = args.hostArea === true
+  const wide = args.wide === true
   const gates = useHostProtocolGates()
   const { client, state: connState } = useHostClient(hostId)
 
@@ -87,7 +87,7 @@ export function useMobileWebShellSession(args: {
   const storeRef = useRef<GenerationStore | null>(null)
   storeRef.current ??= runtime.createStore()
 
-  const sessionRef = useRef(createMobileWebShellSession(routePathname, hostArea))
+  const sessionRef = useRef(createMobileWebShellSession(routePathname, wide))
   const [state, setState] = useState(sessionRef.current.state)
   const [pageReady, setPageReady] = useState(sessionRef.current.pageReady)
   const [pageFrame, setPageFrame] = useState(() => shellPageFrame(sessionRef.current))
@@ -217,13 +217,13 @@ export function useMobileWebShellSession(args: {
   useEffect(() => {
     // A new host is a new session: the old one's latches, cache handle and in-flight work all go.
     invalidate()
-    sessionRef.current = createMobileWebShellSession(routePathname, hostArea)
+    sessionRef.current = createMobileWebShellSession(routePathname, wide)
     startedAtRef.current = runtime.now()
     setState(sessionRef.current.state)
     setPageReady(sessionRef.current.pageReady)
     setPageFrame(shellPageFrame(sessionRef.current))
     return invalidate
-  }, [hostArea, hostId, invalidate, routePathname, runtime])
+  }, [hostId, invalidate, routePathname, runtime, wide])
 
   const { statusPending, statusReadable, hostCapabilities, hostProtocolWindow } = gates
   const reachability = readMobileWebShellReachability(connState, client)
@@ -245,12 +245,12 @@ export function useMobileWebShellSession(args: {
     dispatch,
     hostCapabilities,
     hostId,
-    hostArea,
     hostProtocolWindow,
     reachability,
     routePathname,
     statusPending,
-    statusReadable
+    statusReadable,
+    wide
   ])
 
   const retry = useCallback(() => {

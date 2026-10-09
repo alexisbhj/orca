@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useNavigation, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -31,7 +31,8 @@ import { useShellPageBack } from './use-shell-page-back'
 import { useShellStackPop } from './use-shell-stack-pop'
 import { useMobileWebShellSession } from './use-mobile-web-shell-session'
 import { usePageHostSnapshot } from './use-page-host-snapshot'
-import { useRecordedHostAreaOwner } from './host-area-owner'
+import { HostLayoutClassContext, useReportedHostArea } from './host-layout-class'
+import { hostAreaRoot } from './page-route-policy'
 import { SHELL_OPENING_LABEL, ShellPageCover, ShellWaitingFrame } from './ShellWaitingFrame'
 import { pageSafeAreaInsets, usePublishedSafeAreaInsets } from './page-safe-area-insets'
 
@@ -152,8 +153,6 @@ export type MobileWebShellScreenProps = {
    * that caller's: it holds the param, and a tap that moved on since leaves a newer value there.
    */
   onRouteParamClear?: (param: BridgeClearableRouteParam, value: string) => void
-  /** Opened to own the whole host area on a wide layout; see `MobileWebShellSession.hostArea`. */
-  hostArea?: boolean
   runtime?: MobileWebShellRuntime
 }
 
@@ -169,13 +168,15 @@ export function MobileWebShellScreen({
   route,
   fallback,
   onRouteParamClear,
-  hostArea = false,
   runtime
 }: MobileWebShellScreenProps) {
   const insets = useSafeAreaInsets()
   const router = useRouter()
   const navigation = useNavigation()
   const popShellStack = useShellStackPop()
+  const { wide, reportHostArea } = useContext(HostLayoutClassContext)
+  // The wide host route owns the whole area; a wide detail route is served beside the native sidebar.
+  const hostArea = wide && hostAreaRoot(route.pathname) === route.pathname
   const { droppedBinaryFrames, reportDroppedBinaryFrames } = useMobileWebShellDroppedFrames()
   const {
     state,
@@ -193,8 +194,12 @@ export function MobileWebShellScreen({
     pageReady,
     pageFrame,
     backClaimed
-  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, hostArea, runtime })
-  useRecordedHostAreaOwner(hostArea ? hostId : null, state.kind)
+  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, wide, runtime })
+  useReportedHostArea(
+    reportHostArea,
+    hostId,
+    hostArea && (state.kind === 'fetching' || state.kind === 'activating' || state.kind === 'ready')
+  )
   // Which mount the notice was dismissed on, not whether it was: a later refusal opens its own
   // generation under a new session id, so it is not silenced by a tap on the one before it.
   const [noticeDismissedFor, setNoticeDismissedFor] = useState<string | null>(null)
@@ -207,7 +212,8 @@ export function MobileWebShellScreen({
   const pageInsets = pageSafeAreaInsets({ insets, topCovered: noticeShown })
   const { snapshot, unreadable, readStorage, refreshStorage, writeStorage } = usePageHostSnapshot(
     hostId,
-    route.pathname
+    route.pathname,
+    hostArea
   )
   // Declared before the bridge so the handler it is handed already belongs to this session: the
   // media verbs hold staged files, and a registry born after the host would outlive the page.

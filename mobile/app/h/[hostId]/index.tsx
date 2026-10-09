@@ -6,10 +6,7 @@ import { useResponsiveLayout } from '../../../src/layout/responsive-layout'
 import { MobileWebShellScreen } from '../../../src/mobile-web-shell/MobileWebShellScreen'
 import { ShellSwitchPendingScreen } from '../../../src/mobile-web-shell/ShellSwitchPendingScreen'
 import { shellScreenRoute } from '../../../src/mobile-web-shell/shell-screen-route'
-import {
-  useShellSwitchDecision,
-  useWideHostAreaDecision
-} from '../../../src/mobile-web-shell/shell-switch-decision'
+import { useShellSwitchDecision } from '../../../src/mobile-web-shell/shell-switch-decision'
 
 /**
  * The worktree list, from the desktop's bundle or from this app.
@@ -26,7 +23,7 @@ import {
  * `?`, `#` or whitespace would build a pathname the page refuses, and a refusal here is a failure
  * screen rather than the native list this route already has.
  */
-function HostListScreen() {
+function HostListScreen({ wide }: { wide: boolean }) {
   // Through `firstParam`, as the other four switches do: expo-router answers a repeated key with
   // an array, and a bare read puts it straight into the template, where `String(['a','b'])` is
   // `a,b` and `encodeURIComponent` makes it the single segment `a%2Cb` — which the bridge's
@@ -40,12 +37,14 @@ function HostListScreen() {
   // native list this route already has.
   const route = shellScreenRoute({ pathname: `/h/${encodeURIComponent(hostId)}` })
   const decision = useShellSwitchDecision(hostId === '' ? null : route)
+  // Wide: the native sidebar hosts the list, so this route's own screen is the empty detail pane.
+  const native = wide ? <WorkspaceDetailPlaceholder /> : <HostScreen />
 
   if (decision.kind === 'pending') {
     return <ShellSwitchPendingScreen />
   }
   if (decision.kind === 'native') {
-    return <HostScreen />
+    return native
   }
   return (
     <MobileWebShellScreen
@@ -54,39 +53,13 @@ function HostListScreen() {
       key={hostId}
       hostId={hostId}
       route={decision.route}
-      fallback={<HostScreen />}
+      fallback={native}
     />
   )
 }
 
-// Wide: the page owns the whole host area, or (no `canOwnHostArea`) native-route leaves the placeholder.
-function WideHostArea() {
-  const params = useLocalSearchParams<{ hostId?: string | string[] }>()
-  const hostId = firstParam(params.hostId)
-  const decision = useWideHostAreaDecision()
-  const route = shellScreenRoute({ pathname: `/h/${encodeURIComponent(hostId)}` })
-  if (decision === 'pending') {
-    return <ShellSwitchPendingScreen />
-  }
-  if (decision === 'native' || hostId === '' || route === null) {
-    return <WorkspaceDetailPlaceholder />
-  }
-  return (
-    <MobileWebShellScreen
-      // Distinct from the narrow list's key: different grants, so a layout-class change remounts.
-      key={`wide:${hostId}`}
-      hostId={hostId}
-      route={route}
-      hostArea
-      fallback={<WorkspaceDetailPlaceholder />}
-    />
-  )
-}
-
+// Wide: the session owns the whole host area when the page declares `canOwnHostArea`.
 export default function HostWorktreeRoute() {
   const { isWideLayout } = useResponsiveLayout()
-  if (isWideLayout) {
-    return <WideHostArea />
-  }
-  return <HostListScreen />
+  return <HostListScreen wide={isWideLayout} />
 }

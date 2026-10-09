@@ -1,109 +1,138 @@
 /**
- * The host route across a layout-class change: rotation, Split View, a foldable opening.
+ * A layout-class change (rotation, Split View, a foldable opening) re-decides a mounted session.
  *
- * A wide window mounts the host-area session and a narrow one the phone's list session. They were
- * opened under different grants and only one owns the area, so crossing the threshold is a remount
- * of one into the other; the page's in-page stack does not survive it.
+ * Off a wide layout a detail route is served as before; on one it is served only by a page that
+ * declares `canOwnHostArea`, because an older page would draw its own sidebar beside the native
+ * one. The session rebuilds on the change, so the page's in-page stack does not survive it.
  */
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { MOBILE_WEB_BUNDLE_CAPABILITY } from '../../../src/shared/mobile-web-bundle/mobile-web-bundle-capability'
+import type { MobileWebBundleManifestRead } from '../transport/mobile-web-bundle-reply-schemas'
+import type { GenerationStore } from './generation-store'
+import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
 
-type Mount = { event: 'mount' | 'unmount'; pathname: string; hostArea: boolean }
-
-const env = vi.hoisted(
-  (): { wide: boolean; storage: Map<string, string>; mounts: Mount[]; placeholders: number } => ({
-    wide: true,
-    storage: new Map(),
-    mounts: [],
-    placeholders: 0
-  })
-)
-
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => env.storage.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      env.storage.set(key, value)
-    }
+const doubles = vi.hoisted(() => ({
+  routes: [] as MobileWebBundleManifestRead['routes'],
+  gates: {
+    statusPending: false,
+    statusReadable: true,
+    hostCapabilities: [] as string[],
+    hostProtocolWindow: { protocolVersion: 10, minCompatibleMobileVersion: 1 }
   }
 }))
-vi.mock('react-native', () => ({
-  ActivityIndicator: 'ActivityIndicator',
-  StyleSheet: { create: (styles: unknown) => styles },
-  View: 'View'
-}))
-vi.mock('expo-router', () => ({ useLocalSearchParams: () => ({ hostId: 'host-1' }) }))
-vi.mock('../components/WorkspaceDetailPlaceholder', () => ({
-  WorkspaceDetailPlaceholder: () => {
-    env.placeholders += 1
-    return null
-  }
-}))
-vi.mock('../host-screen/HostScreen', () => ({ HostScreen: () => null }))
-vi.mock('../layout/responsive-layout', () => ({
-  useResponsiveLayout: () => ({ isWideLayout: env.wide })
-}))
-vi.mock('./MobileWebShellScreen', async () => {
-  const React = await import('react')
-  return {
-    MobileWebShellScreen: (props: { route: { pathname: string }; hostArea?: boolean }) => {
-      const pathname = props.route.pathname
-      const hostArea = props.hostArea === true
-      React.useEffect(() => {
-        env.mounts.push({ event: 'mount', pathname, hostArea })
-        return () => {
-          env.mounts.push({ event: 'unmount', pathname, hostArea })
-        }
-      }, [pathname, hostArea])
-      return null
-    }
-  }
-})
 
-import HostWorktreeRoute from '../../app/h/[hostId]/index'
-
-const mounted: { tree: ReactTestRenderer | null } = { tree: null }
-
-async function render(wide: boolean): Promise<void> {
-  env.wide = wide
-  await act(async () => {
-    if (mounted.tree === null) {
-      mounted.tree = create(<HostWorktreeRoute />)
-    } else {
-      mounted.tree.update(<HostWorktreeRoute />)
+vi.mock('expo-crypto', () => ({ getRandomBytes: (length: number) => new Uint8Array(length) }))
+vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, Paths: { cache: '' } }))
+vi.mock('../transport/mobile-endpoint-supervisor-support', () => ({
+  encodeBase64Url: () => 'session-id'
+}))
+vi.mock('../components/HostProtocolGate', () => ({ useHostProtocolGates: () => doubles.gates }))
+vi.mock('../transport/client-context', () => ({
+  useHostClient: () => ({ client: {}, state: 'connected' })
+}))
+vi.mock('../transport/rpc-operation', () => ({
+  defineRpcOperation: (definition: unknown) => definition,
+  runRpcOperation: async () => ({
+    manifest: {
+      schemaVersion: 1,
+      buildId: 'b'.repeat(64),
+      minCompatibleRuntimeProtocolVersion: 2,
+      runtimeProtocolVersion: 5,
+      pageVersion: 1,
+      entrypoint: 'index.html',
+      totalBytes: 2048,
+      assets: [
+        { path: 'index.html', sha256: 'c'.repeat(64), byteLength: 2048, contentType: 'text/html' }
+      ],
+      routes: doubles.routes
     }
   })
+}))
+vi.mock('../transport/mobile-web-bundle-fetch', () => ({
+  fetchMobileWebBundle: () => new Promise(() => {})
+}))
+
+import { useMobileWebShellSession } from './use-mobile-web-shell-session'
+
+const store: GenerationStore = {
+  readActiveGeneration: async () => null,
+  stageGeneration: async () => {
+    throw new Error('not reached')
+  },
+  commitGeneration: async () => {
+    throw new Error('not reached')
+  },
+  abortStagedGeneration: async () => undefined,
+  sweepStagedGenerations: async () => undefined,
+  deleteHostCache: async () => undefined,
+  persistActiveManifest: async () => 'persisted',
+  recordUpdateFailure: async () => undefined,
+  readUpdateFailures: async () => [],
+  forgetHostUpdateFailures: async () => undefined
 }
 
-beforeEach(() => {
-  env.storage.clear()
-  env.mounts.length = 0
-  env.placeholders = 0
-  mounted.tree = null
-  Object.assign(globalThis, { __DEV__: true })
-  env.storage.set('orca:mobileWebShellEnabled', 'true')
-})
+function routes(declares: boolean): MobileWebBundleManifestRead['routes'] {
+  return [
+    {
+      pathname: '/h/[hostId]',
+      grants: ['navigate'],
+      ...(declares ? { canOwnHostArea: true } : {})
+    },
+    { pathname: '/h/[hostId]/session/[worktreeId]', grants: ['navigate'] }
+  ]
+}
 
-describe('the host route across a layout-class change', () => {
-  it('swaps the host-area session for the phone list and back, one at a time', async () => {
-    await render(true)
-    await render(false)
-    await render(true)
-    expect(env.mounts).toEqual([
-      { event: 'mount', pathname: '/h/host-1', hostArea: true },
-      { event: 'unmount', pathname: '/h/host-1', hostArea: true },
-      { event: 'mount', pathname: '/h/host-1', hostArea: false },
-      { event: 'unmount', pathname: '/h/host-1', hostArea: false },
-      { event: 'mount', pathname: '/h/host-1', hostArea: true }
+async function settledKinds(declares: boolean, widths: readonly boolean[]) {
+  doubles.routes = routes(declares)
+  doubles.gates.hostCapabilities = [MOBILE_WEB_BUNDLE_CAPABILITY]
+  const seen: { state: MobileWebShellSessionState; grants: readonly string[] }[] = []
+  function Probe({ wide }: { wide: boolean }) {
+    const session = useMobileWebShellSession({
+      hostId: 'host-1',
+      routePathname: '/h/host-1/session/wt-1',
+      wide,
+      runtime: {
+        createStore: () => store,
+        mintSessionId: () => 'session-id',
+        now: () => 0,
+        setTimer: () => () => {}
+      }
+    })
+    seen.push({ state: session.state, grants: session.routeGrants })
+    return null
+  }
+  const mounted: { tree: ReactTestRenderer | null } = { tree: null }
+  const kinds: string[] = []
+  for (const wide of widths) {
+    await act(async () => {
+      if (mounted.tree === null) {
+        mounted.tree = create(<Probe wide={wide} />)
+      } else {
+        mounted.tree.update(<Probe wide={wide} />)
+      }
+    })
+    await act(async () => {})
+    kinds.push(seen.at(-1)?.state.kind ?? 'none')
+  }
+  act(() => mounted.tree?.unmount())
+  return kinds
+}
+
+describe('a detail session across a layout-class change', () => {
+  it('goes native on a wide layout under a page without the declaration, and back', async () => {
+    expect(await settledKinds(false, [false, true, false])).toEqual([
+      'fetching',
+      'native-route',
+      'fetching'
     ])
-    act(() => mounted.tree?.unmount())
   })
 
-  it('stays the native placeholder on a wide layout with the flag off', async () => {
-    env.storage.set('orca:mobileWebShellEnabled', 'false')
-    await render(true)
-    expect(env.mounts).toEqual([])
-    expect(env.placeholders).toBeGreaterThan(0)
-    act(() => mounted.tree?.unmount())
+  it('stays served at both widths under a declaring page, beside the native sidebar', async () => {
+    expect(await settledKinds(true, [false, true, false])).toEqual([
+      'fetching',
+      'fetching',
+      'fetching'
+    ])
   })
 })

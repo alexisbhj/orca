@@ -228,8 +228,8 @@ export type MobileWebShellSessionEvent =
 export type MobileWebShellSession = {
   /** The concrete route this session was opened for, matched against what the bundle lists. */
   readonly routePathname: string
-  /** Owns the wide host area: served only under `canOwnHostArea`, with every route's grants. */
-  readonly hostArea: boolean
+  /** A wide layout: served only under `canOwnHostArea`; the host route gets every route's grants. */
+  readonly wide: boolean
   /** Every route pattern this shell would render from the page, as the bundle in hand declares
    *  them. The page is told, so it keeps a navigation into one of them instead of handing it back. */
   readonly pageRoutes: readonly string[]

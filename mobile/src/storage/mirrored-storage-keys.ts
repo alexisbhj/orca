@@ -59,6 +59,17 @@ export async function hydrateMirroredStorage(keys: readonly string[]): Promise<v
   }
 }
 
+/** Every key the store or the map holds that `matches` names, for keys that carry an id. */
+export async function storedKeysMatching(matches: (key: string) => boolean): Promise<string[]> {
+  const stored = await AsyncStorage.getAllKeys().catch((): readonly string[] => [])
+  return [...new Set([...stored, ...mirror.keys()])].filter(matches)
+}
+
+/** The map's keys that `matches` names, for a synchronous reader of those same keys. */
+export function mirroredKeysMatching(matches: (key: string) => boolean): string[] {
+  return [...mirror.keys()].filter(matches)
+}
+
 function note(key: string, value: string | null): void {
   writeCount += 1
   if (value === null) {

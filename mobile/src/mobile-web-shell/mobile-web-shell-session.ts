@@ -31,11 +31,11 @@ import { step } from './mobile-web-shell-session-step'
 
 export function createMobileWebShellSession(
   routePathname: string,
-  hostArea = false
+  wide = false
 ): MobileWebShellSession {
   return {
     routePathname,
-    hostArea,
+    wide,
     pageRoutes: [],
     pageRouteGrants: [],
     routeGrants: [],
@@ -121,7 +121,7 @@ function onManifestRead(
   const { pageRoutes, pageRouteGrants, routeGrants } = routeViewOf(
     manifest.routes,
     session.routePathname,
-    session.hostArea
+    session.wide
   )
   // Same build id is the same bytes, because the id is their digest: a route-grant edit publishes
   // the generation already on disk under a newer manifest. Read before this route's verdict,

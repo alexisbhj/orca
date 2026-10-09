@@ -1,5 +1,4 @@
 import { deriveHostCacheKey } from './host-cache-key'
-import { forgetHostAreaOwner } from './host-area-owner'
 import { processGenerationStore } from './process-generation-store'
 
 /** A removed host's recorded update failures go with it. Not gated on the build: a native build
@@ -10,8 +9,5 @@ export function forgetHostUpdateFailures(hostId: string): Promise<void> {
 
 /** A removed host's page generations go with it too, so a re-pair never reopens its old tree. */
 export function deleteHostPageCache(hostId: string): Promise<void> {
-  return Promise.all([
-    forgetHostAreaOwner(hostId),
-    processGenerationStore().deleteHostCache(deriveHostCacheKey(hostId))
-  ]).then(() => undefined)
+  return processGenerationStore().deleteHostCache(deriveHostCacheKey(hostId))
 }
