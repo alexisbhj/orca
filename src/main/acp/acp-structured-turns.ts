@@ -125,10 +125,10 @@ export class AcpStructuredTurns {
     }
     lane.beginCommand(command)
     try {
-      const opened = lane.translator.openCompaction(
+      const opened = lane.translator.openPrompt(
         send.clientMessageId,
-        command.turnId,
-        send.requestedAt
+        send.requestedAt,
+        command.turnId
       )
       this.active = send
       this.run(send, opened.promptId)

@@ -16,6 +16,12 @@ export const ACP_COMPACT_PROMPT: readonly ContentBlock[] = [{ type: 'text', text
 /** What a running compaction has said so far. */
 export type AcpCompaction = { reply: string; failureDetail?: string }
 
+/** The parts of a dialect's frame a running compaction reads. */
+export type AcpCompactionFrame = {
+  failureDetail?: string
+  end?: { durationMs?: number; failureDetail?: string }
+}
+
 /** Reads the running compaction's reply text; true for an update that is its output. */
 export function readAcpCompactionUpdate(compaction: AcpCompaction, update: SessionUpdate): boolean {
   if (update.sessionUpdate === 'agent_message_chunk') {
@@ -31,9 +37,7 @@ export function readAcpCompactionUpdate(compaction: AcpCompaction, update: Sessi
  *  answer writes. True for a frame that is the compaction's own, which draws nothing. */
 export function absorbAcpCompactionFrame(
   prompt: { compaction?: AcpCompaction; durationMs?: number },
-  extension:
-    | { failureDetail?: string; end?: { durationMs?: number; failureDetail?: string } }
-    | undefined,
+  extension: AcpCompactionFrame | undefined,
   update: SessionUpdate | undefined
 ): boolean {
   const { compaction } = prompt
