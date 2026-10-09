@@ -7,6 +7,7 @@ import {
 import { AcpStructuredLane } from './acp-structured-lane'
 import { GROK_ACP_DIALECT } from './acp-dialects/grok-dialect'
 import { openAcpFixtureRig } from './acp-timeline-fixture.test-support'
+import { recordingStructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger-test-support'
 
 afterEach(closeProviderTimelineRigs)
 
@@ -246,6 +247,7 @@ describe('Grok roster ownership after more than 32 spawning groups', () => {
       generation: 'gen-1',
       providerSessionId: 'session-1',
       dialect: GROK_ACP_DIALECT,
+      logger: recordingStructuredAgentSessionLogger().logger,
       onInputAccepted: () => {},
       onFailed: (reason) => {
         throw new Error(reason)

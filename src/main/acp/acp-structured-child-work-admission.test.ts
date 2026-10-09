@@ -12,7 +12,10 @@ import { AcpStructuredLane } from './acp-structured-lane'
 import { GROK_ACP_DIALECT } from './acp-dialects/grok-dialect'
 import { createDeferredStructuredAgentSessionEventSink } from '../native-chat/agent-session-wire/structured-agent-session-event-sink'
 import { providerTimelineSink } from '../native-chat/agent-session-timeline/provider-timeline-plan'
-import { testEventSinkLogging } from '../native-chat/agent-session-wire/structured-agent-session-logger-test-support'
+import {
+  recordingStructuredAgentSessionLogger,
+  testEventSinkLogging
+} from '../native-chat/agent-session-wire/structured-agent-session-logger-test-support'
 import { parseAgentJournalItemKey } from '../../shared/agent-session-journal-item-key'
 import { agentJournalTurnBody } from '../../shared/agent-session-turn-record'
 import { makeStructuredAgentStatusSubject } from '../../shared/agent-status-subject'
@@ -47,6 +50,7 @@ async function fixture(reason: 'backpressure' | 'failed' = 'backpressure') {
     agentName: 'Grok',
     generation: 'gen-1',
     dialect: GROK_ACP_DIALECT,
+    logger: recordingStructuredAgentSessionLogger().logger,
     onInputAccepted: () => {},
     onFailed: failed,
     onChildWorkEvidence: (evidence) => delivery.push(evidence),
@@ -105,6 +109,7 @@ describe('ACP roster evidence at the ordered journal boundary', () => {
       agentName: 'Grok',
       generation: 'gen-1',
       dialect: GROK_ACP_DIALECT,
+      logger: recordingStructuredAgentSessionLogger().logger,
       onInputAccepted: () => {},
       onFailed: () => {},
       onChildWorkEvidence: delivery,
@@ -167,6 +172,7 @@ describe('ACP roster evidence at the ordered journal boundary', () => {
       agentName: 'Grok',
       generation: 'gen-1',
       dialect: GROK_ACP_DIALECT,
+      logger: recordingStructuredAgentSessionLogger().logger,
       onInputAccepted: () => {},
       onFailed: () => {},
       onChildWorkEvidence: delivered
@@ -261,6 +267,7 @@ describe('ACP roster evidence at the ordered journal boundary', () => {
       agentName: 'Grok',
       generation: 'gen-2',
       dialect: GROK_ACP_DIALECT,
+      logger: recordingStructuredAgentSessionLogger().logger,
       onInputAccepted: () => {},
       onFailed: failure,
       onChildWorkEvidence: () => {

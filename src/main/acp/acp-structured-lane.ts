@@ -15,6 +15,11 @@ import { AcpTimelineTranslator } from './acp-timeline-translator'
 import { acpSubagentChildWork, isAcpSubagentChildWorkEvent } from './acp-subagent-child-work'
 import type { AgentChildWorkEvidence } from '../../shared/agent-status-child-work-evidence'
 import type { AcpStructuredSessionAdapterDeps } from './acp-structured-session-adapter-deps'
+import {
+  neverThrowingStructuredAgentSessionLogger,
+  type StructuredAgentSessionLogger
+} from '../native-chat/agent-session-wire/structured-agent-session-logger'
+import type { AcpTextDrop } from './acp-turn-messages'
 
 /** How long a held event waits for the sink to say it drained before trying again on its own. */
 const BACKPRESSURE_RETRY_MS = 250
@@ -28,6 +33,7 @@ export type AcpStructuredLaneDeps = {
   generation: string
   providerSessionId: string
   dialect: AcpDialect
+  logger: StructuredAgentSessionLogger
   /** A send of Orca's reached the agent: the turn it opened has its first provider event. */
   onInputAccepted: (clientMessageId: string) => void
   /** The sink refused for good; nothing more this child says can be journaled. */
@@ -47,12 +53,15 @@ export class AcpStructuredLane {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private failed = false
   private disposed = false
+  private readonly logger: StructuredAgentSessionLogger
 
   constructor(private readonly deps: AcpStructuredLaneDeps) {
+    this.logger = neverThrowingStructuredAgentSessionLogger(deps.logger)
     this.translator = new AcpTimelineTranslator({
       sessionId: deps.providerSessionId,
       dialect: deps.dialect,
-      agentName: deps.agentName
+      agentName: deps.agentName,
+      onTextDropped: (drop) => this.reportTextDrop(drop)
     })
     this.requestIdentity = createLegacyProviderTimelineIdentityScheme({
       agent: deps.agent,
@@ -139,10 +148,20 @@ export class AcpStructuredLane {
     this.clearRetry()
     while (this.backlog.length > 0 && !this.failed && !this.disposed) {
       const event = this.backlog[0]
-      const { admission } = this.assembler.apply(
+      const { admission, dropped } = this.assembler.apply(
         event,
         isAcpSubagentChildWorkEvent(event) ? () => this.publishChildWork(event) : undefined
       )
+      if (dropped === 'stream-mismatch' && event.type === 'text.delta') {
+        this.reportTextDrop({
+          reason: dropped,
+          itemId: 'id' in event.item ? event.item.id : undefined,
+          channel: event.channel,
+          threadId: event.join?.thread,
+          turnId: event.join?.turn,
+          producerAgentId: event.producer?.agentId
+        })
+      }
       if (!admission.accepted) {
         if (admission.reason === 'backpressure') {
           this.retryTimer = setTimeout(() => this.drain(), BACKPRESSURE_RETRY_MS)
@@ -194,6 +213,17 @@ export class AcpStructuredLane {
     for (const check of this.turnWatchers) {
       check()
     }
+  }
+
+  private reportTextDrop(drop: AcpTextDrop): void {
+    this.logger.warn('ACP text chunk rejected by its message stream', {
+      scope: `acp-text-${drop.reason}`,
+      sessionId: this.deps.sessionId,
+      providerSessionId: this.deps.providerSessionId,
+      agent: this.deps.agent,
+      generation: this.deps.generation,
+      ...drop
+    })
   }
 
   private clearRetry(): void {
