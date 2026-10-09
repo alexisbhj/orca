@@ -23,6 +23,7 @@ import { ChatPermissionSetting } from './ChatPermissionSetting'
 import { TooltipProvider } from '../ui/tooltip'
 import { adoptAgentSessionLaunchVerdict } from '../../lib/agent-session-launch-plan'
 import { launchAgentInNewTab } from '../../lib/launch-agent-in-new-tab'
+import { holdStructuredAgentSessionLaunchOption } from '../../lib/structured-agent-session-launch-options'
 import { resetStructuredAgentLaunchRegistryForTests } from '../../lib/structured-agent-session-launch-registry'
 import { resetStructuredAgentLaunchPersistenceForTests } from '../../lib/structured-agent-session-launch-persistence'
 import {
@@ -217,13 +218,13 @@ async function newTab(agent: TuiAgent, executionHostId: ExecutionHostId): Promis
 
 const CLIENTS = ['desktop-local', 'desktop-remote', 'web'] as const
 
-/** One execution host, and a renderer reaching it as `client` does; returns the chat host's id. */
+/** One execution host, and a renderer reaching it as `client` does. */
 async function openClient(
   client: (typeof CLIENTS)[number],
   agent: TuiAgent,
   initial: AgentChatPermissionMode,
   options: { withoutAuto?: boolean } = {}
-): Promise<ExecutionHostId> {
+): Promise<{ executionHostId: ExecutionHostId; target: RuntimeClientTarget }> {
   state.host = await fixture.openChatPermissionCreationHost(initial, options)
   state.store = createTestStore()
   setNativeChatComposerDraftStorageForTests(createMemoryNativeChatComposerDraftStorage())
@@ -254,7 +255,7 @@ async function openClient(
   const executionHostId =
     client === 'desktop-local' ? 'local' : toRuntimeExecutionHostId(environmentId)
   getStructuredAgentSessionStatusFeed(target).activate()
-  return executionHostId
+  return { executionHostId, target }
 }
 
 for (const client of CLIENTS) {
@@ -264,7 +265,7 @@ for (const client of CLIENTS) {
     ['codex', 'ask'],
     ['codex', 'bypass']
   ] as const)(`${client}: writes the control then creates %s from %s`, async (agent, initial) => {
-    const executionHostId = await openClient(client, agent, initial)
+    const { executionHostId } = await openClient(client, agent, initial)
     const existing = await newTab(agent, executionHostId)
     expect(await host().savedMode(existing)).toBe(initial)
     expect(await newTab(agent, executionHostId)).toBe(existing)
@@ -300,7 +301,7 @@ for (const client of CLIENTS) {
   it.each(['claude', 'codex'] as const)(
     `${client}: reuses an empty %s chat whose Auto default narrowed to Ask`,
     async (agent) => {
-      const executionHostId = await openClient(client, agent, 'auto', { withoutAuto: true })
+      const { executionHostId } = await openClient(client, agent, 'auto', { withoutAuto: true })
       const first = await newTab(agent, executionHostId)
       await vi.waitFor(async () => expect(await host().savedMode(first)).toBe('ask'))
       await settle()
@@ -313,7 +314,7 @@ for (const client of CLIENTS) {
   )
 
   it(`${client}: reuses an empty Codex chat created under Accept edits, which it runs as Ask`, async () => {
-    const executionHostId = await openClient(client, 'codex', 'accept-edits')
+    const { executionHostId } = await openClient(client, 'codex', 'accept-edits')
     const first = await newTab('codex', executionHostId)
     expect(await host().savedMode(first)).toBe('ask')
     await settle()
@@ -322,4 +323,48 @@ for (const client of CLIENTS) {
     await settle()
     expect(host().starts()).toBe(1)
   })
+}
+
+/** The chat's own permission pill, as its composer writes a pick once the chat is published. */
+async function pickPermission(
+  sessionId: string,
+  mode: AgentChatPermissionMode,
+  target: RuntimeClientTarget
+): Promise<void> {
+  const outcome = await holdStructuredAgentSessionLaunchOption(
+    sessionId,
+    'permissionMode',
+    mode,
+    target
+  )
+  expect(outcome?.kind).toBe('accepted')
+  await vi.waitFor(async () => expect(await host().savedMode(sessionId)).toBe(mode))
+  await settle()
+}
+
+for (const client of CLIENTS) {
+  it.each(['claude', 'codex'] as const)(
+    `${client}: opens a new %s chat beside an empty one its user widened to Full access`,
+    async (agent) => {
+      const { executionHostId, target } = await openClient(client, agent, 'ask')
+      const first = await newTab(agent, executionHostId)
+      await pickPermission(first, 'bypass', target)
+
+      const next = await newTab(agent, executionHostId)
+      expect(next).not.toBe(first)
+      expect(await host().savedMode(next)).toBe('ask')
+    }
+  )
+
+  it.each(['claude', 'codex'] as const)(
+    `${client}: reuses an empty %s chat its user narrowed to Ask`,
+    async (agent) => {
+      const { executionHostId, target } = await openClient(client, agent, 'bypass')
+      const first = await newTab(agent, executionHostId)
+      await pickPermission(first, 'ask', target)
+
+      expect(await newTab(agent, executionHostId)).toBe(first)
+      expect(host().starts()).toBe(1)
+    }
+  )
 }

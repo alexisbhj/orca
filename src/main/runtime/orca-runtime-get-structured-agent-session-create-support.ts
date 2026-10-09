@@ -37,10 +37,10 @@ import {
 } from '../../shared/agent-session-provider-handle'
 import { agentSessionWireProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
 
-/** The seed's mode is the host's new-chat default, read once for both. */
-function newChatPermissionDefault(options: Record<string, string> | undefined) {
+/** The mode the seed starts the chat in, kept on its record as where it began. */
+function initialPermissionModeOf(options: Record<string, string> | undefined) {
   const mode = options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
-  return isAgentChatPermissionMode(mode) ? { permissionDefaultAtCreation: mode } : {}
+  return isAgentChatPermissionMode(mode) ? { initialPermissionMode: mode } : {}
 }
 
 export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaRuntimeWithGetWorktreePs {
@@ -276,7 +276,7 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
           ? { variable: selectedAccountHome.variable, path: adoption.accountHomePath }
           : selectedAccountHome,
       ...(options ? { options } : {}),
-      ...newChatPermissionDefault(options),
+      ...initialPermissionModeOf(options),
       ...(input.resumeFrom && adoption
         ? {
             // `adopt` is what makes the reservation seed the handle chain. Presence of

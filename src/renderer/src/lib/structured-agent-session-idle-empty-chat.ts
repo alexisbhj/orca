@@ -7,6 +7,7 @@ import {
 } from '../../../shared/agent-chat-permission-mode'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-client-target'
 import type { Tab } from '../../../shared/tab-types'
+import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
 import { useAppStore } from '@/store'
 import {
   structuredAgentSessionOwnerForTab,
@@ -18,9 +19,23 @@ import { isStructuredLaunchChatEmpty } from './structured-agent-session-launch-e
 
 export type IdleEmptyStructuredChat = { sessionId: string; executionHostId: ExecutionHostId }
 
+/** Whether an empty chat can stand in for a new one starting in `startingMode`: it started there
+ *  and has since only narrowed to Ask, where a provider's narrowing lands, never widened. A
+ *  record that predates its starting mode compares its saved mode instead. */
+function startsAsNewChat(summary: AgentSessionStatusSummary, startingMode: string): boolean {
+  const initial = summary.initialPermissionMode
+  const current = summary.permissionMode
+  if (initial === undefined) {
+    return current === startingMode
+  }
+  return (
+    initial === startingMode && current !== undefined && (current === initial || current === 'ask')
+  )
+}
+
 /** Published, and its host's journal holds no request (a null status). A resumed chat's journal
  *  holds the imported conversation, so it never reads as empty. A host that names the mode a new
- *  chat starts in only offers an empty chat already in it, so a changed default opens a new chat. */
+ *  chat starts in only offers an empty chat that started there, so a changed default opens one. */
 function hostOffersEmptyChat(
   tab: Tab,
   executionHostId: ExecutionHostId,
@@ -37,7 +52,7 @@ function hostOffersEmptyChat(
   return (
     feed.getSessionObservation(tab.entityId) === 'live' &&
     summary?.status === null &&
-    (permissionMode === undefined || summary.permissionDefaultAtCreation === permissionMode)
+    (permissionMode === undefined || startsAsNewChat(summary, permissionMode))
   )
 }
 

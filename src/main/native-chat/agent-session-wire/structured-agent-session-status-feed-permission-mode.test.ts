@@ -38,7 +38,7 @@ afterEach(async () => {
 /** A Codex chat whose record options are whatever `options` holds when the feed reads it. */
 async function feedWithOptions(
   options: { current: Record<string, string> },
-  createdUnder?: AgentChatPermissionMode
+  startedIn?: AgentChatPermissionMode
 ) {
   await store.reserveOwner({
     sessionId: SESSION,
@@ -76,7 +76,7 @@ async function feedWithOptions(
         record && {
           ...record,
           options: options.current,
-          ...(createdUnder ? { permissionDefaultAtCreation: createdUnder } : {})
+          ...(startedIn ? { initialPermissionMode: startedIn } : {})
         }
       )
     },
@@ -98,37 +98,40 @@ function lastSummary(events: readonly AgentSessionStatusEvent[]) {
   throw new Error('no status publication')
 }
 
-it('publishes the default a chat was created under, whatever its mode becomes', async () => {
+it('publishes the mode a chat started in beside its current mode as that changes', async () => {
   const options = { current: { permissionMode: 'auto' } }
   const { feed, events } = await feedWithOptions(options, 'auto')
-  expect(lastSummary(events)).toMatchObject({ status: null, permissionDefaultAtCreation: 'auto' })
+  expect(lastSummary(events)).toMatchObject({
+    status: null,
+    initialPermissionMode: 'auto',
+    permissionMode: 'auto'
+  })
 
   // Narrowed by a provider without reviewer support, then picked by the user.
   options.current = { permissionMode: 'ask' }
   feed.publish(SESSION)
-  options.current = { permissionMode: 'bypass' }
-  feed.publish(SESSION)
-
-  expect(lastSummary(events)).toMatchObject({ permissionDefaultAtCreation: 'auto' })
-})
-
-// Records from before the creation default was kept fall back to their saved mode.
-it("publishes an older record's saved mode and republishes a change", async () => {
-  const options = { current: { permissionMode: 'ask' } }
-  const { feed, events } = await feedWithOptions(options)
-  expect(lastSummary(events)).toMatchObject({ status: null, permissionDefaultAtCreation: 'ask' })
-
+  expect(lastSummary(events)).toMatchObject({
+    initialPermissionMode: 'auto',
+    permissionMode: 'ask'
+  })
   options.current = { permissionMode: 'bypass' }
   feed.publish(SESSION)
 
   expect(events.at(-1)).toMatchObject({
     type: 'status',
-    session: { sessionId: SESSION, status: null, permissionDefaultAtCreation: 'bypass' }
+    session: { initialPermissionMode: 'auto', permissionMode: 'bypass' }
   })
+})
+
+it('publishes only the current mode of a record that predates starting modes', async () => {
+  const { events } = await feedWithOptions({ current: { permissionMode: 'ask' } })
+
+  expect(lastSummary(events)).toMatchObject({ status: null, permissionMode: 'ask' })
+  expect(lastSummary(events)).not.toHaveProperty('initialPermissionMode')
 })
 
 it('publishes the mode an older Codex record saved as its reviewer', async () => {
   const { events } = await feedWithOptions({ current: { approvalsReviewer: 'auto_review' } })
 
-  expect(lastSummary(events)).toMatchObject({ permissionDefaultAtCreation: 'auto' })
+  expect(lastSummary(events)).toMatchObject({ permissionMode: 'auto' })
 })

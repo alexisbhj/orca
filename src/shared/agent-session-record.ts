@@ -3,7 +3,7 @@ import { isAgentSessionLaunchArgs } from './agent-session-launch-args'
 import {
   isAgentSessionRecordPermissionFacts,
   type AgentSessionRecordPermissionFacts
-} from './agent-session-permission-default-at-creation'
+} from './agent-session-initial-permission-mode'
 import { isAgentSessionConversationName } from './agent-session-conversation-name'
 import {
   isPersistedAgentSessionHandoffStage,

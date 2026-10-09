@@ -19,9 +19,9 @@ import type { AgentSessionContextUsage } from './agent-session-context-usage'
 import type {
   AgentSessionPermissionFrameFields,
   AgentSessionPermissionModes,
-  AgentSessionPermissionFact,
-  AgentChatPermissionMode
+  AgentSessionPermissionFact
 } from './agent-chat-permission-mode'
+import type { AgentSessionStatusPermissionModes } from './agent-session-initial-permission-mode'
 // ─── Structured agent-session wire contract ─────────────────────────────────
 // The shapes `agentSession.*` accepts and publishes. Phase 2 builds provider
 // adapters and clients against exactly these types, so everything here must be
@@ -236,10 +236,7 @@ export type AgentSessionSubscribeEvent =
 /** What a session list needs to know about one session. The host projects it
  *  from the journal so no client has to replay a transcript to learn whether a
  *  turn is running. Additive surface: an older host has no such method. */
-export type AgentSessionStatusSummary = {
-  /** The new-chat permission default the chat was created under (an older record's saved mode),
-   *  which decides whether an empty chat can stand in for a new one. Absent from older hosts. */
-  permissionDefaultAtCreation?: AgentChatPermissionMode
+export type AgentSessionStatusSummary = AgentSessionStatusPermissionModes & {
   rewindBlockedReason?: AgentSessionRewindReason
   sessionId: string
   workspaceId: string

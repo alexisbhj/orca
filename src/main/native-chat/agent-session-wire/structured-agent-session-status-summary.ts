@@ -38,10 +38,7 @@ export function structuredAgentSessionStatusSummary({
   // switch lands, so the row follows whichever is in force.
   const model = normalizeOptionalField(record?.options?.model, AGENT_MODEL_MAX_LENGTH)
   const launchDirectory = record ? agentSessionPinnedLaunchDirectory(record) : undefined
-  // An older record never kept its creation default; its saved mode is the closest answer.
-  const permissionDefaultAtCreation = record
-    ? (record.permissionDefaultAtCreation ?? restingPermissionModes(record)?.current)
-    : undefined
+  const permissionMode = record ? restingPermissionModes(record)?.current : undefined
   return {
     sessionId,
     workspaceId: session.params.location.workspaceId,
@@ -59,7 +56,10 @@ export function structuredAgentSessionStatusSummary({
       ? { rewindBlockedReason: 'outcome-unknown' as const }
       : {}),
     ...(model ? { model } : {}),
-    ...(permissionDefaultAtCreation ? { permissionDefaultAtCreation } : {}),
+    ...(record?.initialPermissionMode
+      ? { initialPermissionMode: record.initialPermissionMode }
+      : {}),
+    ...(permissionMode ? { permissionMode } : {}),
     ...childWork,
     ...(providerSession ? { providerSession } : {}),
     ...(launchDirectory ? { launchDirectory } : {}),
