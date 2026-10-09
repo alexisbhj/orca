@@ -3,9 +3,7 @@ import { loadHosts } from '../transport/host-store'
 import type { BridgeInitHost } from './bridge/bridge-envelope'
 import {
   hydrateMirroredStorage,
-  mirroredKeysMatching,
   readMirroredStorage,
-  storedKeysMatching,
   writeMirroredStorage
 } from '../storage/mirrored-storage-keys'
 import {
@@ -37,6 +35,8 @@ export type PageHostSnapshotView = {
   refreshStorage: () => Promise<void>
   /** Applies one page write to the app's store and to the map the next `init` will carry. */
   writeStorage: (key: string, value: string | null) => void
+  /** One workspace key of this host, read for a host-area page that opened it in-page. */
+  readWorkspaceKey: (key: string) => Promise<string | null>
 }
 
 /**
@@ -57,21 +57,12 @@ export function usePageHostSnapshot(
 ): PageHostSnapshotView {
   const [snapshot, setSnapshot] = useState<PageHostSnapshot | null>(null)
   const [unreadable, setUnreadable] = useState(false)
-  // A host-area page opens any of this host's workspaces in-page, so it carries each one's keys.
-  const workspaceKeys = useCallback(
-    (key: string) => hostArea && isHostWorkspaceStorageKey(key, hostId),
-    [hostArea, hostId]
-  )
 
   // The allowlist is the shell's, not the mirror's: what the page may be handed is named here on
   // every read and every seat, so nothing else the app happens to mirror can reach it.
   const refreshStorage = useCallback(
-    async (): Promise<void> =>
-      hydrateMirroredStorage([
-        ...pageStorageKeysForRoute(hostId, routePathname),
-        ...(hostArea ? await storedKeysMatching(workspaceKeys) : [])
-      ]),
-    [hostArea, hostId, routePathname, workspaceKeys]
+    (): Promise<void> => hydrateMirroredStorage(pageStorageKeysForRoute(hostId, routePathname)),
+    [hostId, routePathname]
   )
 
   useEffect(() => {
@@ -134,6 +125,17 @@ export function usePageHostSnapshot(
     [hostArea, hostId, routePathname]
   )
 
+  const readWorkspaceKey = useCallback(
+    async (key: string): Promise<string | null> => {
+      if (!hostArea || !isHostWorkspaceStorageKey(key, hostId)) {
+        throw new Error('this page may not read that key')
+      }
+      await hydrateMirroredStorage([key])
+      return readMirroredStorage([key])[key] ?? null
+    },
+    [hostArea, hostId]
+  )
+
   return {
     snapshot,
     unreadable,
@@ -143,22 +145,17 @@ export function usePageHostSnapshot(
       // refuses the whole frame and the screen never opens. The name of what was left out is
       // reported rather than swallowed, because a preference falling back to its default is a
       // degradation someone has to be able to read.
-      const held = readMirroredStorage([
-        ...pageStorageKeysForRoute(hostId, routePathname),
-        ...(hostArea ? mirroredKeysMatching(workspaceKeys) : [])
-      ])
+      const held = readMirroredStorage(pageStorageKeysForRoute(hostId, routePathname))
       const { entries, dropped, oversize } = pageStorageEntriesForInit(held)
       if (dropped.length > 0) {
         console.warn('[web-shell] a stored value is too large for the page', { keys: dropped })
       }
       // `oversize` crosses as well as being logged: a key the page holds no value for is one its
       // own write would replace rather than extend (ruling 33.6).
-      // A workspace key the entry cap left out is one too: the chat-tab write is read-modify-write,
-      // so a page reading the default would replace the device's list.
-      const capped = dropped.filter((key) => !oversize.includes(key) && workspaceKeys(key))
-      return { storage: entries, storageOversize: [...oversize, ...capped] }
-    }, [hostArea, hostId, routePathname, workspaceKeys]),
+      return { storage: entries, storageOversize: oversize }
+    }, [hostId, routePathname]),
     refreshStorage,
-    writeStorage
+    writeStorage,
+    readWorkspaceKey
   }
 }

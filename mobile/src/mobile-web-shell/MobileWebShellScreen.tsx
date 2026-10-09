@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useNavigation, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -31,8 +31,9 @@ import { useShellPageBack } from './use-shell-page-back'
 import { useShellStackPop } from './use-shell-stack-pop'
 import { useMobileWebShellSession } from './use-mobile-web-shell-session'
 import { usePageHostSnapshot } from './use-page-host-snapshot'
-import { HostLayoutClassContext, useReportedHostArea } from './host-layout-class'
-import { hostAreaRoot } from './page-route-policy'
+import { useReportedHostAreaServing } from './host-area-serving'
+import { useResponsiveLayout } from '../layout/responsive-layout'
+import { storageReadParamsSchema, type BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import { SHELL_OPENING_LABEL, ShellPageCover, ShellWaitingFrame } from './ShellWaitingFrame'
 import { pageSafeAreaInsets, usePublishedSafeAreaInsets } from './page-safe-area-insets'
 
@@ -174,9 +175,7 @@ export function MobileWebShellScreen({
   const router = useRouter()
   const navigation = useNavigation()
   const popShellStack = useShellStackPop()
-  const { wide, reportHostArea } = useContext(HostLayoutClassContext)
-  // The wide host route owns the whole area; a wide detail route is served beside the native sidebar.
-  const hostArea = wide && hostAreaRoot(route.pathname) === route.pathname
+  const { isWideLayout } = useResponsiveLayout()
   const { droppedBinaryFrames, reportDroppedBinaryFrames } = useMobileWebShellDroppedFrames()
   const {
     state,
@@ -193,12 +192,17 @@ export function MobileWebShellScreen({
     reportPageBackClaim,
     pageReady,
     pageFrame,
-    backClaimed
-  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, wide, runtime })
-  useReportedHostArea(
-    reportHostArea,
+    backClaimed,
+    ownsHostArea
+  } = useMobileWebShellSession({
     hostId,
-    hostArea && (state.kind === 'fetching' || state.kind === 'activating' || state.kind === 'ready')
+    routePathname: route.pathname,
+    wide: isWideLayout,
+    runtime
+  })
+  // From `activating`: the page stays behind its cover until it paints, so no frame shows two.
+  useReportedHostAreaServing(
+    ownsHostArea && (state.kind === 'activating' || state.kind === 'ready')
   )
   // Which mount the notice was dismissed on, not whether it was: a later refusal opens its own
   // generation under a new session id, so it is not silenced by a tap on the one before it.
@@ -210,14 +214,16 @@ export function MobileWebShellScreen({
   // native screen, and the page lifts by the height native screens read.
   const keyboardInset = Math.max(0, useKeyboardOcclusion())
   const pageInsets = pageSafeAreaInsets({ insets, topCovered: noticeShown })
-  const { snapshot, unreadable, readStorage, refreshStorage, writeStorage } = usePageHostSnapshot(
-    hostId,
-    route.pathname,
-    hostArea
-  )
+  const { snapshot, unreadable, readStorage, refreshStorage, writeStorage, readWorkspaceKey } =
+    usePageHostSnapshot(hostId, route.pathname, ownsHostArea)
   // Declared before the bridge so the handler it is handed already belongs to this session: the
   // media verbs hold staged files, and a registry born after the host would outlive the page.
-  const serveNativeVerb = useNativeDeviceVerbs(state.kind === 'ready' ? state.sessionId : null)
+  const serveDeviceVerb = useNativeDeviceVerbs(state.kind === 'ready' ? state.sessionId : null)
+  // The storage read is the shell's own store rather than the device's, scoped to this host.
+  const serveNativeVerb = (verb: BridgeNativeVerb, params: unknown): Promise<unknown> =>
+    verb === 'native.storage.read'
+      ? readWorkspaceKey(storageReadParamsSchema.parse(params).key).then((value) => ({ value }))
+      : serveDeviceVerb(verb, params)
   // Straight to the system handler, and the one opener the shell has: the page's `externalLink`
   // notify and a cancelled top-frame navigation both arrive here already filtered. The only failure
   // left is a device with nothing registered for the scheme -- a `mailto:` on a phone with no mail
@@ -237,7 +243,7 @@ export function MobileWebShellScreen({
     pageRoutes,
     pageRouteGrants,
     routeGrants,
-    ownsHostArea: hostArea,
+    ownsHostArea,
     session: state,
     sessionEstablished: pageReady,
     snapshot,

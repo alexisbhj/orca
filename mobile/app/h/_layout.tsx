@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { View, StyleSheet, PanResponder } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { View, StyleSheet, PanResponder, Platform } from 'react-native'
 import { useGlobalSearchParams, usePathname } from 'expo-router'
 import { colors } from '../../src/theme/mobile-theme'
 import { useResponsiveLayout } from '../../src/layout/responsive-layout'
@@ -13,8 +13,8 @@ import {
 import { HostProtocolGate } from '../../src/components/HostProtocolGate'
 import { HostScreen } from '../../src/host-screen/HostScreen'
 import { HostStack } from '../../src/navigation/host-stack'
-import { useHostSidebarDrawnHere } from '../../src/mobile-web-shell/host-sidebar-owner'
-import { HostLayoutClassContext } from '../../src/mobile-web-shell/host-layout-class'
+import { HostAreaServingContext } from '../../src/mobile-web-shell/host-area-serving'
+import { usePageOwnsHostArea } from '../../src/mobile-web-shell/page-owns-host-area'
 
 // Keep at least this much room for the detail pane when resizing the sidebar.
 const MIN_DETAIL_WIDTH = 320
@@ -66,17 +66,11 @@ export default function HostGroupLayout() {
   }, [windowWidth])
 
   const hideSidebar = useCallback(() => setSidebarOpen(false), [])
-  // Set only by a wide host-area session that is serving, so a phone never re-renders for it.
-  const [hostAreaServedFor, setHostAreaServedFor] = useState<string | null>(null)
-  const layoutClass = useMemo(
-    () => ({ wide: isWideLayout, reportHostArea: setHostAreaServedFor }),
-    [isWideLayout]
-  )
-  const sidebarDrawnHere = useHostSidebarDrawnHere({
-    hostId: hostId ?? '',
-    pathname,
-    hostAreaServedFor
-  })
+  const [hostAreaServing, setHostAreaServing] = useState(false)
+  const pageOwnsHostArea = usePageOwnsHostArea()
+  // One owner: the page only with its init fact; natively all but a host route its page is serving.
+  const sidebarDrawnHere =
+    Platform.OS === 'web' ? pageOwnsHostArea : !(pathname === `/h/${hostId}` && hostAreaServing)
   const showSidebar = isWideLayout && !!hostId && sidebarDrawnHere
   const detailHasContent = !!hostId && pathname !== `/h/${hostId}`
   const canCollapseSidebar = showSidebar && detailHasContent
@@ -137,9 +131,9 @@ export default function HostGroupLayout() {
           </View>
         ) : null}
         <View style={styles.detail}>
-          <HostLayoutClassContext.Provider value={layoutClass}>
+          <HostAreaServingContext.Provider value={setHostAreaServing}>
             <HostStack animation={showSidebar ? 'none' : 'default'} />
-          </HostLayoutClassContext.Provider>
+          </HostAreaServingContext.Provider>
         </View>
       </View>
     </HostProtocolGate>

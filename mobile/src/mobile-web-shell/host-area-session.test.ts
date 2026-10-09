@@ -14,12 +14,7 @@ import {
   manifestFacts,
   run
 } from './mobile-web-shell-session-test-fixtures'
-import {
-  hostAreaRoot,
-  pageCanOwnHostArea,
-  routeViewOf,
-  type MobileWebPageRoute
-} from './page-route-policy'
+import { routeViewOf, type MobileWebPageRoute } from './page-route-policy'
 
 const HOST_ROUTE = '/h/host-1'
 const SESSION_GRANTS = [
@@ -63,11 +58,12 @@ function desktopRoutes(declares: boolean): MobileWebPageRoute[] {
 }
 
 function wideStateFor(routes: MobileWebPageRoute[] | null, pathname = HOST_ROUTE) {
-  const opened = run(createMobileWebShellSession(pathname, true), {
-    type: 'gates-changed',
+  const opened = run(
+    createMobileWebShellSession(pathname),
+    { type: 'layout-changed', wide: true },
     // No bundle capability is a desktop that serves no page at all.
-    gates: routes === null ? gates({ hostCapabilities: [] }) : gates()
-  })
+    { type: 'gates-changed', gates: routes === null ? gates({ hostCapabilities: [] }) : gates() }
+  )
   if (routes === null) {
     return opened.session
   }
@@ -95,22 +91,25 @@ describe('the page declaring it can own the host area', () => {
       routes: [{ pathname: '/h/[hostId]', grants: ['navigate'], canOwnHostArea: 'yes' }]
     })
     expect(parsed.success).toBe(true)
-    expect(pageCanOwnHostArea(parsed.data?.routes, HOST_ROUTE)).toBe(false)
+    expect(routeViewOf(parsed.data?.routes, HOST_ROUTE, true).ownsHostArea).toBe(false)
   })
 
-  it('counts only on the host route this shell would serve', () => {
-    expect(pageCanOwnHostArea(desktopRoutes(true), HOST_ROUTE)).toBe(true)
-    expect(pageCanOwnHostArea(desktopRoutes(false), HOST_ROUTE)).toBe(false)
-    expect(pageCanOwnHostArea(desktopRoutes(true), '/h/host-1/tasks')).toBe(false)
+  it('gives the area to the host route of a page this shell would serve, on a wide layout only', () => {
+    expect(routeViewOf(desktopRoutes(true), HOST_ROUTE, true).ownsHostArea).toBe(true)
+    expect(routeViewOf(desktopRoutes(true), HOST_ROUTE).ownsHostArea).toBe(false)
+    expect(routeViewOf(desktopRoutes(false), HOST_ROUTE, true).ownsHostArea).toBe(false)
+    expect(routeViewOf(desktopRoutes(true), '/h/host-1/tasks', true).ownsHostArea).toBe(false)
     const unserved = [{ ...desktopRoutes(true)[0]!, grants: ['native.teleport.start'] }]
-    expect(pageCanOwnHostArea(unserved, HOST_ROUTE)).toBe(false)
+    expect(routeViewOf(unserved, HOST_ROUTE, true).ownsHostArea).toBe(false)
   })
 })
 
 describe('the wide host-area session', () => {
   it("is granted every served route's grants, and no phone session is", () => {
     const view = routeViewOf(desktopRoutes(true), HOST_ROUTE, true)
-    expect([...view.routeGrants].sort()).toEqual([...SESSION_GRANTS, 'externalNavigation'].sort())
+    expect([...view.routeGrants].sort()).toEqual(
+      [...SESSION_GRANTS, 'externalNavigation', 'native.storage.read'].sort()
+    )
     // Every pair the page compares a hop against is covered, which is what keeps it in the page.
     for (const pair of view.pageRouteGrants) {
       expect(pair.grants.every((grant) => view.routeGrants.includes(grant))).toBe(true)
@@ -128,7 +127,7 @@ describe('the wide host-area session', () => {
       pageRoutes: [],
       pageRouteGrants: [],
       routeGrants: [],
-      hostAreaDeclared: false
+      ownsHostArea: false
     })
   })
 
@@ -152,11 +151,56 @@ describe('the wide host-area session', () => {
     expect(session.routeGrants).toEqual(['navigate', 'storage', 'externalLink', 'haptics'])
   })
 
-  it('finds the host route a pathname sits under', () => {
-    expect(hostAreaRoot('/h/host-1')).toBe('/h/host-1')
-    expect(hostAreaRoot('/h/host-1/session/wt-1')).toBe('/h/host-1')
-    expect(hostAreaRoot('/h/')).toBeNull()
-    expect(hostAreaRoot('/settings')).toBeNull()
+  it('serves a wide route only under the host route of a declaring page', () => {
+    expect(routeViewOf(desktopRoutes(true), '/h/host-1/session/wt-1', true).pageRoutes).not.toEqual(
+      []
+    )
+    for (const pathname of ['/h/', '/settings']) {
+      expect(routeViewOf(desktopRoutes(true), pathname, true).pageRoutes).toEqual([])
+    }
+  })
+})
+
+describe('a layout change on a mounted session', () => {
+  function narrowStateFor(routes: MobileWebPageRoute[], pathname: string) {
+    return run(
+      createMobileWebShellSession(pathname),
+      { type: 'gates-changed', gates: gates() },
+      { type: 'cache-read', generation: null },
+      { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) }
+    ).session
+  }
+
+  it('keeps a declared detail session through the flip both ways', () => {
+    const narrow = narrowStateFor(desktopRoutes(true), '/h/host-1/files/wt-1')
+    const wide = run(narrow, { type: 'layout-changed', wide: true }).session
+    expect(wide).toEqual({ ...narrow, wide: true })
+    expect(run(wide, { type: 'layout-changed', wide: false }).session).toEqual(narrow)
+  })
+
+  it('restarts a detail session an undeclaring page may not serve wide', () => {
+    const narrow = narrowStateFor(desktopRoutes(false), '/h/host-1/files/wt-1')
+    const wide = run(narrow, { type: 'layout-changed', wide: true }).session
+    expect(wide.flow).toBe(narrow.flow + 1)
+    expect(wide.state.kind).toBe('checking')
+    expect(wide.wide).toBe(true)
+  })
+
+  it('restarts the host route, whose view changes with the layout', () => {
+    const narrow = narrowStateFor(desktopRoutes(true), HOST_ROUTE)
+    const wide = run(narrow, { type: 'layout-changed', wide: true })
+    expect(wide.session.flow).toBe(narrow.flow + 1)
+    expect(wide.effects).toEqual([{ kind: 'open-cache' }])
+    const served = run(
+      wide.session,
+      { type: 'cache-read', generation: null },
+      {
+        type: 'manifest-read',
+        manifest: manifestFacts({ ...MANIFEST_WIRE, routes: desktopRoutes(true) })
+      }
+    ).session
+    expect(served.ownsHostArea).toBe(true)
+    expect(served.routeGrants).toContain('native.storage.read')
   })
 })
 

@@ -1,6 +1,5 @@
 import { BRIDGE_MAX_PENDING_REQUESTS, BRIDGE_MAX_SUBSCRIPTIONS } from './bridge-caps'
 import { MOBILE_WEB_SHELL_GRANTS } from '../page-route-policy'
-import { PAGE_STORAGE_MAX_ENTRIES } from '../page-storage-keys'
 import {
   BRIDGE_FAULT_GRANT,
   BRIDGE_PROTOCOL_VERSION,
@@ -103,8 +102,7 @@ export function createBridgeInitFrame(args: {
     // the same answer, and every golden in the corpus was recorded without it.
     ...(args.storageOversize === undefined || args.storageOversize.length === 0
       ? {}
-      : // Bounded by the page's schema; the host still refuses every key in the full list.
-        { storageOversize: args.storageOversize.slice(0, PAGE_STORAGE_MAX_ENTRIES) }),
+      : { storageOversize: [...args.storageOversize] }),
     // Omitted when false, so every recorded golden stays byte-identical.
     ...(args.ownsHostArea === true ? { ownsHostArea: true } : {})
   }

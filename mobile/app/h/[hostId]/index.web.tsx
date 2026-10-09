@@ -1,7 +1,6 @@
 import { WorkspaceDetailPlaceholder } from '../../../src/components/WorkspaceDetailPlaceholder'
 import { HostScreen } from '../../../src/host-screen/HostScreen'
-import { useResponsiveLayout } from '../../../src/layout/responsive-layout'
-import { usePageBridgeClientIfPresent } from '../../../src/transport/client-context.web'
+import { usePageOwnsHostArea } from '../../../src/mobile-web-shell/page-owns-host-area'
 
 /**
  * Web sibling for the worktree list.
@@ -13,11 +12,6 @@ import { usePageBridgeClientIfPresent } from '../../../src/transport/client-cont
  * them all.
  */
 export default function HostWorktreeRoute() {
-  const { isWideLayout } = useResponsiveLayout()
   // The placeholder only beside the page's own sidebar: without the host area this is the list.
-  const sidebarHere = usePageBridgeClientIfPresent()?.getShellSession()?.ownsHostArea === true
-  if (isWideLayout && sidebarHere) {
-    return <WorkspaceDetailPlaceholder />
-  }
-  return <HostScreen />
+  return usePageOwnsHostArea() ? <WorkspaceDetailPlaceholder /> : <HostScreen />
 }

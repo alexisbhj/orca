@@ -29,17 +29,15 @@ import { CLEAR_PAGE_DOCUMENT_STATE, pageDocumentStatePatch } from './page-docume
 import { openByOwnRoutes, openCached, rendersRoute } from './mobile-web-shell-cached-generation'
 import { step } from './mobile-web-shell-session-step'
 
-export function createMobileWebShellSession(
-  routePathname: string,
-  wide = false
-): MobileWebShellSession {
+export function createMobileWebShellSession(routePathname: string): MobileWebShellSession {
   return {
     routePathname,
-    wide,
+    wide: false,
     pageRoutes: [],
     pageRouteGrants: [],
     routeGrants: [],
-    hostAreaDeclared: false,
+    routes: undefined,
+    ownsHostArea: false,
     state: CHECKING,
     retriedOnce: false,
     remountedOnce: false,
@@ -119,7 +117,10 @@ function onManifestRead(
   }
   // Before the compat verdict, because a route that stays native has nothing to wall about: a
   // bundle this shell could not open is not a reason to refuse a screen it was never going to open.
-  const view = routeViewOf(manifest.routes, session.routePathname, session.wide)
+  const view = {
+    ...routeViewOf(manifest.routes, session.routePathname, session.wide),
+    routes: manifest.routes
+  }
   // Same build id is the same bytes, because the id is their digest: a route-grant edit publishes
   // the generation already on disk under a newer manifest. Read before this route's verdict,
   // because that verdict is about this route while the manifest is the truth about the whole
@@ -269,6 +270,20 @@ function decideDownloadFailed(
   })
 }
 
+/** A layout-class change keeps the session when its view does not move, and restarts it otherwise. */
+function onLayoutChanged(session: MobileWebShellSession, wide: boolean): MobileWebShellStep {
+  const { pageRoutes, pageRouteGrants, routeGrants, ownsHostArea } = session
+  const held = JSON.stringify({ pageRoutes, pageRouteGrants, routeGrants, ownsHostArea })
+  if (JSON.stringify(routeViewOf(session.routes, session.routePathname, wide)) === held) {
+    return step(session, { wide })
+  }
+  // Still counting flows, so nothing the old session has in flight lands on this one.
+  const fresh = { ...createMobileWebShellSession(session.routePathname), wide, flow: session.flow }
+  return session.gates === null
+    ? step(fresh, { flow: fresh.flow + 1 })
+    : startFlow(fresh, session.gates)
+}
+
 /**
  * One transition of the hybrid shell session: a state and the effects the runner owes it.
  *
@@ -367,6 +382,8 @@ export function reduceMobileWebShellSession(
       // A document that finished and never said a word is a document that did not load, whatever
       // the WebView reported: `document-load-failed` is what drops the generation and fetches once.
       return session.pageReady ? step(session, {}) : onShellFailed(session, 'document-load-failed')
+    case 'layout-changed':
+      return onLayoutChanged(session, event.wide)
     case 'retry-pressed':
       // Clears both latches, so the delete-and-refetch and the remount are each available again.
       // Only here: a reconnect is not a reason to grant a second remount of the same session.

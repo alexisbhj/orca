@@ -221,6 +221,8 @@ export type MobileWebShellSessionEvent =
    *  for every way a document ends, so this never has to be inferred from silence. */
   | { readonly type: 'page-back-claim'; readonly claimed: boolean }
   | { readonly type: 'page-ready-deadline'; readonly flow: number }
+  /** The window crossed the wide-layout threshold. */
+  | { readonly type: 'layout-changed'; readonly wide: boolean }
 
 /** Latches live beside the state because both outlive the state they were set in: `retriedOnce`
  *  spans the delete-and-refetch that puts the state back to `checking`, and `remountedOnce` spans a
@@ -230,8 +232,10 @@ export type MobileWebShellSession = {
   readonly routePathname: string
   /** A wide layout: served only under `canOwnHostArea`; the host route gets every route's grants. */
   readonly wide: boolean
-  /** The bundle in hand declares `canOwnHostArea`, so a detail route's wide answer is its narrow one. */
-  readonly hostAreaDeclared: boolean
+  /** The route list the view below was built from, so a layout-class change can rebuild it. */
+  readonly routes: readonly MobileWebPageRoute[] | undefined
+  /** This session owns the wide host area: the page draws the sidebar. */
+  readonly ownsHostArea: boolean
   /** Every route pattern this shell would render from the page, as the bundle in hand declares
    *  them. The page is told, so it keeps a navigation into one of them instead of handing it back. */
   readonly pageRoutes: readonly string[]

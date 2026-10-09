@@ -220,43 +220,36 @@ export function routeViewOf(
 ) {
   const entries = implementedPageRouteEntries(routes)
   const root = hostAreaRoot(pathname)
-  const hostAreaDeclared = root !== null && pageCanOwnHostArea(routes, root)
   // Native unless the page declares it: an older page draws its own sidebar beside the native one.
-  if (wide && !hostAreaDeclared) {
-    return { pageRoutes: [], pageRouteGrants: [], routeGrants: [], hostAreaDeclared }
+  if (wide && (root === null || !pageCanOwnHostArea(entries, root))) {
+    return { pageRoutes: [], pageRouteGrants: [], routeGrants: [], ownsHostArea: false }
   }
+  const ownsHostArea = wide && pathname === root
   return {
-    hostAreaDeclared,
     pageRoutes: entries.map((route) => route.pathname),
     pageRouteGrants: entries.map((route) => ({
       pathname: route.pathname,
       grants: effectiveRouteGrants(route)
     })),
-    routeGrants:
-      wide && pathname === root ? hostAreaGrants(entries) : grantsForRoute(routes, pathname)
+    routeGrants: ownsHostArea ? hostAreaGrants(entries) : grantsForRoute(routes, pathname),
+    ownsHostArea
   }
 }
 
 /** The `/h/<host>` route a pathname sits under, or null outside a host. */
-export function hostAreaRoot(pathname: string): string | null {
+function hostAreaRoot(pathname: string): string | null {
   const [empty, h, host] = pathname.split('/')
   return empty === '' && h === 'h' && host !== undefined && host !== '' ? `/h/${host}` : null
 }
 
-/** Whether this shell serves the host route's exact entry and it declares `canOwnHostArea`. */
-export function pageCanOwnHostArea(
-  routes: readonly MobileWebPageRoute[] | undefined,
-  pathname: string
-): boolean {
-  return implementedPageRouteEntries(routes).some(
-    (route) =>
-      route.canOwnHostArea === true &&
-      !route.pathname.split('/').some(isRestSegment) &&
-      matchesRoutePattern(pathname, route.pathname)
+function pageCanOwnHostArea(entries: readonly MobileWebPageRoute[], root: string): boolean {
+  return entries.some(
+    (route) => route.canOwnHostArea === true && matchesRoutePattern(root, route.pathname)
   )
 }
 
-/** Every served route's grants, so `route-handoff.web.ts` keeps each hop in the page. */
+/** Every served route's grants, so `route-handoff.web.ts` keeps each hop in the page, plus the read
+ *  of a workspace key that page opens in-page. */
 function hostAreaGrants(entries: readonly MobileWebPageRoute[]): string[] {
-  return [...new Set(entries.flatMap(effectiveRouteGrants))]
+  return [...new Set([...entries.flatMap(effectiveRouteGrants), 'native.storage.read'])]
 }

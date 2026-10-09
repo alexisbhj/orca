@@ -23,7 +23,7 @@ import { useShellSwitchDecision } from '../../../src/mobile-web-shell/shell-swit
  * `?`, `#` or whitespace would build a pathname the page refuses, and a refusal here is a failure
  * screen rather than the native list this route already has.
  */
-function HostListScreen({ wide }: { wide: boolean }) {
+function HostListScreen() {
   // Through `firstParam`, as the other four switches do: expo-router answers a repeated key with
   // an array, and a bare read puts it straight into the template, where `String(['a','b'])` is
   // `a,b` and `encodeURIComponent` makes it the single segment `a%2Cb` — which the bridge's
@@ -38,7 +38,11 @@ function HostListScreen({ wide }: { wide: boolean }) {
   const route = shellScreenRoute({ pathname: `/h/${encodeURIComponent(hostId)}` })
   const decision = useShellSwitchDecision(hostId === '' ? null : route)
   // Wide: the native sidebar hosts the list, so this route's own screen is the empty detail pane.
-  const native = wide ? <WorkspaceDetailPlaceholder /> : <HostScreen />
+  const native = useResponsiveLayout().isWideLayout ? (
+    <WorkspaceDetailPlaceholder />
+  ) : (
+    <HostScreen />
+  )
 
   if (decision.kind === 'pending') {
     return <ShellSwitchPendingScreen />
@@ -59,7 +63,4 @@ function HostListScreen({ wide }: { wide: boolean }) {
 }
 
 // Wide: the session owns the whole host area when the page declares `canOwnHostArea`.
-export default function HostWorktreeRoute() {
-  const { isWideLayout } = useResponsiveLayout()
-  return <HostListScreen wide={isWideLayout} />
-}
+export default HostListScreen

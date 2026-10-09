@@ -6,7 +6,7 @@
  * Two renderers are stand-ins because their code is not on this branch: the shipped shell's layout
  * drew whenever it was wide, and so did a page built before `canOwnHostArea`.
  */
-import { Profiler, useContext } from 'react'
+import { useCallback, useContext } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -25,27 +25,49 @@ const env = vi.hoisted(
     pathname: string
     renderer: Renderer
     hostAreaServing: boolean
-    reports: (string | null)[]
+    reports: boolean[]
+    storageListed: number
   } => ({
     width: 390,
     height: 844,
     pathname: '/h/host-1',
     renderer: 'native',
     hostAreaServing: false,
-    reports: []
+    reports: [],
+    storageListed: 0
   })
 )
 
 vi.mock('react-native', () => ({
+  // The page renderers are web documents; the rest are the native app.
+  Platform: {
+    get OS() {
+      return env.renderer === 'page' || env.renderer === 'old-page' ? 'web' : 'ios'
+    }
+  },
   View: 'View',
   StyleSheet: { create: (styles: unknown) => styles },
   PanResponder: { create: () => ({ panHandlers: {} }) },
   useWindowDimensions: () => ({ width: env.width, height: env.height })
 }))
-vi.mock('expo-router', () => ({
-  useGlobalSearchParams: () => ({ hostId: 'host-1' }),
-  usePathname: () => env.pathname
+vi.mock('expo-router', async () => {
+  const React = await import('react')
+  return {
+    useGlobalSearchParams: () => ({ hostId: 'host-1' }),
+    usePathname: () => env.pathname,
+    useFocusEffect: (effect: () => undefined | (() => void)) => React.useEffect(effect, [effect])
+  }
+})
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getAllKeys: async () => {
+      env.storageListed += 1
+      return []
+    },
+    multiGet: async (keys: readonly string[]) => keys.map((key) => [key, null])
+  }
 }))
+vi.mock('../transport/host-store', () => ({ loadHosts: async () => [] }))
 vi.mock('../theme/mobile-theme', () => ({ colors: {}, spacing: { md: 16, lg: 24 } }))
 vi.mock('../storage/preferences', () => ({
   HOST_SIDEBAR_DEFAULT_WIDTH: 320,
@@ -58,21 +80,29 @@ vi.mock('../components/HostProtocolGate', () => ({
   HostProtocolGate: ({ children }: { children: unknown }) => children
 }))
 vi.mock('../host-screen/HostScreen', () => ({ HostScreen: HostSidebar }))
-// The host route's shell screen, reduced to the one thing it tells the layout.
+// The host route's shell screen, reduced to the one thing it tells the layout, which it reports
+// through the real hook.
 vi.mock('../navigation/host-stack', async () => {
-  const layoutClass = await import('./host-layout-class')
+  const serving = await import('./host-area-serving')
+  function HostAreaSession(): null {
+    serving.useReportedHostAreaServing(env.hostAreaServing)
+    return null
+  }
   return {
-    HostStack: function HostAreaSession(): null {
-      const { wide, reportHostArea } = useContext(layoutClass.HostLayoutClassContext)
-      layoutClass.useReportedHostArea(
-        (action) => {
-          env.reports.push(typeof action === 'function' ? 'cleared' : action)
-          reportHostArea(action)
+    HostStack: function HostStack() {
+      const report = useContext(serving.HostAreaServingContext)
+      const recorded = useCallback(
+        (served: boolean) => {
+          env.reports.push(served)
+          report(served)
         },
-        'host-1',
-        wide && env.hostAreaServing
+        [report]
       )
-      return null
+      return (
+        <serving.HostAreaServingContext.Provider value={recorded}>
+          <HostAreaSession />
+        </serving.HostAreaServingContext.Provider>
+      )
     }
   }
 })
@@ -84,20 +114,21 @@ vi.mock('../transport/host-client-hooks', () => ({
   usePrimeHosts: () => () => {},
   useRefreshHostClient: () => () => {}
 }))
-vi.mock('./host-sidebar-owner', async () => {
+// The page's override, as each document would resolve it; an old page drew whenever wide.
+vi.mock('./page-owns-host-area', async () => {
   const native =
-    await vi.importActual<typeof import('./host-sidebar-owner')>('./host-sidebar-owner')
-  const page = await vi.importActual<typeof import('./host-sidebar-owner.web')>(
-    './host-sidebar-owner.web'
+    await vi.importActual<typeof import('./page-owns-host-area')>('./page-owns-host-area')
+  const page = await vi.importActual<typeof import('./page-owns-host-area.web')>(
+    './page-owns-host-area.web'
   )
   return {
-    useHostSidebarDrawnHere: (facts: import('./host-sidebar-owner').HostSidebarFacts): boolean => {
+    usePageOwnsHostArea: (): boolean => {
       switch (env.renderer) {
         case 'native':
-          return native.useHostSidebarDrawnHere(facts)
-        case 'page':
-          return page.useHostSidebarDrawnHere(facts)
         case 'shipped-shell':
+          return native.usePageOwnsHostArea()
+        case 'page':
+          return page.usePageOwnsHostArea()
         case 'old-page':
           return true
       }
@@ -116,6 +147,7 @@ import {
   run
 } from './mobile-web-shell-session-test-fixtures'
 import type { MobileWebPageRoute } from './page-route-policy'
+import { usePageHostSnapshot } from './use-page-host-snapshot'
 
 const IPAD = { width: 1180, height: 820 }
 const PHONE = { width: 390, height: 844 }
@@ -140,22 +172,34 @@ function pageRoutes(page: Page): MobileWebPageRoute[] | null {
   ]
 }
 
-/** Whether the real reducer serves this route from this desktop's page, at this layout class. */
-function served(page: Page, pathname: string, wide: boolean): boolean {
+/** The real reducer's session for this route against this desktop's page, as the hook drives it:
+ *  opened, told its layout class, and carried to `activating` if it serves the page. */
+function sessionFor(page: Page, pathname: string, wide: boolean) {
   const routes = pageRoutes(page)
-  const opened = run(createMobileWebShellSession(pathname, wide), {
-    type: 'gates-changed',
-    gates: routes === null ? gates({ hostCapabilities: [] }) : gates()
-  }).session
+  const opened = run(
+    createMobileWebShellSession(pathname),
+    { type: 'layout-changed', wide },
+    { type: 'gates-changed', gates: routes === null ? gates({ hostCapabilities: [] }) : gates() }
+  ).session
   if (routes === null) {
-    return opened.state.kind !== 'native-route'
+    return opened
   }
-  const read = run(
+  return run(
     opened,
     { type: 'cache-read', generation: null },
-    { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) }
+    { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes }) },
+    { type: 'download-staged' }
   ).session
-  return read.state.kind === 'fetching'
+}
+
+function served(page: Page, pathname: string, wide: boolean): boolean {
+  return sessionFor(page, pathname, wide).state.kind === 'activating'
+}
+
+/** What `MobileWebShellScreen` reports to the layout for this session. */
+function hostAreaServing(page: Page, wide: boolean): boolean {
+  const session = sessionFor(page, HOST, wide)
+  return session.ownsHostArea && session.state.kind === 'activating'
 }
 
 async function sidebarsIn(
@@ -213,13 +257,15 @@ async function countSidebars(
     const pane = wide ? { ...window, width: window.width - SIDEBAR } : window
     return { native, pages: opens ? await sidebarsIn(pageCode, pane, { pathname: at }) : 0 }
   }
-  const hostAreaServing = wide && hostAreaBeneath && served(page, HOST, true)
-  const native = await sidebarsIn('native', window, { pathname: at, hostAreaServing })
+  const native = await sidebarsIn('native', window, {
+    pathname: at,
+    hostAreaServing: hostAreaBeneath && hostAreaServing(page, wide)
+  })
   let pages = 0
-  if (served(page, at, wide)) {
-    const hostArea = wide && at === HOST
+  const session = sessionFor(page, at, wide)
+  if (session.state.kind === 'activating') {
     const pane = wide && native > 0 ? { ...window, width: window.width - SIDEBAR } : window
-    pages = await sidebarsIn(pageCode, pane, { pathname: at, ownsHostArea: hostArea })
+    pages = await sidebarsIn(pageCode, pane, { pathname: at, ownsHostArea: session.ownsHostArea })
   }
   return { native, pages }
 }
@@ -279,26 +325,27 @@ describe('the page sidebar rule', () => {
 })
 
 describe('a phone', () => {
-  it('commits the layout no more often than it did, and reports nothing', async () => {
+  it('reports nothing to the layout and lists nothing in the store', async () => {
+    const session = sessionFor('declared', HOST, false)
+    expect(session.state.kind).toBe('activating')
+    env.reports.length = 0
+    env.storageListed = 0
+    function PhoneHostRoute() {
+      usePageHostSnapshot('host-1', HOST, session.ownsHostArea)
+      return <HostGroupLayout />
+    }
     env.renderer = 'native'
     env.width = PHONE.width
     env.height = PHONE.height
     env.pathname = HOST
-    env.hostAreaServing = true
-    env.reports.length = 0
-    let commits = 0
+    env.hostAreaServing = session.ownsHostArea
     const mounted: { tree: ReactTestRenderer | null } = { tree: null }
     await act(async () => {
-      mounted.tree = create(
-        <Profiler id="layout" onRender={() => (commits += 1)}>
-          <HostGroupLayout />
-        </Profiler>
-      )
+      mounted.tree = create(<PhoneHostRoute />)
     })
     await act(async () => {})
-    // Measured on the base layout too: the mount, the stored width and its re-clamp.
-    expect(commits).toBe(3)
     expect(env.reports).toEqual([])
+    expect(env.storageListed).toBe(0)
     act(() => mounted.tree?.unmount())
   })
 })
