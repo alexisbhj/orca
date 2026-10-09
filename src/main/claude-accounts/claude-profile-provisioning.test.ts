@@ -194,7 +194,12 @@ describe('Claude profile refresh from the default home', () => {
       passesEligibilityCache: {},
       passesLastSeen: 1,
       claudeCodeFirstTokenDate: 'source-date',
-      startupPrefetchedAt: 1
+      startupPrefetchedAt: 1,
+      additionalModelOptionsAnsweredAt: 1,
+      artifactRosterDenied: true,
+      lastSeenOrgDefaultUpdatedAt: 1,
+      hasAvailableSubscription: true,
+      subscriptionNoticeCount: 2
     })
     // A folder with no state file yet gets one without a login, so Claude asks for its own.
     expect((await provision(f)).surfaces['.claude.json']).toBe('synced')

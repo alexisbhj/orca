@@ -111,27 +111,52 @@ function isSharedEntry(name: string): boolean {
   )
 }
 
-/** Install ids Claude writes before any sign-in; each folder keeps its own. */
-const INSTALL_STATE_KEYS: ReadonlySet<string> = new Set([
+/**
+ * Mirrors what Claude itself resets in .claude.json when it signs out (its logout, 2.1.295), plus
+ * the subscription notices it resets with them. Onboarding, which logout also resets, is copied.
+ */
+const CLAUDE_LOGOUT_STATE_KEYS = [
+  'oauthAccount',
+  'additionalModelOptionsCache',
+  'additionalModelOptionsAnsweredAt',
+  'additionalModelCostsCache',
+  'modelAccessCache',
+  'orgModelDefaultCache',
+  'cachedArtifactRoster',
+  'artifactRosterDenied',
+  'lastSeenOrgDefaultUpdatedAt',
+  'clientDataCache',
+  'clientDataCacheSlots',
+  'autoCompactWindowsCache',
+  'cachedUsageUtilization',
+  'metricsStatusCache',
+  'metricsStatusCacheByPrincipal',
+  'githubWebConnectionStatusCache',
+  'startupPrefetchedAt',
+  'subscriptionNoticeCount',
+  'hasAvailableSubscription'
+] as const
+
+/** Never copied: logout's keys, the install ids Claude writes before any sign-in, and logins. */
+const ACCOUNT_BOUND_STATE_KEYS: ReadonlySet<string> = new Set<string>([
+  ...CLAUDE_LOGOUT_STATE_KEYS,
   'userID',
   'machineID',
   'firstStartTime',
-  'firstStartVersion'
+  'firstStartVersion',
+  // Why: a Console API key login; copied, it would outrank the account's own login.
+  'primaryApiKey',
+  // Why: Claude never refetches it.
+  'claudeCodeFirstTokenDate'
 ])
 
-/** State that belongs to the folder's login or install, never copied from the default home. */
 function isAccountBoundState(key: string): boolean {
+  // Why the patterns too: account caches logout leaves behind (groveConfigCache, passes*).
   return (
-    key === 'oauthAccount' ||
-    // Why: a Console API key login; copied, it would outrank the account's own login.
-    key === 'primaryApiKey' ||
+    ACCOUNT_BOUND_STATE_KEYS.has(key) ||
     key.includes('Cache') ||
     key.startsWith('cached') ||
-    key.startsWith('passes') ||
-    // Why: Claude never refetches it; a copied value can also skip startup fetches.
-    key === 'claudeCodeFirstTokenDate' ||
-    key === 'startupPrefetchedAt' ||
-    INSTALL_STATE_KEYS.has(key)
+    key.startsWith('passes')
   )
 }
 
