@@ -73,7 +73,11 @@ vi.mock('./terminal-input-activity', () => ({
   recordTerminalUserInputForLeaf: mocks.recordTerminalUserInputForLeaf
 }))
 
-import { encodeWorkspaceFilePaths, WORKSPACE_FILE_PATHS_MIME } from '@/lib/workspace-file-drag'
+import {
+  encodeWorkspaceFilePaths,
+  WORKSPACE_FILE_DRAG_SOURCE_MIME,
+  WORKSPACE_FILE_PATHS_MIME
+} from '@/lib/workspace-file-drag'
 import { handleInternalTerminalFileDrop } from './terminal-drop-handler'
 
 function createTerminalTransport(
@@ -131,7 +135,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(paths) : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(paths)
+              : ''
       }
     })
 
@@ -171,9 +183,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME
-            ? encodeWorkspaceFilePaths(['/repo/a.ts', '/repo/b.ts'])
-            : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['/repo/a.ts', '/repo/b.ts'])
+              : ''
       }
     })
 
@@ -208,7 +226,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(['/repo/a.ts']) : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['/repo/a.ts'])
+              : ''
       }
     })
 
@@ -242,7 +268,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(['/repo/a.ts']) : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['/repo/a.ts'])
+              : ''
       }
     })
 
@@ -289,7 +323,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(['C:\\repo\\a&b.txt']) : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['C:\\repo\\a&b.txt'])
+              : ''
       }
     })
 
@@ -335,9 +377,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME
-            ? encodeWorkspaceFilePaths(['C:\\Remote Repo\\A&B.txt'])
-            : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['C:\\Remote Repo\\A&B.txt'])
+              : ''
       }
     })
 
@@ -385,9 +433,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME
-            ? encodeWorkspaceFilePaths(["/remote/repo/it's here.txt"])
-            : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(["/remote/repo/it's here.txt"])
+              : ''
       }
     })
 
@@ -431,9 +485,15 @@ describe('handleInternalTerminalFileDrop', () => {
       cwd: undefined,
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME
-            ? encodeWorkspaceFilePaths(['/repo/drop-target.ts'])
-            : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(['/repo/drop-target.ts'])
+              : ''
       },
       dropTarget
     })
@@ -467,7 +527,15 @@ describe('handleInternalTerminalFileDrop', () => {
       paneLeafId: 'leaf-1',
       dataTransfer: {
         getData: (type) =>
-          type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(paths) : ''
+          type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+            ? JSON.stringify({
+                version: 1,
+                workspaceId: 'wt-1',
+                executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+              })
+            : type === WORKSPACE_FILE_PATHS_MIME
+              ? encodeWorkspaceFilePaths(paths)
+              : ''
       }
     })
 
@@ -502,7 +570,15 @@ it('refuses an unresolvable workspace instead of using the dropped path as its r
     paneLeafId: 'leaf-1',
     dataTransfer: {
       getData: (type) =>
-        type === WORKSPACE_FILE_PATHS_MIME ? encodeWorkspaceFilePaths(['/other/file.txt']) : ''
+        type === WORKSPACE_FILE_DRAG_SOURCE_MIME
+          ? JSON.stringify({
+              version: 1,
+              workspaceId: 'wt-1',
+              executionHostId: mocks.storeState.repos[0]?.executionHostId ?? 'local'
+            })
+          : type === WORKSPACE_FILE_PATHS_MIME
+            ? encodeWorkspaceFilePaths(['/other/file.txt'])
+            : ''
     }
   })
   expect(result).toEqual({ status: 'ignored', reason: 'worktree-unavailable' })

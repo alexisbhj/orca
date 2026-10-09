@@ -7,9 +7,9 @@ import {
   encodeWorkspaceFilePaths,
   WORKSPACE_FILE_PATH_MIME,
   WORKSPACE_FILE_PATHS_MIME,
-  writeWorkspaceFileDragSourceIfResolved
+  writeWorkspaceFileDragSourceIfResolved,
+  type WorkspaceFileDragSource
 } from '@/lib/workspace-file-drag'
-import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { GitFileStatus } from '../../../../shared/git-status-types'
 import { STATUS_LABELS } from './status-display'
 import { RENAME_HOTSPOT_ATTR } from './file-explorer-dir-toggle-timing'
@@ -38,7 +38,9 @@ export type FileExplorerRowProps = {
   connectionId?: string | null
   sourceWorkspaceId?: string | null
   /** Resolved at dragstart so the virtualized list pays nothing per render. */
-  resolveDragSourceHostId?: (paths: readonly string[]) => ExecutionHostId | null
+  resolveDragSourceOwner?: (
+    paths: readonly string[]
+  ) => Omit<WorkspaceFileDragSource, 'workspaceId'> | null
   runtimeDownloadContext?: RuntimeFileOperationArgs | null
   supportsFolderDownload?: boolean
   canOpenInOrcaBrowser: boolean
@@ -83,7 +85,7 @@ export function FileExplorerRow({
   deleteShortcutLabel,
   connectionId,
   sourceWorkspaceId,
-  resolveDragSourceHostId,
+  resolveDragSourceOwner,
   runtimeDownloadContext,
   supportsFolderDownload = false,
   canOpenInOrcaBrowser,
@@ -164,10 +166,12 @@ export function FileExplorerRow({
             if (paths.length > 1) {
               event.dataTransfer.setData(WORKSPACE_FILE_PATHS_MIME, encodeWorkspaceFilePaths(paths))
             }
+            const sourceOwner = resolveDragSourceOwner?.(paths)
             writeWorkspaceFileDragSourceIfResolved(
               event.dataTransfer,
               sourceWorkspaceId,
-              resolveDragSourceHostId?.(paths)
+              sourceOwner?.executionHostId,
+              sourceOwner?.runtimeEnvironmentId
             )
             event.dataTransfer.effectAllowed = 'copyMove'
             onDragSourceChange(node.path)

@@ -110,6 +110,18 @@ export const PR_E2E_SOURCE_ROUTES = [
       )
   },
   {
+    id: 'ssh.orcad-terminal-drop-owner',
+    specs: ['tests/e2e/ssh-orcad-terminal-drop-owner.spec.ts'],
+    matches: (file) =>
+      /^tests\/e2e\/helpers\/(?:orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-relay-target)\.ts$/.test(
+        file
+      ) ||
+      (isProductSource(file) &&
+        /^src\/renderer\/src\/(?:lib\/(?:workspace-file-drag(?:-source)?|worktree-runtime-owner)\.ts|components\/(?:right-sidebar\/FileExplorer(?:Row|VirtualRows)\.tsx|terminal-pane\/(?:terminal-drop-(?:handler|internal-rejection-message|target|worktree-path)|TerminalPaneSurface)\.tsx?))$/.test(
+          file
+        ))
+  },
+  {
     id: 'ssh.orcad-open-in-owner',
     specs: ['tests/e2e/ssh-orcad-open-in-owner.spec.ts'],
     matches: (file) =>
