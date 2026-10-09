@@ -1,4 +1,7 @@
-import { getClaudeProfileRouter } from '../../../claude-accounts/claude-profile-installed-router'
+import {
+  getClaudeProfileRouter,
+  getClaudeWslProfileRouter
+} from '../../../claude-accounts/claude-profile-installed-router'
 import { getPtyIpc } from '../../pty-host-bindings'
 import {
   CLAUDE_ACCOUNT_FUNCTION_DAEMON_PROTOCOL_VERSION,
@@ -20,18 +23,38 @@ type Deps = { getLocalPtyProviderStartupPromise: () => Promise<void> | undefined
 export function installPtyClaudeOldTerminalIpcHandler(deps: Deps): void {
   getPtyIpc().handle(
     'pty:openedBeforeClaudeAccounts',
-    async (_event, args: { id: string }): Promise<boolean> => {
-      if (typeof args?.id !== 'string') {
+    async (_event, args: { id: unknown; target?: unknown }): Promise<boolean> => {
+      const target = paneTarget(args?.target)
+      if (typeof args?.id !== 'string' || !target) {
         return false
       }
       // Why: the pre-swap provider does not own restored daemon ids.
       await deps.getLocalPtyProviderStartupPromise()
-      // Why also the account: when System default is signed in to the selected one, this
-      // terminal's claude already runs it.
-      return (
-        isTerminalOnLegacyDaemon(args.id, lacksClaudeFunction) &&
-        (getClaudeProfileRouter()?.systemDefaultRunsAnotherAccount() ?? true)
-      )
+      if (!isTerminalOnLegacyDaemon(args.id, lacksClaudeFunction)) {
+        return false
+      }
+      // Why the pane's own runtime: claude there runs that runtime's System default.
+      const runsAnother =
+        target.runtime === 'wsl'
+          ? await getClaudeWslProfileRouter()
+              ?.systemDefaultRunsAnotherAccount(target.wslDistro)
+              .catch(() => null)
+          : getClaudeProfileRouter()?.systemDefaultRunsAnotherAccount()
+      return runsAnother === true
     }
   )
+}
+
+function paneTarget(
+  value: unknown
+): { runtime: 'host' } | { runtime: 'wsl'; wslDistro: string } | null {
+  if (typeof value !== 'object' || value === null || !('runtime' in value)) {
+    return null
+  }
+  if (value.runtime === 'host') {
+    return { runtime: 'host' }
+  }
+  return value.runtime === 'wsl' && 'wslDistro' in value && typeof value.wslDistro === 'string'
+    ? { runtime: 'wsl', wslDistro: value.wslDistro }
+    : null
 }

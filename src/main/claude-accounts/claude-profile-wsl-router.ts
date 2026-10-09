@@ -147,6 +147,19 @@ export class ClaudeWslProfileRouter {
     return this.preparationFor(distro, home, profile)
   }
 
+  /** The host router's old-terminal check for a pane in this distro; null with no account selected. */
+  async systemDefaultRunsAnotherAccount(distro: string): Promise<boolean | null> {
+    const { home, selected } = await this.resolve(distro)
+    if (!selected) {
+      return null
+    }
+    const login =
+      (await guestLogin(distro, posix.join(selected.home, '.claude.json'))) ??
+      findClaudeAccount(this.args.getSettings(), selected.accountId)
+    const systemDefault = await guestLogin(distro, posix.join(home, '.claude.json'))
+    return !login || !systemDefault || !isSameClaudeLogin(login, systemDefault)
+  }
+
   /** Where an unselected account's usage is read in the guest: where its launches would run. */
   async accountUsagePreparation(
     distro: string,
