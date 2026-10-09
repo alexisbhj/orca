@@ -7,7 +7,6 @@ export type HangWatchdogWorkerData = {
   markerPath: string
   timeoutMs: number
   checkIntervalMs: number
-  activeSpanBuffer?: SharedArrayBuffer
 }
 
 export type MainToHangWatchdogWorkerMessage = { type: 'heartbeat' } | { type: 'shutdown' }

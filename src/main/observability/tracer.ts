@@ -22,7 +22,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomBytes } from 'node:crypto'
 import { redactSpan, type RedactableSpan, type SpanEvent, type SpanExit } from './redactor'
-import { notifySpanEnded, notifySpanStarted } from './span-lifecycle'
 
 export type TracerSink = {
   push(record: unknown): void
@@ -205,14 +204,12 @@ export function startSpan(
     exit: null,
     ended: false
   }
-  notifySpanStarted(spanId, name, Number(startTimeUnixNano / 1_000_000n))
 
   const finalize = (exit: SpanExit): void => {
     if (pending.ended) {
       return
     }
     pending.ended = true
-    notifySpanEnded(spanId)
     pending.exit = exit
     const endTimeUnixNano = nowUnixNano()
     const durationMs = Number(endTimeUnixNano - pending.startTimeUnixNano) / 1_000_000

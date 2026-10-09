@@ -33,17 +33,7 @@ export function reportPreviousHangDetection(userDataPath: string): HangDetection
     recordDurableCrashBreadcrumb('main_thread_hang_detected', {
       unresponsiveMs: marker.unresponsiveMs,
       previousPid: marker.parentPid,
-      selfRecovered: marker.selfRecovered,
-      ...(marker.inFlightSpans
-        ? {
-            inFlightSpans: marker.inFlightSpans
-              .map((span) => `${span.name}:${span.elapsedMs}ms`)
-              .join(', ')
-          }
-        : {}),
-      ...(marker.droppedSpanCount !== undefined
-        ? { droppedSpanCount: marker.droppedSpanCount }
-        : {})
+      selfRecovered: marker.selfRecovered
     })
   }
   return marker

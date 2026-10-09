@@ -17,7 +17,6 @@ import {
   recordHangObservation,
   runWatchdog
 } from './main-thread-hang-watchdog-entry'
-import { createHangWatchdogSpanTracker } from './hang-watchdog-active-spans'
 
 describe('recordHangObservation', () => {
   let dir: string
@@ -141,8 +140,6 @@ describe('watchdog worker entry', () => {
 
   it('routes heartbeats and shuts down its timer and port', () => {
     const markerPath = join(tmpdir(), `hang-watchdog-entry-${process.pid}.json`)
-    const tracker = createHangWatchdogSpanTracker()
-    tracker.observer.started('operation', 'git.exec', 0)
     let onMessage: ((message: { type: 'heartbeat' | 'shutdown' }) => void) | undefined
     const port = {
       on: vi.fn(
@@ -157,7 +154,6 @@ describe('watchdog worker entry', () => {
         {
           parentPid: process.pid,
           markerPath,
-          activeSpanBuffer: tracker.buffer,
           timeoutMs: 100,
           checkIntervalMs: 25
         },
@@ -168,19 +164,10 @@ describe('watchdog worker entry', () => {
       vi.advanceTimersByTime(75)
       expect(consumeHangDetectionMarker(markerPath)).toBeNull()
       vi.advanceTimersByTime(50)
-      const detected = consumeHangDetectionMarker(markerPath)
-      expect(detected).toMatchObject({
-        selfRecovered: false,
-        inFlightSpans: [{ name: 'git.exec', elapsedMs: 200 }]
-      })
+      expect(consumeHangDetectionMarker(markerPath)).toMatchObject({ selfRecovered: false })
 
-      tracker.observer.ended('operation')
       onMessage?.({ type: 'heartbeat' })
-      expect(consumeHangDetectionMarker(markerPath)).toMatchObject({
-        selfRecovered: true,
-        detectedAt: detected?.detectedAt,
-        inFlightSpans: detected?.inFlightSpans
-      })
+      expect(consumeHangDetectionMarker(markerPath)).toMatchObject({ selfRecovered: true })
       onMessage?.({ type: 'shutdown' })
       expect(port.close).toHaveBeenCalledOnce()
       vi.advanceTimersByTime(1_000)
