@@ -87,7 +87,11 @@ export function useNativeChatInterruptedContinuation(input: {
   // Unknown counts as able: a host that writes cause rows has Continue, and the words stay put.
   const continueAvailable = capability !== 'unsupported'
   // One object per change, so the chat's rows re-render only when what they show changes.
-  const view = useMemo(() => ({ hostLabel, continueAvailable }), [hostLabel, continueAvailable])
+  const remoteHost = target.kind === 'environment'
+  const view = useMemo(
+    () => ({ hostLabel, remoteHost, continueAvailable }),
+    [hostLabel, remoteHost, continueAvailable]
+  )
   const failedHere =
     failedOn !== null && cut?.turnItemId === failedOn
       ? translate(

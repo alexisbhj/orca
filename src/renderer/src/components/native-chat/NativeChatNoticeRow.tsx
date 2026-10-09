@@ -101,10 +101,10 @@ export function NativeChatNoticeRow({
   // The host's row about an Orca stop names the cause and the machine, muted: Orca stopped, not the
   // agent. With no machine to name it keeps the host's own words.
   const { orcaStop } = block
-  const { hostLabel, continueAvailable } = orcaStopView
+  const { hostLabel, remoteHost, continueAvailable } = orcaStopView
   const named = orcaStop !== undefined && hostLabel !== null
   const text = named
-    ? nativeChatOrcaStopRowText(orcaStop.cause, hostLabel, { continueAvailable })
+    ? nativeChatOrcaStopRowText(orcaStop.cause, hostLabel, { continueAvailable, remoteHost })
     : block.text
   const tone =
     named || block.presentation === AGENT_SESSION_ORCA_STOP_PRESENTATION ? 'notice' : block.tone

@@ -26,17 +26,34 @@ const STOPPED: Record<AgentSessionOrcaStopCause, (machine: string) => string> = 
     )
 }
 
+// A remote host's graceful stop is no one closing Orca, and it is back by the time this shows.
+const remoteQuit = (machine: string): string =>
+  translate(
+    'components.native-chat.notices.orcaStopRemoteRestart',
+    'Orca on {{machine}} restarted while this response was in progress.',
+    { machine }
+  )
+
+function stoppedSentence(
+  cause: AgentSessionOrcaStopCause,
+  machine: string,
+  remoteHost: boolean
+): string {
+  return cause === 'quit' && remoteHost ? remoteQuit(machine) : STOPPED[cause](machine)
+}
+
 /** The row's sentence. Where the host can continue a cut, Continue is the way on, so the row does
  *  not say it again; decided by the host, not the button, so the words never change on screen. */
 export function nativeChatOrcaStopRowText(
   cause: AgentSessionOrcaStopCause,
   machine: string,
-  options: { continueAvailable: boolean }
+  options: { continueAvailable: boolean; remoteHost: boolean }
 ): string {
+  const stopped = stoppedSentence(cause, machine, options.remoteHost)
   return options.continueAvailable
-    ? STOPPED[cause](machine)
+    ? stopped
     : joinSentences([
-        STOPPED[cause](machine),
+        stopped,
         translate(
           'components.native-chat.notices.orcaStopCanContinue',
           'You can continue in this conversation.'

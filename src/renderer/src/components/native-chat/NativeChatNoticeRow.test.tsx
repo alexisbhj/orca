@@ -14,15 +14,17 @@ afterEach(cleanup)
 
 function orcaStopView(
   hostLabel: string | null,
-  continueAvailable: boolean
+  continueAvailable: boolean,
+  remoteHost: boolean
 ): NativeChatOrcaStopView {
-  return { hostLabel, continueAvailable }
+  return { hostLabel, remoteHost, continueAvailable }
 }
 
 function renderStatus(
   body: AgentJournalStatusItem,
   hostLabel: string | null = null,
-  continueAvailable = false
+  continueAvailable = false,
+  remoteHost = false
 ) {
   const [message] = projectStructuredItemsToNativeChat([
     {
@@ -34,7 +36,7 @@ function renderStatus(
       turnScope: { kind: 'turn', turnItemId: 'cut-turn' }
     }
   ])
-  const view = orcaStopView(hostLabel, continueAvailable)
+  const view = orcaStopView(hostLabel, continueAvailable, remoteHost)
   return render(
     <NativeChatOrcaStopContext.Provider value={view}>
       <MessageRow message={message!} expandSignal={false} onScrollMessageToTop={vi.fn()} />
@@ -74,6 +76,30 @@ describe('the row an Orca stop leaves', () => {
         'Orca on studio-mac restarted for an update while this response was in progress.'
       )
     ).toBeInTheDocument()
+  })
+
+  it("says a remote host's Orca restarted, not that it was closed", () => {
+    renderStatus(orcaStopRow('quit'), 'QA SSH', true, true)
+    expect(
+      screen.getByText('Orca on QA SSH restarted while this response was in progress.')
+        .parentElement?.parentElement
+    ).toHaveClass('text-muted-foreground')
+    expect(screen.queryByText(/was closed/)).toBeNull()
+  })
+
+  it("keeps this desktop's quit as closed", () => {
+    renderStatus(orcaStopRow('quit'), 'studio-mac', true, false)
+    expect(
+      screen.getByText('Orca on studio-mac was closed while this response was in progress.')
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    ['update', 'Orca on QA SSH restarted for an update while this response was in progress.'],
+    ['crash', 'Orca on QA SSH stopped unexpectedly while this response was in progress.']
+  ])("keeps a remote host's %s words", (cause, sentence) => {
+    renderStatus(orcaStopRow(cause), 'QA SSH', true, true)
+    expect(screen.getByText(sentence)).toBeInTheDocument()
   })
 
   // A client that re-words unnamed host rows keeps this row's presentation and cause, neutral.
