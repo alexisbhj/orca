@@ -6,6 +6,7 @@ import {
   resolveClaudeGlobalConfigFile,
   updateClaudeGlobalConfig
 } from '../claude/claude-folder-trust-file'
+import { getManagedScriptFileName, removeManagedHooks } from '../claude/hook-settings'
 import { publishFileWithoutOverwrite } from '../codex-accounts/fs-utils'
 import { CLAUDE_PROFILE_HISTORY_DIRS } from './claude-profile-history'
 import { readClaudeProfileObject, resolveClaudeDefaultHome } from './claude-profile-paths'
@@ -160,6 +161,12 @@ function isAccountBoundState(key: string): boolean {
   )
 }
 
+// Why without Orca's hooks: the profile's own hook install owns those, so differing there alone
+// would recopy, and the install rewrite, the file on every launch.
+function settingsWithoutOrcaHooks(value: Record<string, unknown>): string {
+  return JSON.stringify(removeManagedHooks(value, getManagedScriptFileName()).config)
+}
+
 /** The whole file: the default home is the master copy, proxy address and key included. */
 function copySettings(source: string, target: string): ClaudeProfileSurfaceOutcome {
   const input = readClaudeProfileObject(source)
@@ -169,7 +176,7 @@ function copySettings(source: string, target: string): ClaudeProfileSurfaceOutco
     input.kind === 'present' &&
     current.kind === 'present' &&
     !lstatIfPresent(target)?.isSymbolicLink() &&
-    JSON.stringify(input.value) === JSON.stringify(current.value)
+    settingsWithoutOrcaHooks(input.value) === settingsWithoutOrcaHooks(current.value)
   ) {
     return 'unchanged'
   }
