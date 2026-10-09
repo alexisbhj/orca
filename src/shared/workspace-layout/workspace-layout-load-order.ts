@@ -56,7 +56,7 @@ export function resolveGroupOrder(args: {
     groups.push({ id: stored.id, worktreeId: stored.worktreeId, tabOrder })
   }
   const unplaced = args.candidates.filter((candidate) => !placed.has(candidate.id))
-  for (const candidate of unplaced.toSorted(compareUnplaced)) {
+  for (const candidate of [...unplaced].sort(compareUnplaced)) {
     let group = groups.find((entry) => entry.id === candidate.groupId) ?? groups[0]
     if (!group) {
       group = { id: args.mintId(), worktreeId: args.worktreeId, tabOrder: [] }
