@@ -153,6 +153,7 @@ test('managed Files drag into a desktop terminal cannot name an unrelated deskto
     await page.keyboard.insertText('cat ')
     console.log('[native-actual-terminal-drag]', await dropExplorerFile(page, fileName, floatingId))
     await expect.poll(() => terminalText(page, floatingId)).toContain(filePath)
+    await focusTerminalTab(page, floatingId)
     await page.keyboard.press('Enter')
     await expect.poll(() => terminalText(page, floatingId)).toContain('DESKTOP_BROWSER_DROP_OWNER')
     console.log('[native-positive-actual-terminal]', await terminalText(page, floatingId))
@@ -228,11 +229,17 @@ test('managed Files drag into a desktop terminal cannot name an unrelated deskto
       seeded.worktreeId
     )
     await page.evaluate(() => window.dispatchEvent(new Event('orca-toggle-floating-terminal')))
+    await expect(page.locator('[data-floating-terminal-panel]')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
     await page
       .locator('[data-file-explorer-row]')
       .filter({ hasText: 'DROP_SOURCE_DIRECTORY' })
       .click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Open in Terminal', exact: true }).click()
+    const openInTerminal = page.getByRole('menuitem', { name: 'Open in Terminal', exact: true })
+    await expect(openInTerminal).toBeVisible()
+    await openInTerminal.press('Enter')
     const readNewManagedTab = () =>
       page.evaluate(
         ({ worktreeId, prior }) => {
@@ -264,6 +271,7 @@ test('managed Files drag into a desktop terminal cannot name an unrelated deskto
     await page.keyboard.insertText('cat ')
     console.log('[managed-positive-drag]', await dropExplorerFile(page, fileName, managedTab))
     await expect.poll(() => terminalText(page, managedTab)).toContain(filePath)
+    await focusTerminalTab(page, managedTab)
     await page.keyboard.press('Enter')
     await expect.poll(() => terminalText(page, managedTab)).toContain('REMOTE_BROWSER_DROP_OWNER')
     console.log('[managed-positive-shell]', await terminalText(page, managedTab))
