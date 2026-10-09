@@ -19,7 +19,7 @@ export type LayoutLoadChange = {
 type DiskRecord = Record<string, unknown>
 export type DiskRecords = Record<DiskTable, Map<string, DiskRecord>>
 
-function sortedKeys(map: object | undefined): string[] | undefined {
+function sortedKeys(map: Record<string, unknown> | undefined): string[] | undefined {
   return map && Object.keys(map).sort()
 }
 
