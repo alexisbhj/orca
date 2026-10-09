@@ -34,6 +34,7 @@ async function mountRemoteRelay(options?: { promptStatus?: false; raise?: false 
   const relayDirectory = join(fixture.directory, 'relay')
   const relay = new RuntimeMobileNotificationController()
   relay.configureDismissalStore(relayDirectory)
+  fixture.notificationControllers.push(relay)
   const delivery = createNotificationDeliveryService({
     readNotificationSettings: () => NOTIFICATION_SETTINGS,
     findActiveWindow: () => null,
