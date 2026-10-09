@@ -48,8 +48,12 @@ vi.mock('@/lib/agent-launch-follow-up-waiter', () => ({
   waitForRecordedLaunchFollowUp: followUps.wait
 }))
 
-const { launchNewTabPromptThroughHost, newTabPromptLaunchesThroughHost } =
-  await import('./launch-agent-new-tab-host-route')
+const {
+  launchFreshTerminalTabThroughHost,
+  launchNewTabPromptThroughHost,
+  newTabPromptLaunchesThroughHost
+} = await import('./launch-agent-new-tab-host-route')
+const { buildAgentStartupPlan } = await import('./tui-agent-startup')
 
 const TAB = '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d'
 
@@ -361,5 +365,57 @@ describe('which new agent tabs start through the host', () => {
     expect(
       newTabPromptLaunchesThroughHost({ promptDelivery: 'submit-after-ready', pastesPrompt: true })
     ).toBe(false)
+  })
+})
+
+describe('a fresh desktop new-tab launch through the host', () => {
+  function freshLaunch(prompt: string) {
+    const plan = buildAgentStartupPlan({
+      agent: 'claude',
+      prompt: '',
+      cmdOverrides: {},
+      platform: 'linux',
+      allowEmptyPromptLaunch: true
+    })
+    if (!plan) {
+      throw new Error('expected a startup plan')
+    }
+    return launchFreshTerminalTabThroughHost(
+      { requestId: 'request-1', agent: 'claude', worktreeId: 'wt-1', prompt },
+      plan,
+      false
+    )
+  }
+
+  it('catches a failed delivery it does not hand back, even with no prompt', async () => {
+    const failure = new Error('host answer failed')
+    host.launchAgentThroughHost.mockReturnValue({
+      tabId: TAB,
+      operationId: 'op-1',
+      outcome: Promise.reject(failure)
+    })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(freshLaunch('')).not.toHaveProperty('promptDeliveryResult')
+      await vi.waitFor(() =>
+        expect(logged).toHaveBeenCalledWith('Prompt delivery failed after launch', failure)
+      )
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  it('offers no prompt to copy when the launch it could not start had none', async () => {
+    deferredOutcome()({ kind: 'not-started', unconfirmed: false, code: 'worktree_not_found' })
+    freshLaunch('')
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledOnce())
+    expect(toast.error.mock.calls[0]?.[1]).toBeUndefined()
+  })
+
+  it('still offers the prompt to copy when there was one', async () => {
+    deferredOutcome()({ kind: 'not-started', unconfirmed: false, code: 'worktree_not_found' })
+    freshLaunch('fix the failing checks')
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledOnce())
+    expect(toast.error.mock.calls[0]?.[1]).toMatchObject({ action: { label: 'Copy prompt' } })
   })
 })

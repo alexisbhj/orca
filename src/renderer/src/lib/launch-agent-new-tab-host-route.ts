@@ -69,7 +69,7 @@ function sshTargetAwaitsConnect(worktreeId: string, runtimeEnvironmentId: string
 export function launchFreshTerminalTabThroughHost(
   args: LaunchAgentInNewTabArgs,
   startupPlan: AgentStartupPlan,
-  pasteDraftAfterLaunch: string | null
+  pastesDraftAfterLaunch: boolean
 ): NonNullable<LaunchAgentInNewTabResult> {
   const prompt = args.prompt?.trim() ?? ''
   const promptDelivery = args.promptDelivery ?? 'auto-submit'
@@ -84,7 +84,7 @@ export function launchFreshTerminalTabThroughHost(
       delivery: desktopNewTabPromptDelivery(args.agent, promptDelivery),
       transport: { kind: 'desktop-new-tab', promptDelivery }
     },
-    seedSubmittedChatCopy: pasteDraftAfterLaunch !== null,
+    seedSubmittedChatCopy: pastesDraftAfterLaunch,
     ...(args.agentArgs !== undefined ? { agentArgs: args.agentArgs } : {}),
     ...(args.initialCwd?.trim() ? { cwd: args.initialCwd } : {}),
     launchSource: args.launchSource ?? 'tab_bar_quick_launch',
@@ -96,7 +96,9 @@ export function launchFreshTerminalTabThroughHost(
       ? { onPromptDeliveryUnconfirmed: args.onPromptDeliveryUnconfirmed }
       : {})
   })
-  if (prompt && promptDelivery !== 'submit-after-ready') {
+  // Main's rule: the caller awaits a submit-after-ready delivery; every other one is caught here.
+  const callerAwaitsDelivery = Boolean(prompt) && promptDelivery === 'submit-after-ready'
+  if (!callerAwaitsDelivery) {
     void launched.promptDeliveryResult.catch((error) =>
       console.error('Prompt delivery failed after launch', error)
     )
@@ -104,14 +106,12 @@ export function launchFreshTerminalTabThroughHost(
   return {
     surface: { kind: 'local-terminal', tabId: launched.tabId },
     startupPlan,
-    pasteDraftAfterLaunch: pasteDraftAfterLaunch !== null,
-    ...(prompt && promptDelivery === 'submit-after-ready'
-      ? { promptDeliveryResult: launched.promptDeliveryResult }
-      : {})
+    pasteDraftAfterLaunch: pastesDraftAfterLaunch,
+    ...(callerAwaitsDelivery ? { promptDeliveryResult: launched.promptDeliveryResult } : {})
   }
 }
 
-/** The tab is gone, so the pane's own words go in a notice, with its prompt to copy. */
+/** The tab is gone, so the pane's own words go in a notice, with its prompt to copy if it had one. */
 function showLaunchNotStartedNotice(outcome: HostAgentLaunchOutcome, prompt: string): void {
   if (outcome.kind !== 'not-started') {
     return
@@ -122,15 +122,17 @@ function showLaunchNotStartedNotice(outcome: HostAgentLaunchOutcome, prompt: str
         ? { kind: 'unconfirmed' }
         : { kind: 'not-started', code: outcome.code ?? '' }
     ),
-    {
-      action: {
-        label: translate(
-          'auto.components.terminal.pane.AgentLaunchPaneNotice.copyPrompt',
-          'Copy prompt'
-        ),
-        onClick: () => void window.api.ui.writeClipboardText(prompt)
-      }
-    }
+    prompt
+      ? {
+          action: {
+            label: translate(
+              'auto.components.terminal.pane.AgentLaunchPaneNotice.copyPrompt',
+              'Copy prompt'
+            ),
+            onClick: () => void window.api.ui.writeClipboardText(prompt)
+          }
+        }
+      : undefined
   )
 }
 
