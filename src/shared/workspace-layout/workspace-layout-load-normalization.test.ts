@@ -2,7 +2,7 @@
 // from the design (section 7); everything the rule does not name must survive unchanged.
 
 import { describe, expect, it } from 'vitest'
-import { LOCAL_EXECUTION_HOST_ID } from '../execution-host'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../execution-host'
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
 import { loadWorkspaceLayout } from './workspace-layout-load'
 import { checkWorkspaceLayoutModelRules } from './workspace-layout-model-rules'
@@ -100,6 +100,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
   it('unbinds the later of two panes bound to one terminal, in tab order', () => {
     const stored = twoTabs()
     stored.terminalLayoutsByTabId['tab-b']!.ptyIdsByLeafId = { [leaf(2)]: 'pty-a' }
+    stored.tabsByWorktree[GIT_KEY]![1]!.ptyId = 'pty-a'
     expect(rules(stored)).toEqual(['terminal_in_two_panes'])
     const loaded = load(stored)
     expect(loaded.normalizations).toEqual([
@@ -124,6 +125,8 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     )
     const loaded = load(stored)
     expect(loaded.normalizations.map((entry) => [entry.rule, entry.workspaceKey])).toEqual([
+      // The second workspace's tab-a layout replaced the first's, so its row's terminal is stale.
+      ['row_terminal_rederived', GIT_KEY],
       ['tab_bar_entry_without_row_dropped', GIT_KEY],
       ['group_lists_missing_tab', GIT_KEY],
       ['tab_in_two_workspaces_dropped', SSH_KEY],
@@ -202,37 +205,82 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     expect(saved.unifiedTabs![GIT_KEY]![1]!.executionHostId).toBe(LOCAL_EXECUTION_HOST_ID)
   })
 
-  it('takes preview from the tab and reports a file record that disagrees', () => {
+  function withEditorTabs(
+    file: { isPreview?: boolean; externalSshTargetId?: string },
+    tabs: { id: string; isPreview?: boolean; executionHostId?: ExecutionHostId }[]
+  ): WorkspaceSessionState {
     const stored = twoTabs()
-    stored.openFilesByWorktree = {
-      [GIT_KEY]: [
-        {
-          filePath: '/w/a.ts',
-          relativePath: 'a.ts',
-          worktreeId: GIT_KEY,
-          language: 'ts',
-          isPreview: true
-        }
-      ]
+    const fileRecord = {
+      filePath: '/w/a.ts',
+      relativePath: 'a.ts',
+      worktreeId: GIT_KEY,
+      language: 'ts'
     }
-    stored.unifiedTabs![GIT_KEY]!.push({
-      ...stored.unifiedTabs![GIT_KEY]![0]!,
-      id: 'ed',
-      entityId: '/w/a.ts',
-      contentType: 'editor',
-      sortOrder: 2
-    })
-    stored.tabGroups![GIT_KEY]![0]!.tabOrder.push('ed')
+    stored.openFilesByWorktree = { [GIT_KEY]: [{ ...fileRecord, ...file }] }
+    for (const tab of tabs) {
+      stored.unifiedTabs![GIT_KEY]!.push({
+        ...stored.unifiedTabs![GIT_KEY]![0]!,
+        ...tab,
+        entityId: '/w/a.ts',
+        contentType: 'editor',
+        sortOrder: stored.tabGroups![GIT_KEY]![0]!.tabOrder.push(tab.id) - 1
+      })
+    }
+    return stored
+  }
+
+  const previewReports = (loaded: ReturnType<typeof load>) =>
+    loaded.normalizations.filter((entry) => entry.rule === 'preview_flag_disagrees')
+
+  it('makes an editor tab permanent where its two stored preview flags disagree, and reports it', () => {
+    for (const [file, tab] of [
+      [true, false],
+      [false, true]
+    ]) {
+      const loaded = load(withEditorTabs({ isPreview: file }, [{ id: 'ed', isPreview: tab }]))
+      expect(previewReports(loaded), `file ${file}, tab ${tab}`).toHaveLength(1)
+      const saved = saveWorkspaceLayout(loaded)
+      expect(saved.openFilesByWorktree![GIT_KEY]![0]!.isPreview).toBeUndefined()
+      expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.isPreview).toBeFalsy()
+    }
+  })
+
+  it('keeps preview where both flags agree, and the file preview while any of its tabs is', () => {
+    const stored = withEditorTabs({ isPreview: true }, [
+      { id: 'ed', isPreview: true },
+      { id: 'ed-2', isPreview: false }
+    ])
+    const loaded = load(stored)
+    expect(previewReports(loaded)).toEqual([])
+    const saved = saveWorkspaceLayout(loaded)
+    expect(saved.openFilesByWorktree![GIT_KEY]![0]!.isPreview).toBe(true)
+    expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.isPreview).toBe(true)
+    expect(load(saved).normalizations).toEqual([])
+  })
+
+  it("names an editor tab's file owner as its host, and reports a stored partition host", () => {
+    const stored = withEditorTabs({ externalSshTargetId: 'box' }, [
+      { id: 'ed', executionHostId: LOCAL_EXECUTION_HOST_ID }
+    ])
     const loaded = load(stored)
     expect(loaded.normalizations).toEqual([
-      {
-        rule: 'preview_flag_disagrees',
-        workspaceKey: GIT_KEY,
-        ids: ['/w/a.ts'],
-        field: 'isPreview'
-      }
+      { rule: 'execution_host_disagrees', workspaceKey: GIT_KEY, ids: ['ed'] }
     ])
-    expect(saveWorkspaceLayout(loaded).openFilesByWorktree![GIT_KEY]![0]!.isPreview).toBeUndefined()
+    const saved = saveWorkspaceLayout(loaded)
+    expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.executionHostId).toBe(
+      'ssh:box'
+    )
+    expect(load(saved).normalizations).toEqual([])
+  })
+
+  it("reports a row whose stored terminal is not its focused pane's, then saves the pane's", () => {
+    const stored = twoTabs()
+    stored.tabsByWorktree[GIT_KEY]![0]!.ptyId = null
+    const loaded = load(stored)
+    expect(loaded.normalizations).toEqual([
+      { rule: 'row_terminal_rederived', workspaceKey: GIT_KEY, ids: ['tab-a'], field: 'ptyId' }
+    ])
+    expect(saveWorkspaceLayout(loaded).tabsByWorktree[GIT_KEY]![0]!.ptyId).toBe('pty-a')
   })
 
   it('re-mints the tab-bar id of a row whose own id another tab already uses, and reports it', () => {

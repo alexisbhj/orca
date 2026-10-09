@@ -27,7 +27,7 @@ type LayoutTabFields = {
   /** Tab-bar id. Terminal pane keys, layouts and records use `entityId`. */
   id: string
   entityId: string
-  /** The tab names its execution host (the model's `hostId`) on disk, as the window's tab opens do. */
+  /** The tab names its execution host on disk, as the window's tab opens do (see tab-host). */
   namesExecutionHost?: true
   createdAt: number
   customTitle: string | null

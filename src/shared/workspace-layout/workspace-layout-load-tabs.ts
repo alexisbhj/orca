@@ -34,12 +34,12 @@ const SHARED_FIELDS = [
 export type TabLoadReport = {
   /** The two records name different values for `field`; the row's was kept. */
   disagree: (field: string) => void
-  /** The entry names an execution host other than this partition's. */
+  /** The entry names an execution host other than the one derived from its owner. */
   foreignHost: () => void
 }
 
-function contentFields(entry: Tab, hostId: ExecutionHostId, report: TabLoadReport) {
-  if (entry.executionHostId !== undefined && entry.executionHostId !== hostId) {
+function contentFields(entry: Tab, ownerHostId: ExecutionHostId, report: TabLoadReport) {
+  if (entry.executionHostId !== undefined && entry.executionHostId !== ownerHostId) {
     report.foreignHost()
   }
   return {
@@ -63,10 +63,10 @@ function contentFields(entry: Tab, hostId: ExecutionHostId, report: TabLoadRepor
 
 export function loadContentTab(
   entry: Tab & { contentType: LayoutContentTab['kind'] },
-  hostId: ExecutionHostId,
+  ownerHostId: ExecutionHostId,
   report: TabLoadReport
 ): LayoutContentTab {
-  return { ...contentFields(entry, hostId, report), kind: entry.contentType }
+  return { ...contentFields(entry, ownerHostId, report), kind: entry.contentType }
 }
 
 /**

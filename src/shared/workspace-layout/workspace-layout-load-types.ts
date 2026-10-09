@@ -21,6 +21,7 @@ export type LayoutLoadNormalization = {
     | 'pane_in_two_tabs_reassigned'
     | 'preview_flag_disagrees'
     | 'row_and_tab_bar_disagree'
+    | 'row_terminal_rederived'
     | 'tab_appended_to_group'
     | 'tab_bar_entry_without_row_dropped'
     | 'tab_id_reminted'

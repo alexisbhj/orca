@@ -48,10 +48,13 @@ export function resolveWorktreeId({ session, key, normalizations }: WorkspaceLoa
   return worktreeId
 }
 
-/** Preview is the tab's: a file record's flag that disagrees with its tab is reported. */
+/**
+ * Preview is one fact per editor tab, stored on both the tab and its file. Where the two disagree
+ * the tab is permanent, which can never drop a draft, and the disagreement is reported.
+ */
 export function loadEditorFiles(
   args: WorkspaceLoadArgs,
-  tabs: readonly LayoutTab[]
+  tabs: LayoutTab[]
 ): LayoutEditorFile[] | undefined {
   const { session, key, view } = args
   const files = session.openFilesByWorktree?.[key]
@@ -63,14 +66,21 @@ export function loadEditorFiles(
     if (Object.keys(draft).length > 0) {
       childRecord(view.editorDrafts, key)[file.filePath] = draft
     }
-    const tab = tabs.find((entry) => entry.kind === 'editor' && entry.entityId === file.filePath)
-    if (file.isPreview === true && tab?.isPreview !== true) {
+    const fileTabs = tabs.filter((tab) => tab.kind === 'editor' && tab.entityId === file.filePath)
+    // The file's copy is true when any of its tabs is preview (split groups share one file).
+    const demoted = file.isPreview === true ? [] : fileTabs.filter((tab) => tab.isPreview)
+    const dropped = file.isPreview === true && !fileTabs.some((tab) => tab.isPreview)
+    if (demoted.length > 0 || dropped) {
       args.normalizations.push({
         rule: 'preview_flag_disagrees',
         workspaceKey: key,
-        ids: [file.filePath],
+        ids: [file.filePath, ...demoted.map((tab) => tab.id)],
         field: 'isPreview'
       })
+    }
+    for (const tab of demoted) {
+      // Loaded tabs are fresh copies, so this touches no stored data.
+      delete tab.isPreview
     }
     return omitStoredFields(file, [...EDITOR_DRAFT_FIELDS, 'isPreview', 'worktreeId'])
   })
