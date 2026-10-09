@@ -174,7 +174,8 @@ export function useFileExplorerTreePaneState({
     toggleDir,
     refreshDir,
     scrollRef,
-    getOperationOwnerForPath: (path) => rowProjection.getRowByPath(path)?.operationOwner
+    getOperationOwnerForPath: (path) =>
+      rowProjection.getRowByPath(path)?.operationOwner ?? dirCache[path]?.operationOwner
   })
 
   useFileExplorerTreeLoadEffects({

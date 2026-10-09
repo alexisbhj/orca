@@ -44,6 +44,29 @@ const workflow = parse(readFileSync('.github/workflows/e2e.yml', 'utf8'))
 const prWorkflow = parse(readFileSync('.github/workflows/pr.yml', 'utf8'))
 const classify = (specs, ssh = 'false') => classifyE2eJobs(JSON.stringify(specs), ssh)
 
+it('runs Explorer move ownership through the owned Docker fixture', () => {
+  const spec = 'tests/e2e/ssh-orcad-explorer-move-owner.spec.ts'
+  expect(classify([spec])).toEqual({ e2e_run_changed: false, e2e_needs_build: true })
+  expect(selectGeneralE2eSpecs([spec])).toEqual([])
+  const job = workflow.jobs['orcad-auto-convert-docker']
+  expect(job.if).toContain(spec)
+  expect(
+    job.steps.some((step) => step.run?.includes(spec) && step.env?.ORCA_E2E_SSH_DOCKER === '1')
+  ).toBe(true)
+  for (const source of [
+    'src/renderer/src/lib/workspace-file-drag-owner.ts',
+    'src/renderer/src/components/right-sidebar/useFileExplorerMoveDrop.ts',
+    'src/renderer/src/components/right-sidebar/useFileExplorerDragDrop.ts',
+    'src/renderer/src/components/right-sidebar/useFileExplorerRowDrag.ts',
+    'src/renderer/src/components/right-sidebar/use-file-explorer-tree-pane-state.ts'
+  ]) {
+    expect(selectPrE2eSpecs([source]), source).toContain(spec)
+  }
+  expect(selectPrE2eSpecs(['src/renderer/src/lib/workspace-file-drag-owner.ts'])).toContain(
+    'tests/e2e/ssh-orcad-terminal-drop-owner.spec.ts'
+  )
+})
+
 it('runs actual terminal drop ownership in the template-building Docker job', () => {
   const spec = 'tests/e2e/ssh-orcad-terminal-drop-owner.spec.ts'
   expect(classify([spec])).toEqual({ e2e_run_changed: false, e2e_needs_build: true })

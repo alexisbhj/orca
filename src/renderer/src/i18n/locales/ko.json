@@ -13599,6 +13599,9 @@
           "useFileExplorerKeys": {
             "8adb953095": "작업 실패"
           },
+          "useFileExplorerMoveDrop": {
+            "sourceHostMismatch": "이 작업 공간과 같은 호스트의 파일을 이동하세요."
+          },
           "GitHistoryGraphSvg": {
             "47eff48230": "HEAD"
           },

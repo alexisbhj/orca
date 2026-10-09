@@ -13828,6 +13828,9 @@
           "useFileExplorerKeys": {
             "8adb953095": "Operation failed"
           },
+          "useFileExplorerMoveDrop": {
+            "sourceHostMismatch": "Move files from the same host as this workspace."
+          },
           "GitHistoryGraphSvg": {
             "47eff48230": "HEAD"
           },

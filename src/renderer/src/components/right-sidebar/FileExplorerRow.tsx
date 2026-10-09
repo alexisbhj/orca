@@ -11,6 +11,7 @@ import {
   type WorkspaceFileDragSource
 } from '@/lib/workspace-file-drag'
 import type { GitFileStatus } from '../../../../shared/git-status-types'
+import type { FileExplorerMoveDropHandler } from './useFileExplorerMoveDrop'
 import { STATUS_LABELS } from './status-display'
 import { RENAME_HOTSPOT_ATTR } from './file-explorer-dir-toggle-timing'
 import type { TreeNode } from './file-explorer-types'
@@ -62,7 +63,7 @@ export type FileExplorerRowProps = {
   onRequestDelete: () => void
   onCollapseFolderSubtree: () => void
   onFindInFolder: () => void
-  onMoveDrop: (sourcePath: string, destDir: string) => void
+  onMoveDrop: FileExplorerMoveDropHandler
   onDragTargetChange: (dir: string | null) => void
   onDragSourceChange: (path: string | null) => void
   onDragExpandDir: (dirPath: string) => void

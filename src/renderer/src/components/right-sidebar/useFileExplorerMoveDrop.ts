@@ -2,9 +2,21 @@ import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { basename, dirname, joinPath } from '@/lib/path'
 import { executeOpenEditorPathMove } from '@/lib/execute-open-editor-path-move'
+import type { WorkspaceFileDragSource } from '@/lib/workspace-file-drag'
+import { isWorkspaceFileDragSourceOnHost } from '@/lib/workspace-file-drag-owner'
+import { translate } from '@/i18n/i18n'
 import { commitFileExplorerOp } from './fileExplorerUndoRedo'
 import type { FileExplorerOperationOwner } from './file-explorer-types'
-import { captureFileExplorerOperationGuard } from './file-explorer-operation-owner'
+import {
+  captureFileExplorerOperationGuard,
+  getFileExplorerOperationExecutionHostId
+} from './file-explorer-operation-owner'
+
+export type FileExplorerMoveDropHandler = (
+  sourcePath: string,
+  destDir: string,
+  source: WorkspaceFileDragSource | null
+) => void
 
 function extractIpcErrorMessage(err: unknown, fallback: string): string {
   if (!(err instanceof Error)) {
@@ -28,9 +40,9 @@ export function useFileExplorerMoveDrop({
   refreshDir,
   getOperationOwnerForPath,
   setDropTargetDir
-}: UseFileExplorerMoveDropParams): (sourcePath: string, destDir: string) => void {
+}: UseFileExplorerMoveDropParams): FileExplorerMoveDropHandler {
   return useCallback(
-    (sourcePath: string, destDir: string) => {
+    (sourcePath, destDir, source) => {
       if (!worktreePath || !activeWorktreeId) {
         return
       }
@@ -52,6 +64,24 @@ export function useFileExplorerMoveDrop({
 
       const newPath = joinPath(destDir, fileName)
       const operationOwner = getOperationOwnerForPath(sourcePath)
+      const destinationOwner = getOperationOwnerForPath(destDir)
+      if (
+        ![operationOwner, destinationOwner].every((owner) =>
+          isWorkspaceFileDragSourceOnHost(
+            source,
+            getFileExplorerOperationExecutionHostId(owner),
+            owner?.kind === 'runtime' ? owner.environmentId : null
+          )
+        )
+      ) {
+        toast.error(
+          translate(
+            'auto.components.right.sidebar.useFileExplorerMoveDrop.sourceHostMismatch',
+            'Move files from the same host as this workspace.'
+          )
+        )
+        return
+      }
 
       const run = async (): Promise<void> => {
         try {

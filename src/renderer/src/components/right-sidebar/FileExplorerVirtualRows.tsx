@@ -11,6 +11,7 @@ import type { FileExplorerRowProjection } from './file-explorer-row-projection'
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
 import { getFileExplorerOperationExecutionHostId } from './file-explorer-operation-owner'
 import type { WorkspaceFileDragSource } from '@/lib/workspace-file-drag'
+import type { FileExplorerMoveDropHandler } from './useFileExplorerMoveDrop'
 
 type FileExplorerVirtualRowsProps = {
   virtualizer: Virtualizer<HTMLDivElement, Element>
@@ -52,7 +53,7 @@ type FileExplorerVirtualRowsProps = {
   onRequestDelete: (node: TreeNode) => void
   onCollapseFolderSubtree: (node: TreeNode) => void
   onFindInFolder: (node: TreeNode) => void
-  onMoveDrop: (sourcePath: string, destDir: string) => void
+  onMoveDrop: FileExplorerMoveDropHandler
   onDragTargetChange: (dir: string | null) => void
   onDragSourceChange: (path: string | null) => void
   onDragExpandDir: (dirPath: string) => void

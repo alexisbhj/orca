@@ -13704,6 +13704,9 @@
           "useFileExplorerKeys": {
             "8adb953095": "Échec de l'opération"
           },
+          "useFileExplorerMoveDrop": {
+            "sourceHostMismatch": "Déplacez des fichiers du même hôte que cet espace de travail."
+          },
           "GitHistoryGraphSvg": {
             "47eff48230": "HEAD"
           },

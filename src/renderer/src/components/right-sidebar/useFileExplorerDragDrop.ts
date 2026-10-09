@@ -4,11 +4,15 @@ import { toast } from 'sonner'
 import {
   getWorkspaceFileDragRejectionMessage,
   readWorkspaceFileDragPaths,
+  readWorkspaceFileDragSource,
   WORKSPACE_FILE_PATH_MIME
 } from '@/lib/workspace-file-drag'
 import type { FileExplorerOperationOwner } from './file-explorer-types'
 import { useFileExplorerDragEdgeScroll } from './useFileExplorerDragEdgeScroll'
-import { useFileExplorerMoveDrop } from './useFileExplorerMoveDrop'
+import {
+  useFileExplorerMoveDrop,
+  type FileExplorerMoveDropHandler
+} from './useFileExplorerMoveDrop'
 import { useFileExplorerDragExpand } from './useFileExplorerDragExpand'
 
 type UseFileExplorerDragDropParams = {
@@ -24,7 +28,7 @@ type UseFileExplorerDragDropParams = {
 }
 
 type UseFileExplorerDragDropResult = {
-  handleMoveDrop: (sourcePath: string, destDir: string) => void
+  handleMoveDrop: FileExplorerMoveDropHandler
   handleDragExpandDir: (dirPath: string) => void
   dropTargetDir: string | null
   setDropTargetDir: (dir: string | null) => void
@@ -195,8 +199,9 @@ export function useFileExplorerDragDrop({
             toast.error(getWorkspaceFileDragRejectionMessage(dragPaths.reason))
             return
           }
+          const source = readWorkspaceFileDragSource(e.dataTransfer)
           for (const sourcePath of dragPaths.paths) {
-            handleMoveDrop(sourcePath, displayRootPath)
+            handleMoveDrop(sourcePath, displayRootPath, source)
           }
         }
       },

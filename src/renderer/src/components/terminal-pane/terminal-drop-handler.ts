@@ -1,13 +1,10 @@
 import { toast } from 'sonner'
 import { translate } from '@/i18n/i18n'
 import { getConnectionId } from '@/lib/connection-context'
-import { parseExecutionHostId, toRuntimeExecutionHostId } from '../../../../shared/execution-host'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
 import { recordTerminalUserInputForLeaf } from './terminal-input-activity'
-import {
-  isResolvedWorkspaceFileDragExecutionHost,
-  readWorkspaceFileDragPaths,
-  readWorkspaceFileDragSource
-} from '@/lib/workspace-file-drag'
+import { readWorkspaceFileDragPaths, readWorkspaceFileDragSource } from '@/lib/workspace-file-drag'
+import { isWorkspaceFileDragSourceOnHost } from '@/lib/workspace-file-drag-owner'
 import { captureTerminalDropTarget } from './terminal-drop-target'
 import { resolveTerminalDropTargetShell } from './terminal-drop-shell'
 import { writeTerminalDropPathsToCapturedTarget } from './terminal-drop-path-writer'
@@ -72,23 +69,8 @@ export async function handleInternalTerminalFileDrop({
   const host = parseExecutionHostId(transport.getExecutionHostId?.())
   const runtimeEnvironmentId =
     transport.getRuntimeEnvironmentId?.() ?? (host?.kind === 'runtime' ? host.environmentId : null)
-  // A paired host's local terminal belongs to that host, not this desktop.
-  const targetExecutionHostId =
-    host?.kind === 'local' && runtimeEnvironmentId
-      ? toRuntimeExecutionHostId(runtimeEnvironmentId)
-      : host?.id
   const source = readWorkspaceFileDragSource(dataTransfer)
-  const sourceHost = parseExecutionHostId(source?.executionHostId)
-  const sourceRuntimeEnvironmentId =
-    source?.runtimeEnvironmentId ??
-    (sourceHost?.kind === 'runtime' ? sourceHost.environmentId : null)
-  if (
-    !source ||
-    !isResolvedWorkspaceFileDragExecutionHost(source.executionHostId) ||
-    source.executionHostId !== targetExecutionHostId ||
-    sourceRuntimeEnvironmentId !== runtimeEnvironmentId ||
-    (host?.kind === 'runtime' && runtimeEnvironmentId !== host.environmentId)
-  ) {
+  if (!isWorkspaceFileDragSourceOnHost(source, host?.id, runtimeEnvironmentId)) {
     toast.error(getTerminalInternalFileDropRejectionMessage('source-host-mismatch'))
     return { status: 'rejected', reason: 'source-host-mismatch' }
   }

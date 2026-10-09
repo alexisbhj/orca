@@ -232,7 +232,7 @@ describe('internal explorer row drags under the OS-drop owner', () => {
       'move'
     )
     drag(view.getByTestId('row'), 'drop', [WORKSPACE_FILE_PATH_MIME])
-    expect(onMoveDrop).toHaveBeenCalledWith('/repo/app/moved.ts', '/repo/app/src')
+    expect(onMoveDrop).toHaveBeenCalledWith('/repo/app/moved.ts', '/repo/app/src', null)
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.importPaths).not.toHaveBeenCalled()
   })
