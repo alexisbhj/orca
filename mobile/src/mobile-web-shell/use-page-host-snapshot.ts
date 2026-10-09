@@ -3,7 +3,7 @@ import { loadHosts } from '../transport/host-store'
 import type { BridgeInitHost } from './bridge/bridge-envelope'
 import {
   hydrateMirroredStorage,
-  readMirroredKey,
+  readMirroredKeyOrStore,
   readMirroredStorage,
   writeMirroredStorage
 } from '../storage/mirrored-storage-keys'
@@ -132,12 +132,7 @@ export function usePageHostSnapshot(
         throw new Error('this page may not read that key')
       }
       // The map first: every shell-side write lands there synchronously, before the store has it.
-      const held = readMirroredKey(key)
-      if (held !== undefined) {
-        return held
-      }
-      await hydrateMirroredStorage([key])
-      return readMirroredKey(key) ?? null
+      return readMirroredKeyOrStore(key)
     },
     [hostArea, hostId]
   )

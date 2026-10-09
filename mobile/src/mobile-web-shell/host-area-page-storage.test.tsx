@@ -39,12 +39,13 @@ vi.mock('../transport/host-store', () => ({
   loadHosts: async () => [{ id: 'host-a', name: 'Host', endpoint: 'ws://h', lastConnected: 1 }]
 }))
 
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { usePageHostSnapshot, type PageHostSnapshotView } from './use-page-host-snapshot'
 import { createFakeBridgePortPair } from './bridge/bridge-port-pair-test-harness'
 import { storageReadParamsSchema, storageReadResultSchema } from './bridge/bridge-native-verbs'
 import pageAsyncStorage, { publishPageStorage } from './bridge/page-async-storage'
 import { MOBILE_WEB_SHELL_GRANTS } from './page-route-policy'
-import { hydrateMirroredStorage } from '../storage/mirrored-storage-keys'
+import { hydrateMirroredStorage, writeMirroredStorage } from '../storage/mirrored-storage-keys'
 
 const CHAT_TABS = 'orca:nativeChatTabs:host-a:wt-1'
 const LIVE_INPUT = 'orca:terminalLiveInputDisabled:host-a:wt-1'
@@ -166,6 +167,22 @@ describe('the per-workspace keys of a host-area page', () => {
     persisted()
     expect(store.get(NEVER_STORED)).toBe('["new"]')
     expect(store.has(CHAT_TABS)).toBe(false)
+  })
+
+  it('reads a stored key the mirror never held, though another mirrored write lands meanwhile', async () => {
+    // A relaunch: the store has the key and the mirror has not seen it.
+    const relaunched = 'orca:terminalLiveInputDisabled:host-a:alpha'
+    store.set(relaunched, '["handle-1"]')
+    const view = await snapshotFor('/h/host-a', true)
+    const read = view.readWorkspaceKey(relaunched)
+    writeMirroredStorage('orca:pins:host-a', '[]')
+    expect(await read).toBe('["handle-1"]')
+  })
+
+  it('rejects, rather than reading as unset, when the store cannot be read', async () => {
+    vi.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('store unavailable'))
+    const view = await snapshotFor('/h/host-a', true)
+    await expect(view.readWorkspaceKey('orca:nativeChatTabs:host-a:beta')).rejects.toThrow()
   })
 
   it("refuses another host's key, to read or to write", async () => {

@@ -55,9 +55,11 @@ export async function hydrateMirroredStorage(keys: readonly string[]): Promise<v
   }
 }
 
-/** One key as the map holds it: `undefined` when the map has never seen it. */
-export function readMirroredKey(key: string): string | null | undefined {
-  return mirror.get(key)
+/** One key: the map's value, else the store's, so a store failure rejects instead of reading as
+ *  unset. Not through `hydrateMirroredStorage`, which drops its answer when any write lands. */
+export async function readMirroredKeyOrStore(key: string): Promise<string | null> {
+  const held = mirror.get(key)
+  return held === undefined ? AsyncStorage.getItem(key) : held
 }
 
 function note(key: string, value: string | null): void {
