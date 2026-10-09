@@ -42,6 +42,15 @@ export const PR_E2E_SOURCE_ROUTES = [
       )
   },
   {
+    id: 'ssh.orcad-markdown-live-documents',
+    specs: ['tests/e2e/ssh-orcad-markdown-live-documents.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/components\/editor\/(?:useMarkdownDocuments|use-markdown-document-watch-refresh|markdown-document-list-request)\.ts$/.test(
+        file
+      )
+  },
+  {
     id: 'serve.orcad-mode-switch',
     specs: ['tests/e2e/orcad-serve-mode-switch.spec.ts'],
     matches: (file) =>
@@ -99,6 +108,18 @@ export const PR_E2E_SOURCE_ROUTES = [
       /^src\/(?:main\/browser\/local-ssh-browser|main\/ipc\/browser\.ts$|renderer\/src\/(?:lib\/(?:ssh-workspace-browser-route-eligibility|worktree-host-connection-phase)|components\/browser-pane\/use-ssh-workspace-browser-route))/.test(
         file
       )
+  },
+  {
+    id: 'ssh.orcad-open-in-owner',
+    specs: ['tests/e2e/ssh-orcad-open-in-owner.spec.ts'],
+    matches: (file) =>
+      /^tests\/e2e\/helpers\/(?:orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-relay-target)\.ts$/.test(
+        file
+      ) ||
+      (isProductSource(file) &&
+        /^src\/renderer\/src\/(?:lib\/(?:local-path-open-guard|external-editor-open-capability|worktree-runtime-owner)\.ts|components\/(?:sidebar\/(?:WorktreeOpenInMenu|WorktreeContextMenuView)\.tsx|right-sidebar\/(?:FileExplorer(?:Toolbar)?\.tsx|source-control\/listing\/entry-context-menu\.tsx)))$/.test(
+          file
+        ))
   },
   {
     id: 'ssh.orcad-idle-exit',
