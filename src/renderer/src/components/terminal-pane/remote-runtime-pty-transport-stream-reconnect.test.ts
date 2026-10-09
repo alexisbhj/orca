@@ -528,6 +528,8 @@ describe('createRemoteRuntimePtyTransport', () => {
       expect(disconnectedState?.phase).toBe('disconnected')
       expect(transport.getPtyId()).toBe('remote:env-1@@terminal-1')
       expect(transport.isConnected()).toBe(false)
+      const inputFramesAtCutoff = inputFrameTexts().length
+      // Typed after auto-recovery gave up: dropped, never run at a later reconnect.
       expect(transport.sendInput('must not reach a stale socket', 'driving')).toBe(false)
       expect(onError).not.toHaveBeenCalled()
       await vi.advanceTimersByTimeAsync(5 * 60_000)
@@ -541,6 +543,8 @@ describe('createRemoteRuntimePtyTransport', () => {
       const manualStream = latestSubscribePayload()
       expect(manualStream.terminal).toBe('terminal-1')
       emitSnapshot(manualStream.streamId, 'after manual reconnect')
+      await vi.advanceTimersByTimeAsync(50)
+      expect(inputFrameTexts().slice(inputFramesAtCutoff)).toEqual([])
 
       expect(transport.isConnected()).toBe(true)
       expect(transport.getRecoveryState?.().phase).toBe('connected')
