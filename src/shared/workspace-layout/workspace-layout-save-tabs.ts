@@ -28,7 +28,7 @@ export type WorkspaceSaveScope = {
 }
 
 /** The row's terminal: the focused pane's, else the first bound pane's, else none. */
-export function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
+function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
   const bindings = tab.panes.ptyIdsByLeafId ?? {}
   const focused = view.panes[tab.entityId]?.activeLeafId
   if (focused && bindings[focused] !== undefined) {

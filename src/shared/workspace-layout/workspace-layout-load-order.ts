@@ -4,7 +4,6 @@
 
 import type { TabGroup } from '../tab-types'
 import type { LayoutGroup } from './workspace-layout-model'
-import type { LayoutLoadNormalization } from './workspace-layout-load-types'
 
 export type OrderCandidate = {
   id: string
@@ -22,35 +21,23 @@ function compareUnplaced(left: OrderCandidate, right: OrderCandidate): number {
 }
 
 export function resolveGroupOrder(args: {
-  workspaceKey: string
   storedGroups: readonly TabGroup[]
   candidates: readonly OrderCandidate[]
   mintId: () => string
-  normalizations: LayoutLoadNormalization[]
 }): LayoutGroup[] {
-  const { workspaceKey, normalizations } = args
   const known = new Set(args.candidates.map((candidate) => candidate.id))
   const placed = new Set<string>()
-  const seenGroups = new Set<string>()
   const groups: LayoutGroup[] = []
   for (const stored of args.storedGroups) {
-    if (seenGroups.has(stored.id)) {
-      normalizations.push({ rule: 'duplicate_group_dropped', workspaceKey, ids: [stored.id] })
+    if (groups.some((group) => group.id === stored.id)) {
       continue
     }
-    seenGroups.add(stored.id)
     const tabOrder: string[] = []
     for (const tabId of stored.tabOrder) {
-      if (!known.has(tabId) || placed.has(tabId)) {
-        normalizations.push({
-          rule: known.has(tabId) ? 'tab_listed_twice' : 'group_lists_missing_tab',
-          workspaceKey,
-          ids: [stored.id, tabId]
-        })
-        continue
+      if (known.has(tabId) && !placed.has(tabId)) {
+        placed.add(tabId)
+        tabOrder.push(tabId)
       }
-      placed.add(tabId)
-      tabOrder.push(tabId)
     }
     groups.push({ id: stored.id, tabOrder })
   }
@@ -60,20 +47,8 @@ export function resolveGroupOrder(args: {
     if (!group) {
       group = { id: args.mintId(), tabOrder: [] }
       groups.push(group)
-      normalizations.push({ rule: 'group_minted', workspaceKey, ids: [group.id] })
     }
     group.tabOrder.push(candidate.id)
-    normalizations.push({
-      rule: 'tab_appended_to_group',
-      workspaceKey,
-      ids: [group.id, candidate.id]
-    })
   }
-  const kept = groups.filter((group) => group.tabOrder.length > 0)
-  for (const group of groups) {
-    if (group.tabOrder.length === 0) {
-      normalizations.push({ rule: 'empty_group_dropped', workspaceKey, ids: [group.id] })
-    }
-  }
-  return kept
+  return groups.filter((group) => group.tabOrder.length > 0)
 }

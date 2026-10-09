@@ -18,7 +18,7 @@ export function emptyLayoutBeside(): Omit<LoadedWorkspaceLayout, 'layout'> {
       editorDrafts: {}
     },
     facts: { tabLabels: {}, terminalRows: {}, scrollback: {}, browserTabs: {} },
-    carried: { unownedTerminalLayouts: {} }
+    carried: { unownedTerminalLayouts: {}, unplacedSleepingRecords: {}, unplacedClosedTabs: {} }
   }
 }
 

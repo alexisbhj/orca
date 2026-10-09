@@ -40,12 +40,16 @@ function twoTabs(): WorkspaceSessionState {
   ])
 }
 
+/** Which on-disk fields the load's change report names, as `table.field`. */
+const changed = (loaded: ReturnType<typeof load>): string[] =>
+  [...new Set(loaded.changes.map((change) => `${change.table}.${change.field}`))].sort()
+
 const rules = (session: WorkspaceSessionState) =>
   checkWorkspaceLayoutRules([{ hostId: LOCAL_EXECUTION_HOST_ID, session }]).map(
     (violation) => violation.rule
   )
 
-describe('Loader fixed rules for stored data that disagrees with itself', () => {
+describe('Loader precedence for stored data that disagrees with itself, and its change report', () => {
   it('gives terminal rows saved without a tab bar (headless runtime) an entry in a new first group', () => {
     const stored = twoTabs()
     stored.unifiedTabs = {}
@@ -53,10 +57,13 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.tabGroupLayouts = {}
     expect(rules(stored)).toEqual(['tab_bar_missing'])
     const loaded = load(stored)
-    expect(loaded.normalizations.map((entry) => entry.rule)).toEqual([
-      'group_minted',
-      'tab_appended_to_group',
-      'tab_appended_to_group'
+    expect(changed(loaded)).toEqual([
+      'entry.*',
+      'group.*',
+      'session.tabGroupLayouts',
+      'session.tabGroups',
+      'session.unifiedTabs',
+      'terminalEntry.*'
     ])
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.tabGroups?.[GIT_KEY]).toEqual([
@@ -77,16 +84,22 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.tabsByWorktree[GIT_KEY]![1]!.sortOrder = 9
     expect(rules(stored)).toEqual(['tab_order_disagrees'])
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([])
+    expect(changed(loaded)).toEqual([
+      'entry.$order',
+      'row.$order',
+      'row.sortOrder',
+      'terminalEntry.sortOrder'
+    ])
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.tabsByWorktree[GIT_KEY]!.map((row) => [row.id, row.sortOrder])).toEqual([
       ['tab-b', 0],
       ['tab-a', 1]
     ])
     expect(rules(saved)).toEqual([])
+    // Tab-bar entries are written in the one tab order too.
     expect(saved.unifiedTabs![GIT_KEY]!.map((tab) => [tab.id, tab.sortOrder])).toEqual([
-      ['tab-a', 1],
-      ['tab-b', 0]
+      ['tab-b', 0],
+      ['tab-a', 1]
     ])
   })
 
@@ -104,13 +117,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.tabsByWorktree[GIT_KEY]![1]!.ptyId = 'pty-a'
     expect(rules(stored)).toEqual(['terminal_in_two_panes'])
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([
-      {
-        rule: 'terminal_in_two_panes_unbound',
-        workspaceKey: GIT_KEY,
-        ids: ['pty-a', `tab-a:${leaf(1)}`, `tab-b:${leaf(2)}`]
-      }
-    ])
+    expect(changed(loaded)).toEqual(['layout.ptyIdsByLeafId', 'row.ptyId'])
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.terminalLayoutsByTabId['tab-a']!.ptyIdsByLeafId).toEqual({ [leaf(1)]: 'pty-a' })
     expect(saved.terminalLayoutsByTabId['tab-b']!.ptyIdsByLeafId).toEqual({})
@@ -125,16 +132,9 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
       (row) => row.id !== 'tab-b'
     )
     const loaded = load(stored)
-    expect(loaded.normalizations.map((entry) => [entry.rule, entry.workspaceKey])).toEqual([
-      // The second workspace's tab-a layout replaced the first's, so its row's terminal is stale.
-      ['row_terminal_rederived', GIT_KEY],
-      ['tab_bar_entry_without_row_dropped', GIT_KEY],
-      ['group_lists_missing_tab', GIT_KEY],
-      ['tab_in_two_workspaces_dropped', SSH_KEY],
-      ['tab_bar_entry_without_row_dropped', SSH_KEY],
-      ['group_lists_missing_tab', SSH_KEY],
-      ['empty_group_dropped', SSH_KEY]
-    ])
+    expect(changed(loaded)).toEqual(
+      expect.arrayContaining(['row.*', 'terminalEntry.*', 'group.*', 'group.tabOrder', 'row.ptyId'])
+    )
     // tab-b's pane layout outlived its row: carried as stored, so the rules still report it.
     expect(checkWorkspaceLayoutModelRules([loaded]).map((violation) => violation.rule)).toEqual([
       'pane_without_tab'
@@ -158,11 +158,9 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     })
     stored.tabGroups![SSH_KEY]![0]!.tabOrder.push('tab-a')
     const loaded = load(stored)
-    expect(loaded.normalizations).toContainEqual({
-      rule: 'tab_in_two_workspaces_dropped',
-      workspaceKey: GIT_KEY,
-      ids: ['tab-a']
-    })
+    expect(loaded.changes).toContainEqual(
+      expect.objectContaining({ table: 'row', record: `${GIT_KEY}|tab-a`, field: '*' })
+    )
     expect(loaded.layout.workspaces[SSH_KEY]!.tabs.map((tab) => tab.id)).toContain('tab-a')
     expect(loaded.layout.workspaces[GIT_KEY]!.tabs.map((tab) => tab.id)).toEqual(['tab-b'])
   })
@@ -184,12 +182,13 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.terminalPtyIncarnationsByPaneKey = { [`tab-b:${leaf(1)}`]: 'inc-b' }
     expect(rules(stored)).toEqual(['pane_in_two_tabs'])
     const loaded = load(stored)
-    expect(loaded.normalizations.map((entry) => entry.rule)).toEqual([
-      'pane_in_two_tabs_reassigned'
-    ])
+    expect(changed(loaded)).toEqual(
+      expect.arrayContaining(['layout.root', 'layout.ptyIdsByLeafId', 'sleeping.*'])
+    )
     const saved = saveWorkspaceLayout(loaded)
     const moved = saved.terminalLayoutsByTabId['tab-b']!
-    const fresh = loaded.normalizations[0]!.ids[3]!
+    const fresh = moved.activeLeafId!
+    expect(fresh).not.toBe(leaf(1))
     expect(moved.root).toEqual({ type: 'leaf', leafId: fresh })
     expect(moved.ptyIdsByLeafId).toEqual({})
     expect(moved.titlesByLeafId).toEqual({ [fresh]: 'logs' })
@@ -212,10 +211,14 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     stored.tabGroups![GIT_KEY]![0]!.worktreeId = 'repo-1::/elsewhere'
     stored.unifiedTabs![GIT_KEY]![1]!.executionHostId = 'ssh:other'
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([
-      { rule: 'worktree_id_disagrees', workspaceKey: GIT_KEY, ids: ['g1'], field: 'worktreeId' },
-      { rule: 'row_and_tab_bar_disagree', workspaceKey: GIT_KEY, ids: ['tab-a'], field: 'color' },
-      { rule: 'execution_host_disagrees', workspaceKey: GIT_KEY, ids: ['tab-b'] }
+    expect(loaded.changes).toEqual([
+      expect.objectContaining({ table: 'terminalEntry', field: 'color', before: '#ff0000' }),
+      expect.objectContaining({
+        table: 'terminalEntry',
+        field: 'executionHostId',
+        before: 'ssh:other'
+      }),
+      expect.objectContaining({ table: 'group', field: 'worktreeId', after: GIT_KEY })
     ])
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.unifiedTabs![GIT_KEY]![0]!.color).toBeNull()
@@ -248,15 +251,17 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
   }
 
   const previewReports = (loaded: ReturnType<typeof load>) =>
-    loaded.normalizations.filter((entry) => entry.rule === 'preview_flag_disagrees')
+    loaded.changes.filter((change) => change.field === 'isPreview')
 
   it('makes an editor tab permanent where its two stored preview flags disagree, and reports it', () => {
-    for (const [file, tab] of [
-      [true, false],
-      [false, true]
-    ]) {
+    for (const [file, tab, demoted] of [
+      [true, false, 'file'],
+      [false, true, 'entry']
+    ] as const) {
       const loaded = load(withEditorTabs({ isPreview: file }, [{ id: 'ed', isPreview: tab }]))
-      expect(previewReports(loaded), `file ${file}, tab ${tab}`).toHaveLength(1)
+      expect(previewReports(loaded), `file ${file}, tab ${tab}`).toContainEqual(
+        expect.objectContaining({ table: demoted, before: true })
+      )
       const saved = saveWorkspaceLayout(loaded)
       expect(saved.openFilesByWorktree![GIT_KEY]![0]!.isPreview).toBeUndefined()
       expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.isPreview).toBeFalsy()
@@ -273,7 +278,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.openFilesByWorktree![GIT_KEY]![0]!.isPreview).toBe(true)
     expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.isPreview).toBe(true)
-    expect(load(saved).normalizations).toEqual([])
+    expect(load(saved).changes).toEqual([])
   })
 
   it("names an editor tab's file owner as its host, and reports a stored partition host", () => {
@@ -281,22 +286,28 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
       { id: 'ed', executionHostId: LOCAL_EXECUTION_HOST_ID }
     ])
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([
-      { rule: 'execution_host_disagrees', workspaceKey: GIT_KEY, ids: ['ed'] }
+    expect(loaded.changes).toEqual([
+      {
+        table: 'entry',
+        record: `${GIT_KEY}|ed`,
+        field: 'executionHostId',
+        before: LOCAL_EXECUTION_HOST_ID,
+        after: 'ssh:box'
+      }
     ])
     const saved = saveWorkspaceLayout(loaded)
     expect(saved.unifiedTabs![GIT_KEY]!.find((entry) => entry.id === 'ed')!.executionHostId).toBe(
       'ssh:box'
     )
-    expect(load(saved).normalizations).toEqual([])
+    expect(load(saved).changes).toEqual([])
   })
 
   it("reports a row whose stored terminal is not its focused pane's, then saves the pane's", () => {
     const stored = twoTabs()
     stored.tabsByWorktree[GIT_KEY]![0]!.ptyId = null
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([
-      { rule: 'row_terminal_rederived', workspaceKey: GIT_KEY, ids: ['tab-a'], field: 'ptyId' }
+    expect(loaded.changes).toEqual([
+      { table: 'row', record: `${GIT_KEY}|tab-a`, field: 'ptyId', before: null, after: 'pty-a' }
     ])
     expect(saveWorkspaceLayout(loaded).tabsByWorktree[GIT_KEY]![0]!.ptyId).toBe('pty-a')
   })
@@ -309,7 +320,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
       { ...entryB!, entityId: '/w/b.ts', contentType: 'editor' }
     ]
     const loaded = load(stored)
-    expect(loaded.normalizations.map((entry) => entry.rule)).toContain('tab_id_reminted')
+    expect(changed(loaded)).toContain('terminalEntry.*')
     expect(checkWorkspaceLayoutModelRules([loaded])).toEqual([])
   })
 
@@ -331,7 +342,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     expect(saved.tabGroups![GIT_KEY]![0]!.tabOrder).toEqual(['tab-a'])
     expect(saved.terminalLayoutsByTabId['tab-b']).toBeUndefined()
     expect(saved.terminalTopologyRevisionByRepoId!['repo-1']).toBeGreaterThan(0)
-    expect(load(saved).normalizations).toEqual([])
+    expect(load(saved).changes).toEqual([])
   })
 
   it('keeps a tombstone whose pane now shows another terminal from closing it', () => {
@@ -355,14 +366,9 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     const stored = twoTabs()
     delete stored.terminalLayoutsByTabId['tab-b']
     const loaded = load(stored)
-    const [report] = loaded.normalizations
-    expect(report).toEqual({
-      rule: 'legacy_row_given_pane',
-      workspaceKey: GIT_KEY,
-      ids: ['tab-b', expect.any(String)]
-    })
+    expect(changed(loaded)).toEqual(['layout.*'])
     const saved = saveWorkspaceLayout(loaded)
-    const leafId = report!.ids[1]!
+    const leafId = saved.terminalLayoutsByTabId['tab-b']!.activeLeafId!
     expect(saved.terminalLayoutsByTabId['tab-b']).toEqual({
       root: { type: 'leaf', leafId },
       activeLeafId: leafId,
@@ -371,7 +377,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
     })
     expect(saved.tabsByWorktree[GIT_KEY]![1]!.ptyId).toBe('pty-b')
     expect(rules(saved)).toEqual([])
-    expect(load(saved).normalizations).toEqual([])
+    expect(load(saved).changes).toEqual([])
   })
 
   it("reuses the legacy row's recorded pane, so its records and tombstone still apply", () => {
@@ -388,10 +394,10 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
       }
     }
     const loaded = load(stored)
-    expect(loaded.normalizations.map((entry) => [entry.rule, entry.ids])).toEqual([
-      ['legacy_row_given_pane', ['tab-b', leaf(5)]],
-      ['legacy_tombstone_applied', [`tab-b:${leaf(5)}`]]
-    ])
+    // The tombstone closes the tab only because the new pane took the leaf it names.
+    expect(changed(loaded)).toEqual(
+      expect.arrayContaining(['row.*', 'session.terminalSurfaceTombstonesByPaneKey'])
+    )
     expect(saveWorkspaceLayout(loaded).tabsByWorktree[GIT_KEY]!.map((row) => row.id)).toEqual([
       'tab-a'
     ])
@@ -405,7 +411,7 @@ describe('Loader fixed rules for stored data that disagrees with itself', () => 
       expandedLeafId: null
     }
     const loaded = load(stored)
-    expect(loaded.normalizations).toEqual([])
+    expect(loaded.changes).toEqual([])
     const saved = saveWorkspaceLayout(loaded)
     expect(onDisk(saved)).toEqual(onDisk(stored))
     // Carried, not repaired: the rules check still reports it.

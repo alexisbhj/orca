@@ -1,6 +1,5 @@
 // One layout tab from today's two records per terminal tab (the row and the tab-bar entry).
 
-import type { ExecutionHostId } from '../execution-host'
 import type { Tab } from '../tab-types'
 import type { TerminalTab } from '../terminal-tab-types'
 import type {
@@ -19,33 +18,7 @@ const TERMINAL_CREATION_FIELDS = [
   'agentLaunchPane'
 ] as const satisfies readonly (keyof LayoutTerminalCreation)[]
 
-/** Row field and tab-bar field that hold the same layout fact. */
-const SHARED_FIELDS = [
-  ['createdAt', 'createdAt'],
-  ['customTitle', 'customLabel'],
-  ['color', 'color'],
-  ['isPinned', 'isPinned'],
-  ['viewMode', 'viewMode'],
-  ['generatedTitle', 'generatedLabel'],
-  ['aiVaultTitle', 'aiVaultTitle'],
-  ['quickCommandLabel', 'quickCommandLabel']
-] as const satisfies readonly (readonly [keyof TerminalTab, keyof Tab])[]
-
-export type TabLoadReport = {
-  /** The two records name different values for `field`; the row's was kept. */
-  disagree: (field: string) => void
-  /** The entry names an execution host other than the one derived from its owner. */
-  foreignHost: () => void
-  /** The entry names no execution host; the Serializer writes the derived one. */
-  hostFilled: () => void
-}
-
-function contentFields(entry: Tab, ownerHostId: ExecutionHostId, report: TabLoadReport) {
-  if (entry.executionHostId === undefined) {
-    report.hostFilled()
-  } else if (entry.executionHostId !== ownerHostId) {
-    report.foreignHost()
-  }
+function contentFields(entry: Tab) {
   return {
     id: entry.id,
     entityId: entry.entityId,
@@ -65,37 +38,19 @@ function contentFields(entry: Tab, ownerHostId: ExecutionHostId, report: TabLoad
 }
 
 export function loadContentTab(
-  entry: Tab & { contentType: LayoutContentTab['kind'] },
-  ownerHostId: ExecutionHostId,
-  report: TabLoadReport
+  entry: Tab & { contentType: LayoutContentTab['kind'] }
 ): LayoutContentTab {
-  return { ...contentFields(entry, ownerHostId, report), kind: entry.contentType }
+  return { ...contentFields(entry), kind: entry.contentType }
 }
 
-/**
- * Where both records name a field and disagree, the row wins (every runtime writer updates the
- * row; only the window keeps the tab-bar entry) and the disagreement is reported.
- */
+/** Where both records name a field, the row wins: every runtime writer updates the row. */
 export function loadTerminalTab(
   row: TerminalTab,
-  entry: Tab | undefined,
-  hostId: ExecutionHostId,
-  report: TabLoadReport
+  entry: Tab | undefined
 ): Omit<LayoutTerminalTab, 'panes'> {
   const base = entry
-    ? contentFields(entry, hostId, report)
+    ? contentFields(entry)
     : { id: row.id, entityId: row.id, customTitle: null, color: null }
-  for (const [rowField, entryField] of SHARED_FIELDS) {
-    const rowValue = row[rowField]
-    const entryValue = entry?.[entryField]
-    if (
-      rowValue !== undefined &&
-      entryValue !== undefined &&
-      JSON.stringify(rowValue) !== JSON.stringify(entryValue)
-    ) {
-      report.disagree(rowField)
-    }
-  }
   return {
     ...base,
     ...pickStoredFields(row, [
