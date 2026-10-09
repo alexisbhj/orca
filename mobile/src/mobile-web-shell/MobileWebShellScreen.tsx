@@ -200,10 +200,8 @@ export function MobileWebShellScreen({
     wide: isWideLayout,
     runtime
   })
-  // From `activating`: the page stays behind its cover until it paints, so no frame shows two.
-  useReportedHostAreaServing(
-    ownsHostArea && (state.kind === 'activating' || state.kind === 'ready')
-  )
+  // Full screen from the download on, as on a phone; while checking, nobody knows the page owns it.
+  useReportedHostAreaServing(ownsHostArea && state.kind !== 'checking')
   // Which mount the notice was dismissed on, not whether it was: a later refusal opens its own
   // generation under a new session id, so it is not silenced by a tap on the one before it.
   const [noticeDismissedFor, setNoticeDismissedFor] = useState<string | null>(null)

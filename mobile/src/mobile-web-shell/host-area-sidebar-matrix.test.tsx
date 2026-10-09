@@ -159,6 +159,7 @@ import HostGroupLayout from '../../app/h/_layout'
 import { RpcClientProvider } from '../transport/client-context.web'
 import { createFakeBridgePortPair } from './bridge/bridge-port-pair-test-harness'
 import {
+  BUNDLE_REFUSED,
   createMobileWebShellSession,
   gates,
   MANIFEST_WIRE,
@@ -321,6 +322,35 @@ describe('host sidebars on a wide detail route', () => {
 
   it.each(rows)('%s: %s shell, %s page', async (_case, shell, page, beneath, expected) => {
     expect(await countSidebars(shell, page, true, DETAIL, beneath)).toEqual(expected)
+  })
+})
+
+describe('the native sidebar beside a declaring page on its way in', () => {
+  const declared = pageRoutes('declared') ?? []
+  const checking = run(createMobileWebShellSession(HOST, true), {
+    type: 'gates-changed',
+    gates: gates()
+  }).session
+  const fetching = run(
+    checking,
+    { type: 'cache-read', generation: null },
+    { type: 'manifest-read', manifest: manifestFacts({ ...MANIFEST_WIRE, routes: declared }) }
+  ).session
+  const failed = run(fetching, { type: 'download-failed', cause: BUNDLE_REFUSED }).session
+  const rechecking = run(failed, { type: 'retry-pressed' }).session
+  // Shown until the manifest says the page owns the area, then full screen like a phone's,
+  // a failure included; a retry checks again, with it back.
+  const rows: [string, MobileWebShellSession, number][] = [
+    ['checking', checking, 1],
+    ['fetching', fetching, 0],
+    ['activating', run(fetching, { type: 'download-staged' }).session, 0],
+    ['failed', failed, 0],
+    ['checking again', rechecking, 1]
+  ]
+
+  it.each(rows)('%s', async (_state, hostSession, expected) => {
+    expect(hostSession.state.kind).toBe(_state === 'checking again' ? 'checking' : _state)
+    expect(await sidebarsIn('native', IPAD, { hostSession })).toBe(expected)
   })
 })
 
