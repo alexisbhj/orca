@@ -8,7 +8,8 @@ import {
 // crashed 18 cells and dropped ~16k hosts. A rejection is fenced only when both hold:
 //   path: the relay's database layer threw or rethrew it (marked below), and
 //   type: a pool acquire failure, pg's read timeout, a dropped connection, or a server error
-//         in a class that means "the database is unwell", not "this code is wrong".
+//         in class 08/40/53/55/57/58 (the database is unwell) or 23 (a constraint lost a race
+//         with a concurrent writer; the row it guards is intact, so the process is too).
 // Everything else stays fatal: schema errors (42), data errors (22), TypeErrors from pg's
 // parameter serialisation, and every bare socket errno from ws or fetch.
 const databaseLayerErrors = new WeakSet<object>()
