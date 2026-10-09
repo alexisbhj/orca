@@ -31,6 +31,7 @@ import { useShellPageBack } from './use-shell-page-back'
 import { useShellStackPop } from './use-shell-stack-pop'
 import { useMobileWebShellSession } from './use-mobile-web-shell-session'
 import { usePageHostSnapshot } from './use-page-host-snapshot'
+import { useRecordedHostAreaOwner } from './host-area-owner'
 import { SHELL_OPENING_LABEL, ShellPageCover, ShellWaitingFrame } from './ShellWaitingFrame'
 import { pageSafeAreaInsets, usePublishedSafeAreaInsets } from './page-safe-area-insets'
 
@@ -151,6 +152,8 @@ export type MobileWebShellScreenProps = {
    * that caller's: it holds the param, and a tap that moved on since leaves a newer value there.
    */
   onRouteParamClear?: (param: BridgeClearableRouteParam, value: string) => void
+  /** Opened to own the whole host area on a wide layout; see `MobileWebShellSession.hostArea`. */
+  hostArea?: boolean
   runtime?: MobileWebShellRuntime
 }
 
@@ -166,6 +169,7 @@ export function MobileWebShellScreen({
   route,
   fallback,
   onRouteParamClear,
+  hostArea = false,
   runtime
 }: MobileWebShellScreenProps) {
   const insets = useSafeAreaInsets()
@@ -189,7 +193,8 @@ export function MobileWebShellScreen({
     pageReady,
     pageFrame,
     backClaimed
-  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, runtime })
+  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, hostArea, runtime })
+  useRecordedHostAreaOwner(hostArea ? hostId : null, state.kind)
   // Which mount the notice was dismissed on, not whether it was: a later refusal opens its own
   // generation under a new session id, so it is not silenced by a tap on the one before it.
   const [noticeDismissedFor, setNoticeDismissedFor] = useState<string | null>(null)
@@ -226,6 +231,7 @@ export function MobileWebShellScreen({
     pageRoutes,
     pageRouteGrants,
     routeGrants,
+    ownsHostArea: hostArea,
     session: state,
     sessionEstablished: pageReady,
     snapshot,

@@ -213,14 +213,40 @@ export function grantsForRoute(
  * covered by what this session holds. A pair naming the required lane alone would keep a hop whose
  * target then runs without the capability it asked for, which is the drift that rule exists against.
  */
-export function routeViewOf(routes: readonly MobileWebPageRoute[] | undefined, pathname: string) {
+export function routeViewOf(
+  routes: readonly MobileWebPageRoute[] | undefined,
+  pathname: string,
+  hostArea = false
+) {
   const entries = implementedPageRouteEntries(routes)
+  // Native unless the page declares it: an older page would draw its sidebar beside the native one.
+  if (hostArea && !pageCanOwnHostArea(routes, pathname)) {
+    return { pageRoutes: [], pageRouteGrants: [], routeGrants: [] }
+  }
   return {
     pageRoutes: entries.map((route) => route.pathname),
     pageRouteGrants: entries.map((route) => ({
       pathname: route.pathname,
       grants: effectiveRouteGrants(route)
     })),
-    routeGrants: grantsForRoute(routes, pathname)
+    routeGrants: hostArea ? hostAreaGrants(entries) : grantsForRoute(routes, pathname)
   }
+}
+
+/** Whether this shell serves the host route's exact entry and it declares `canOwnHostArea`. */
+export function pageCanOwnHostArea(
+  routes: readonly MobileWebPageRoute[] | undefined,
+  pathname: string
+): boolean {
+  return implementedPageRouteEntries(routes).some(
+    (route) =>
+      route.canOwnHostArea === true &&
+      !route.pathname.split('/').some(isRestSegment) &&
+      matchesRoutePattern(pathname, route.pathname)
+  )
+}
+
+/** Every served route's grants, so `route-handoff.web.ts` keeps each hop in the page. */
+function hostAreaGrants(entries: readonly MobileWebPageRoute[]): string[] {
+  return [...new Set(entries.flatMap(effectiveRouteGrants))]
 }

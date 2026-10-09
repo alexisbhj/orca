@@ -6,7 +6,10 @@ import { useResponsiveLayout } from '../../../src/layout/responsive-layout'
 import { MobileWebShellScreen } from '../../../src/mobile-web-shell/MobileWebShellScreen'
 import { ShellSwitchPendingScreen } from '../../../src/mobile-web-shell/ShellSwitchPendingScreen'
 import { shellScreenRoute } from '../../../src/mobile-web-shell/shell-screen-route'
-import { useShellSwitchDecision } from '../../../src/mobile-web-shell/shell-switch-decision'
+import {
+  useShellSwitchDecision,
+  useWideHostAreaDecision
+} from '../../../src/mobile-web-shell/shell-switch-decision'
 
 /**
  * The worktree list, from the desktop's bundle or from this app.
@@ -56,11 +59,34 @@ function HostListScreen() {
   )
 }
 
-// On wide layouts the sidebar hosts the list, so this route is just the empty detail pane.
+// Wide: the page owns the whole host area, or (no `canOwnHostArea`) native-route leaves the placeholder.
+function WideHostArea() {
+  const params = useLocalSearchParams<{ hostId?: string | string[] }>()
+  const hostId = firstParam(params.hostId)
+  const decision = useWideHostAreaDecision()
+  const route = shellScreenRoute({ pathname: `/h/${encodeURIComponent(hostId)}` })
+  if (decision === 'pending') {
+    return <ShellSwitchPendingScreen />
+  }
+  if (decision === 'native' || hostId === '' || route === null) {
+    return <WorkspaceDetailPlaceholder />
+  }
+  return (
+    <MobileWebShellScreen
+      // Distinct from the narrow list's key: different grants, so a layout-class change remounts.
+      key={`wide:${hostId}`}
+      hostId={hostId}
+      route={route}
+      hostArea
+      fallback={<WorkspaceDetailPlaceholder />}
+    />
+  )
+}
+
 export default function HostWorktreeRoute() {
   const { isWideLayout } = useResponsiveLayout()
   if (isWideLayout) {
-    return <WorkspaceDetailPlaceholder />
+    return <WideHostArea />
   }
   return <HostListScreen />
 }

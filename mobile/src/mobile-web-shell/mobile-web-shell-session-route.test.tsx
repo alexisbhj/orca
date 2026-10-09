@@ -34,6 +34,8 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  // A phone's window: these switches' wide-layout rule has its own suite.
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   StyleSheet: { create: (styles: unknown) => styles },
   View: 'View'
 }))

@@ -37,6 +37,8 @@ const dependencies = vi.hoisted((): Dependencies => {
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  // A phone's window: these switches' wide-layout rule has its own suite.
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   BackHandler: { addEventListener: () => ({ remove: () => {} }) },
   Keyboard: { addListener: () => ({ remove: () => {} }) },
   Linking: { openURL: vi.fn() },

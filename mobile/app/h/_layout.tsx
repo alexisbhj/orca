@@ -13,6 +13,7 @@ import {
 import { HostProtocolGate } from '../../src/components/HostProtocolGate'
 import { HostScreen } from '../../src/host-screen/HostScreen'
 import { HostStack } from '../../src/navigation/host-stack'
+import { useHostSidebarDrawnHere } from '../../src/mobile-web-shell/host-sidebar-owner'
 
 // Keep at least this much room for the detail pane when resizing the sidebar.
 const MIN_DETAIL_WIDTH = 320
@@ -64,7 +65,9 @@ export default function HostGroupLayout() {
   }, [windowWidth])
 
   const hideSidebar = useCallback(() => setSidebarOpen(false), [])
-  const showSidebar = isWideLayout && !!hostId
+  // One owner: the page only with the `ownsHostArea` init fact, native only when the page lacks it.
+  const sidebarDrawnHere = useHostSidebarDrawnHere(hostId ?? '')
+  const showSidebar = isWideLayout && !!hostId && sidebarDrawnHere
   const detailHasContent = !!hostId && pathname !== `/h/${hostId}`
   const canCollapseSidebar = showSidebar && detailHasContent
 

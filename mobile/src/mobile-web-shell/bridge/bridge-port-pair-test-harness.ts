@@ -105,6 +105,8 @@ export type BridgePortPairOptions<TRpc extends RpcClient> = {
   serveNativeVerb?: (verb: BridgeNativeVerb, params: unknown) => Promise<unknown>
   safeAreaInsets?: BridgeSafeAreaInsets
   keyboardInset?: number
+  /** Stands for the wide host-area session, the one shell mount that tells the page it owns it. */
+  ownsHostArea?: boolean
 }
 
 type Lane = {
@@ -233,6 +235,7 @@ export function createBridgePortPair<TRpc extends RpcClient>(
       options.clientIdentity === undefined ? PORT_PAIR_CLIENT_IDENTITY : options.clientIdentity,
     pageRoutes: options.pageRoutes ?? ['/h/[hostId]'],
     routeGrants: options.routeGrants ?? MOBILE_WEB_SHELL_GRANTS,
+    ...(options.ownsHostArea === undefined ? {} : { ownsHostArea: options.ownsHostArea }),
     sessionEstablished: options.sessionEstablished ?? false,
     onNavigate: (href) => navigations.push(href),
     onExternalLink: (url) => externalLinks.push(url),

@@ -1,4 +1,6 @@
+import { useResponsiveLayout } from '../layout/responsive-layout'
 import type { BridgeInitRoute } from './bridge/bridge-init-route'
+import { useHostAreaOwner, type HostAreaOwner } from './host-area-owner'
 import { useMobileWebShellEnabled } from './use-mobile-web-shell-enabled'
 
 /**
@@ -23,9 +25,12 @@ export type ShellSwitchDecision =
   | { readonly kind: 'native' }
   | { readonly kind: 'shell'; readonly route: BridgeInitRoute }
 
+/** `wideOwner` is undefined off a wide layout; on one, only a page that owns the host area serves a
+ *  detail route, since an older page beside the native sidebar would draw a second one. */
 export function shellSwitchDecision(
   enabled: boolean | null,
-  route: BridgeInitRoute | null
+  route: BridgeInitRoute | null,
+  wideOwner?: HostAreaOwner | null
 ): ShellSwitchDecision {
   if (route === null) {
     return { kind: 'native' }
@@ -33,10 +38,54 @@ export function shellSwitchDecision(
   if (enabled === null) {
     return { kind: 'pending' }
   }
-  return enabled ? { kind: 'shell', route } : { kind: 'native' }
+  if (!enabled || wideOwner === 'native') {
+    return { kind: 'native' }
+  }
+  return wideOwner === null ? { kind: 'pending' } : { kind: 'shell', route }
+}
+
+/** The host a switch's route names: every switch route is `/h/<encoded host>/...`. */
+function routeHostId(route: BridgeInitRoute | null): string {
+  const segment = route?.pathname.split('/')[2] ?? ''
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return ''
+  }
 }
 
 /** The route is `null` when this switch's params name no screen the shell could open. */
 export function useShellSwitchDecision(route: BridgeInitRoute | null): ShellSwitchDecision {
-  return shellSwitchDecision(useMobileWebShellEnabled(), route)
+  const enabled = useMobileWebShellEnabled()
+  const { isWideLayout } = useResponsiveLayout()
+  // A phone never reads the record: no owner is consulted off a wide layout.
+  const owner = useHostAreaOwner(isWideLayout ? routeHostId(route) : '')
+  return shellSwitchDecision(enabled, route, isWideLayout ? owner : undefined)
+}
+
+/** `host-area` mounts the host session, which learns from its bundle who owns the area. */
+export type WideHostAreaDecision = 'pending' | 'native' | 'host-area'
+
+export function wideHostAreaDecision(enabled: boolean | null): WideHostAreaDecision {
+  if (enabled === null) {
+    return 'pending'
+  }
+  return enabled ? 'host-area' : 'native'
+}
+
+export function useWideHostAreaDecision(): WideHostAreaDecision {
+  return wideHostAreaDecision(useMobileWebShellEnabled())
+}
+
+/** Not while the page owns the area, nor while either fact is being read: never two sidebars. */
+export function nativeHostSidebarShown(
+  enabled: boolean | null,
+  owner: HostAreaOwner | null
+): boolean {
+  return enabled === false || (enabled === true && owner === 'native')
+}
+
+export function useNativeHostSidebar(hostId: string): boolean {
+  const enabled = useMobileWebShellEnabled()
+  return nativeHostSidebarShown(enabled, useHostAreaOwner(hostId))
 }

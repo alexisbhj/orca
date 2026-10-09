@@ -57,7 +57,7 @@ export function openByOwnRoutes(
   } = {}
 ): MobileWebShellStep {
   const { patch = {}, served = {}, wall = null } = options
-  const view = routeViewOf(generation.routes, session.routePathname)
+  const view = routeViewOf(generation.routes, session.routePathname, session.hostArea)
   if (!rendersRoute(view.pageRoutes, session.routePathname)) {
     return step(session, { ...patch, ...view, state: NATIVE_ROUTE })
   }

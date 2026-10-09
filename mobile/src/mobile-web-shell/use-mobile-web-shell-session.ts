@@ -72,9 +72,12 @@ export function useMobileWebShellSession(args: {
   hostId: string
   /** The route this mount stands for, matched against the page routes the bundle declares. */
   routePathname: string
+  /** Opened to own the whole host area; see `MobileWebShellSession.hostArea`. */
+  hostArea?: boolean
   runtime?: MobileWebShellRuntime
 }): MobileWebShellSessionView {
   const { hostId, routePathname } = args
+  const hostArea = args.hostArea === true
   const gates = useHostProtocolGates()
   const { client, state: connState } = useHostClient(hostId)
 
@@ -84,7 +87,7 @@ export function useMobileWebShellSession(args: {
   const storeRef = useRef<GenerationStore | null>(null)
   storeRef.current ??= runtime.createStore()
 
-  const sessionRef = useRef(createMobileWebShellSession(routePathname))
+  const sessionRef = useRef(createMobileWebShellSession(routePathname, hostArea))
   const [state, setState] = useState(sessionRef.current.state)
   const [pageReady, setPageReady] = useState(sessionRef.current.pageReady)
   const [pageFrame, setPageFrame] = useState(() => shellPageFrame(sessionRef.current))
@@ -214,13 +217,13 @@ export function useMobileWebShellSession(args: {
   useEffect(() => {
     // A new host is a new session: the old one's latches, cache handle and in-flight work all go.
     invalidate()
-    sessionRef.current = createMobileWebShellSession(routePathname)
+    sessionRef.current = createMobileWebShellSession(routePathname, hostArea)
     startedAtRef.current = runtime.now()
     setState(sessionRef.current.state)
     setPageReady(sessionRef.current.pageReady)
     setPageFrame(shellPageFrame(sessionRef.current))
     return invalidate
-  }, [hostId, invalidate, routePathname, runtime])
+  }, [hostArea, hostId, invalidate, routePathname, runtime])
 
   const { statusPending, statusReadable, hostCapabilities, hostProtocolWindow } = gates
   const reachability = readMobileWebShellReachability(connState, client)
@@ -242,6 +245,7 @@ export function useMobileWebShellSession(args: {
     dispatch,
     hostCapabilities,
     hostId,
+    hostArea,
     hostProtocolWindow,
     reachability,
     routePathname,

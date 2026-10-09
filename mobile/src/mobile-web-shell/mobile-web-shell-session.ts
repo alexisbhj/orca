@@ -29,9 +29,13 @@ import { CLEAR_PAGE_DOCUMENT_STATE, pageDocumentStatePatch } from './page-docume
 import { openByOwnRoutes, openCached, rendersRoute } from './mobile-web-shell-cached-generation'
 import { step } from './mobile-web-shell-session-step'
 
-export function createMobileWebShellSession(routePathname: string): MobileWebShellSession {
+export function createMobileWebShellSession(
+  routePathname: string,
+  hostArea = false
+): MobileWebShellSession {
   return {
     routePathname,
+    hostArea,
     pageRoutes: [],
     pageRouteGrants: [],
     routeGrants: [],
@@ -116,7 +120,8 @@ function onManifestRead(
   // bundle this shell could not open is not a reason to refuse a screen it was never going to open.
   const { pageRoutes, pageRouteGrants, routeGrants } = routeViewOf(
     manifest.routes,
-    session.routePathname
+    session.routePathname,
+    session.hostArea
   )
   // Same build id is the same bytes, because the id is their digest: a route-grant edit publishes
   // the generation already on disk under a newer manifest. Read before this route's verdict,

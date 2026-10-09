@@ -1,6 +1,7 @@
 import { WorkspaceDetailPlaceholder } from '../../../src/components/WorkspaceDetailPlaceholder'
 import { HostScreen } from '../../../src/host-screen/HostScreen'
 import { useResponsiveLayout } from '../../../src/layout/responsive-layout'
+import { useHostSidebarDrawnHere } from '../../../src/mobile-web-shell/host-sidebar-owner'
 
 /**
  * Web sibling for the worktree list.
@@ -13,7 +14,9 @@ import { useResponsiveLayout } from '../../../src/layout/responsive-layout'
  */
 export default function HostWorktreeRoute() {
   const { isWideLayout } = useResponsiveLayout()
-  if (isWideLayout) {
+  // The placeholder only beside the page's own sidebar: without the host area this is the list.
+  const sidebarHere = useHostSidebarDrawnHere('')
+  if (isWideLayout && sidebarHere) {
     return <WorkspaceDetailPlaceholder />
   }
   return <HostScreen />
