@@ -219,7 +219,8 @@ export function NativeChatStructuredSession(
     agentLabel,
     launchFailure: provisionalLaunch.lifecycle === 'failed' ? provisionalLaunch.failure : null,
     journalItems: controller.journalItems,
-    submissions: controller.submissions
+    submissions: controller.submissions,
+    deliveryNotices
   })
   const notices = structuredSessionNotices({
     launch,

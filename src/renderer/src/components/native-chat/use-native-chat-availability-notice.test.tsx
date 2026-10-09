@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { useNativeChatAvailabilityNotice } from './use-native-chat-availability-notice'
 import { agentSessionFailureWords } from '../../../../shared/agent-session-failure-words'
 import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
+import { agentJournalSubmissionKey } from '../../../../shared/agent-session-journal-item-key'
 import {
   structuredAgentSessionDeliveryNotices,
   structuredAgentSessionStartFailureFacts
@@ -83,13 +84,21 @@ it('keeps one auth explanation while an unechoed message still reads as unsent',
 })
 
 // A signed-out Pi turns the send away before any turn: that send's own line says it.
-it("steps aside while the newest send was turned away for the notice's reason", () => {
-  const sent = (submittedAt: number, rejected?: 'notSignedIn' | 'providerRejected') => ({
-    submittedAt,
+it("steps aside while the newest send's own line says the notice's reason", () => {
+  const sent = (
+    id: string,
+    order: { at: number; sequence?: number },
+    rejected?: 'notSignedIn' | 'providerRejected'
+  ) => ({
+    clientMessageId: id,
+    submittedAt: order.at,
+    ...(order.sequence === undefined ? {} : { submittedSequence: order.sequence }),
     dispatchState: rejected ? ('rejected' as const) : ('accepted' as const),
     ...(rejected ? { rejection: { kind: rejected } } : {})
   })
-  const notice = (submissions: ReturnType<typeof sent>[]) =>
+  const lines = (...ids: string[]) =>
+    new Map(ids.map((id) => [agentJournalSubmissionKey(id), { text: 'line' }]))
+  const notice = (submissions: ReturnType<typeof sent>[], deliveryNotices = lines('a', 'b')) =>
     renderHook(() =>
       useNativeChatAvailabilityNotice({
         agent: 'pi',
@@ -97,10 +106,20 @@ it("steps aside while the newest send was turned away for the notice's reason", 
         unavailable: { reason: 'notSignedIn' },
         launchFailure: null,
         journalItems: [],
-        submissions
+        submissions,
+        deliveryNotices
       })
     ).result.current
-  expect(notice([sent(1, 'notSignedIn')])).toBeNull()
-  expect(notice([sent(1, 'providerRejected')])?.text).toContain('/login')
-  expect(notice([sent(1, 'notSignedIn'), sent(2)])?.text).toContain('/login')
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')])).toBeNull()
+  expect(notice([sent('a', { at: 1 }, 'providerRejected')])?.text).toContain('/login')
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn'), sent('b', { at: 2 })])?.text).toContain(
+    '/login'
+  )
+  // Its line gone (a returned card deleted, the row trimmed): the notice is the only guidance.
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')], lines())?.text).toContain('/login')
+  // The host's send order decides, not a clock that moved back.
+  expect(
+    notice([sent('a', { at: 5, sequence: 1 }, 'notSignedIn'), sent('b', { at: 2, sequence: 2 })])
+      ?.text
+  ).toContain('/login')
 })

@@ -6,6 +6,8 @@ import type {
   AgentJournalSubmission
 } from '../../../../shared/agent-session-journal-types'
 import type { AgentType } from '../../../../shared/agent-status-types'
+import { agentJournalSubmissionKey } from '../../../../shared/agent-session-journal-item-key'
+import { inSendOrder } from '../../../../shared/native-chat-send-order'
 import { agentSessionRefusalReasonWords } from '../../../../shared/agent-session-refusal-reason-words'
 import type { AgentSessionWriteRefusal } from '../../../../shared/agent-session-write-failure'
 import { isStructuredAgentSessionStartFailureRow } from '../../../../shared/structured-agent-session-start-failure-row-key'
@@ -29,19 +31,19 @@ function failedStartReason(items: readonly AgentJournalRenderItem[] | undefined)
   return reason
 }
 
-/** Why the newest send was turned away, which its own line already says. */
-function newestRejectionReason(
-  submissions: readonly Pick<
-    AgentJournalSubmission,
-    'dispatchState' | 'rejection' | 'submittedAt'
-  >[]
+type NoticeSubmission = Pick<
+  AgentJournalSubmission,
+  'clientMessageId' | 'dispatchState' | 'rejection' | 'submittedAt' | 'submittedSequence'
+>
+
+/** Why the newest send was turned away, while that send's own line on screen says so. */
+function shownRejectionReason(
+  submissions: readonly NoticeSubmission[],
+  shownLines: ReadonlyMap<string, unknown>
 ): string | null {
-  const newest = submissions.reduce<(typeof submissions)[number] | null>(
-    (latest, submission) =>
-      !latest || submission.submittedAt >= latest.submittedAt ? submission : latest,
-    null
-  )
-  return newest?.dispatchState === 'rejected'
+  const newest = inSendOrder(submissions, (submission) => submission).at(-1)
+  return newest?.dispatchState === 'rejected' &&
+    shownLines.has(agentJournalSubmissionKey(newest.clientMessageId))
     ? (readAgentSessionFailureFact(newest.rejection)?.kind ?? null)
     : null
 }
@@ -55,10 +57,9 @@ export function useNativeChatAvailabilityNotice(input: {
   agentLabel: string
   launchFailure: AgentSessionWriteRefusal | null
   journalItems: readonly AgentJournalRenderItem[] | undefined
-  submissions?: readonly Pick<
-    AgentJournalSubmission,
-    'dispatchState' | 'rejection' | 'submittedAt'
-  >[]
+  submissions?: readonly NoticeSubmission[]
+  /** The lines under the chat's messages, by message key: a refused send's says why. */
+  deliveryNotices?: ReadonlyMap<string, unknown>
 }): NativeChatComposerNotice | null {
   const { unavailable, journalItems } = input
   const key = !unavailable
@@ -72,8 +73,8 @@ export function useNativeChatAvailabilityNotice(input: {
   }
   const rowReason = useMemo(() => failedStartReason(journalItems), [journalItems])
   const sendReason = useMemo(
-    () => newestRejectionReason(input.submissions ?? []),
-    [input.submissions]
+    () => shownRejectionReason(input.submissions ?? [], input.deliveryNotices ?? new Map()),
+    [input.submissions, input.deliveryNotices]
   )
   if (!unavailable || (dismissal.key === key && dismissal.dismissed)) {
     return null
