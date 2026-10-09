@@ -12,9 +12,12 @@ export function NativeChatVisualTab({
 }): React.JSX.Element {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [retired, setRetired] = useState(false)
+  // Why `visual` as refresh key: each "Open in new tab" stores a fresh record, so a tab already on
+  // screen re-asks the host; an unchanged revision keeps the page as it is.
   const state = useNativeChatVisualDocument(
     { target: visual.target, sessionId: visual.sessionId, file: visual.file },
-    true
+    true,
+    visual
   )
 
   if (retired || state.status === 'unavailable') {

@@ -1,6 +1,7 @@
 import type { AppState } from '@/store'
 import type { OpenFile } from '@/store/slices/editor'
 import { findWorktreeById } from '@/store/slices/worktree-helpers'
+import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
 import { findRepoForHost } from '@/store/slices/repo-host-identity'
 import { getFolderWorkspaceConnectionId } from '@/lib/folder-workspace-connection'
 import { isLocalWindowsDesktopClient } from '@/lib/desktop-window-chrome'
@@ -131,6 +132,10 @@ export function selectEditorExternalWatchTargets(
   const targetOwnersByWorktreeId = new Map<string, Set<string | null>>()
   // Why: watcher ownership is scoped by worktree + runtime owner — the same path can be open locally and in a runtime workspace, and reads/saves already route per owner.
   for (const file of state.openFiles) {
+    // Why: a virtual tab (CI details, chat visual) has no file in the workspace to watch.
+    if (isVirtualEditorFile(file)) {
+      continue
+    }
     let owners = targetOwnersByWorktreeId.get(file.worktreeId)
     if (!owners) {
       owners = new Set()

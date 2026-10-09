@@ -165,7 +165,7 @@ export function createRecentlyClosedEditorTabs(
         // Why: one shared index — a per-file position lookup rescans tab order and group membership, making close-all cubic.
         const positionIndex = createRecentlyClosedTabPositionIndex(s, activeWorktreeId)
         for (const f of [...closingFiles].toReversed()) {
-          // Why: skip untitled non-dirty files (deleted from disk after close) and ephemeral preview tabs so the reopen stack has no vanished/junk paths.
+          // Why: skip untitled non-dirty files (deleted from disk after close), ephemeral preview tabs, and chat visuals (one click away in their chat) so the reopen stack has no vanished/junk paths.
           if (
             untitledIdsToDelete.has(f.id) ||
             f.mode === 'markdown-preview' ||
