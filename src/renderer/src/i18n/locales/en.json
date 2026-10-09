@@ -18630,7 +18630,6 @@
         "turnOffQueueing": "Turn off queueing",
         "listLabel": "Queued messages",
         "alreadySent": "This message was already sent.",
-        "editAlreadySent": "Already sent — your text is still in the composer.",
         "withdrawnHold": "Stopped before it was sent",
         "pausedSendFailed": "Couldn't send — press Send to retry.",
         "paused": "Paused",
@@ -18644,7 +18643,12 @@
         "sendConfirmClear": "Clear queue",
         "sendConfirmSend": "Send message",
         "from": "From {{names}}",
-        "pausedSendFailedWaiting": "Couldn't send — press Send to retry once the agent finishes."
+        "pausedSendFailedWaiting": "Couldn't send — press Send to retry once the agent finishes.",
+        "save": "Save",
+        "cancel": "Cancel",
+        "editChanged": "This message changed while you were editing. Cancel and edit it again to change the latest text.",
+        "editFailed": "This message can't be edited.",
+        "editGone": "This message was already sent or removed. Your edit is in the chat box."
       },
       "thought": "Thought",
       "thoughtForDuration": "Thought for {{duration}}",

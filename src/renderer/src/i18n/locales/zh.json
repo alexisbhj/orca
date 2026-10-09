@@ -18367,7 +18367,6 @@
       },
       "queuedMessages": {
         "alreadySent": "此消息已发送。",
-        "editAlreadySent": "已发送 — 你的文本仍在输入框中。",
         "listLabel": "排队的消息",
         "behindReturnedHold": "等待中 — 前面有一条消息需要处理",
         "awaitingAnswerHold": "等待你的回答",
@@ -18392,7 +18391,12 @@
         "sendConfirmClear": "清空队列",
         "sendConfirmSend": "发送消息",
         "from": "来自 {{names}}",
-        "pausedSendFailedWaiting": "无法发送。智能体完成后，点按发送以重试。"
+        "pausedSendFailedWaiting": "无法发送。智能体完成后，点按发送以重试。",
+        "save": "保存",
+        "cancel": "取消",
+        "editChanged": "你编辑时此消息已更改。请取消并重新编辑，以更改最新内容。",
+        "editFailed": "此消息无法编辑。",
+        "editGone": "此消息已发送或移除。你编辑的内容已放入聊天输入框。"
       },
       "thought": "已思考",
       "thoughtForDuration": "思考了 {{duration}}",

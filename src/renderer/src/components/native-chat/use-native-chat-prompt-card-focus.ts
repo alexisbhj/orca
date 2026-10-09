@@ -24,7 +24,12 @@ export function useNativeChatPromptCardFocus(
   useLayoutEffect(() => {
     const card = cardRef.current
     const active = document.activeElement
-    if (shouldFocus && isInNativeChatPaneOf(card, active) && !card?.contains(active)) {
+    if (
+      shouldFocus &&
+      isInNativeChatPaneOf(card, active) &&
+      !card?.contains(active) &&
+      !active?.closest('[data-queued-message-editor]')
+    ) {
       card?.focus()
     }
   }, [cardRef, shouldFocus, step])

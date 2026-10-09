@@ -31,6 +31,8 @@ import { queuedCardSenderLine } from './native-chat-agent-message-sender-label'
 import { agentSessionFailureStatedByStartRow } from './structured-agent-session-delivery-notices'
 import type { AgentSessionFailureFact } from '../../../../shared/agent-session-failure'
 import { agentSessionWriteNotDoneParts } from '../../../../shared/agent-session-refusal-notice'
+import { NativeChatQueuedMessageEditor } from './NativeChatQueuedMessageEditor'
+import type { QueuedMessageInlineEditor } from './use-structured-agent-session-queued-edit'
 
 /** The visible caption under the text; the default waiting hold needs none. */
 export function queuedMessageCardCaption(
@@ -133,6 +135,8 @@ export function NativeChatQueuedMessageCard({
   onSteer,
   onDelete,
   onEdit,
+  editor,
+  editDisabled = false,
   onTurnOffQueueing
 }: {
   card: QueuedMessageCard
@@ -144,7 +148,12 @@ export function NativeChatQueuedMessageCard({
   steerHeld?: boolean
   onSteer: () => void
   onDelete: () => void
-  onEdit: () => void
+  /** Absent when the host cannot edit in place: the card then offers no Edit at all. */
+  onEdit?: () => void
+  /** This card is being edited here: the editor replaces its text and its actions. */
+  editor?: QueuedMessageInlineEditor
+  /** Another card in this pane is being edited. */
+  editDisabled?: boolean
   /** Absent when the host does not queue sends, so there is nothing to turn off. */
   onTurnOffQueueing?: () => void
 }): React.JSX.Element {
@@ -156,7 +165,9 @@ export function NativeChatQueuedMessageCard({
     <li
       data-queued-message-id={card.messageId}
       data-queued-message-state={card.state}
-      className="flex items-center gap-2 px-2.5 py-1.5"
+      className={
+        editor ? 'flex items-start gap-2 px-2.5 py-1.5' : 'flex items-center gap-2 px-2.5 py-1.5'
+      }
     >
       {returned || card.pausedReason === QUEUED_MESSAGE_PAUSED_SEND_FAILED ? (
         <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden />
@@ -169,9 +180,13 @@ export function NativeChatQueuedMessageCard({
             {queuedCardSenderLine(card.from)}
           </p>
         ) : null}
-        <p className="truncate text-sm" title={card.text}>
-          {card.text}
-        </p>
+        {editor ? (
+          <NativeChatQueuedMessageEditor editor={editor} />
+        ) : (
+          <p className="truncate text-sm" title={card.text}>
+            {card.text}
+          </p>
+        )}
         {caption ? (
           <p
             className={
@@ -185,7 +200,7 @@ export function NativeChatQueuedMessageCard({
         ) : null}
       </div>
       {/* Nothing acts on a send still on its way: the host holds no card for it yet. */}
-      {card.hold === 'sending' ? null : (
+      {card.hold === 'sending' || editor ? null : (
         <>
           {/* A command never steers: its Send shows only while the agent is idle. */}
           {card.waitsForAgent ? null : (
@@ -196,7 +211,8 @@ export function NativeChatQueuedMessageCard({
                   variant="ghost"
                   size="xs"
                   onClick={onSteer}
-                  disabled={steerHeld}
+                  // Someone is editing it on another device; their Save, Cancel or lapse frees it.
+                  disabled={steerHeld || card.editHeld}
                 >
                   {sendNow.steers ? (
                     <CornerDownRight className="size-3" />
@@ -232,38 +248,40 @@ export function NativeChatQueuedMessageCard({
               {translate('components.native-chat.queuedMessages.delete', 'Delete')}
             </TooltipContent>
           </Tooltip>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={translate(
-                  'components.native-chat.queuedMessages.moreActions',
-                  'More actions'
-                )}
-              >
-                <MoreHorizontal className="size-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {/* A command's text is not a draft: edited, it would become a message. */}
-              {card.command ? null : (
-                <DropdownMenuItem onSelect={onEdit}>
-                  <Pencil />
-                  {translate('components.native-chat.queuedMessages.editMessage', 'Edit message')}
-                </DropdownMenuItem>
-              )}
-              {onTurnOffQueueing ? (
-                <DropdownMenuItem onSelect={onTurnOffQueueing}>
-                  {translate(
-                    'components.native-chat.queuedMessages.turnOffQueueing',
-                    'Turn off queueing'
+          {(!card.command && onEdit) || onTurnOffQueueing ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={translate(
+                    'components.native-chat.queuedMessages.moreActions',
+                    'More actions'
                   )}
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                >
+                  <MoreHorizontal className="size-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {/* A command's text is not a draft: edited, it would become a message. */}
+                {card.command || !onEdit ? null : (
+                  <DropdownMenuItem disabled={editDisabled} onSelect={onEdit}>
+                    <Pencil />
+                    {translate('components.native-chat.queuedMessages.editMessage', 'Edit message')}
+                  </DropdownMenuItem>
+                )}
+                {onTurnOffQueueing ? (
+                  <DropdownMenuItem onSelect={onTurnOffQueueing}>
+                    {translate(
+                      'components.native-chat.queuedMessages.turnOffQueueing',
+                      'Turn off queueing'
+                    )}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </>
       )}
     </li>

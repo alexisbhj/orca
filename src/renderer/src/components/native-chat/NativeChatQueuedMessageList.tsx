@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAppStore } from '../../store'
@@ -24,7 +24,7 @@ export function NativeChatQueuedMessageList({
   statedFailures?: readonly AgentSessionFailureFact[]
   /** The chat reads Stopping: no card steers into the turn a Stop is ending. */
   steerHeld?: boolean
-  /** Where focus goes once Steer, Edit or Delete takes the focused card away. */
+  /** Where focus goes once Steer, Delete or a closing edit takes the focused card away. */
   focusComposer?: () => void
 }): React.JSX.Element {
   const updateSettings = useAppStore((store) => store.updateSettings)
@@ -59,6 +59,15 @@ export function NativeChatQueuedMessageList({
       }
     })
   }
+  const editingId = controller.editor?.messageId
+  const wasEditing = useRef(editingId)
+  useEffect(() => {
+    const closed = wasEditing.current !== undefined && editingId === undefined
+    wasEditing.current = editingId
+    if (closed) {
+      refocusAfter(Promise.resolve())
+    }
+  })
   return (
     <div aria-live="polite">
       {cards.length > 0 ? (
@@ -91,7 +100,13 @@ export function NativeChatQueuedMessageList({
                   steerHeld={steerHeld}
                   onSteer={() => refocusAfter(controller.steer(card.messageId))}
                   onDelete={() => refocusAfter(controller.remove(card.messageId))}
-                  onEdit={() => refocusAfter(controller.edit(card.messageId))}
+                  onEdit={
+                    controller.editCapable ? () => void controller.edit(card.messageId) : undefined
+                  }
+                  editor={
+                    controller.editor?.messageId === card.messageId ? controller.editor : undefined
+                  }
+                  editDisabled={controller.editor !== undefined}
                   onTurnOffQueueing={turnOffQueueing}
                 />
               ))}

@@ -18468,7 +18468,6 @@
       },
       "queuedMessages": {
         "alreadySent": "Ce message a déjà été envoyé.",
-        "editAlreadySent": "Déjà envoyé — votre texte reste dans la zone de saisie.",
         "listLabel": "Messages en file d'attente",
         "behindReturnedHold": "En attente — un message précédent nécessite votre attention",
         "awaitingAnswerHold": "En attente de votre réponse",
@@ -18493,7 +18492,12 @@
         "sendConfirmClear": "Vider la file d'attente",
         "sendConfirmSend": "Envoyer le message",
         "from": "De {{names}}",
-        "pausedSendFailedWaiting": "Envoi impossible. Quand l'agent aura terminé, appuyez sur Envoyer pour réessayer."
+        "pausedSendFailedWaiting": "Envoi impossible. Quand l'agent aura terminé, appuyez sur Envoyer pour réessayer.",
+        "save": "Enregistrer",
+        "cancel": "Annuler",
+        "editChanged": "Ce message a changé pendant que vous le modifiiez. Annulez puis modifiez-le à nouveau pour changer le texte le plus récent.",
+        "editFailed": "Ce message ne peut pas être modifié.",
+        "editGone": "Ce message a déjà été envoyé ou supprimé. Votre modification se trouve dans le champ de discussion."
       },
       "thought": "A réfléchi",
       "thoughtForDuration": "A réfléchi pendant {{duration}}",

@@ -62,7 +62,11 @@ function card(overrides: Partial<QueuedMessageCard> & { messageId: string }): Qu
 function controller(
   cards: QueuedMessageCard[],
   pause: { reason: string } | null = null,
-  queueCapable = true
+  queueCapable = true,
+  edits: Pick<StructuredAgentSessionQueuedMessagesController, 'editCapable' | 'editor'> = {
+    editCapable: true,
+    editor: undefined
+  }
 ): StructuredAgentSessionQueuedMessagesController & {
   steer: ReturnType<typeof vi.fn>
   remove: ReturnType<typeof vi.fn>
@@ -72,6 +76,7 @@ function controller(
   return {
     cards,
     queueCapable,
+    ...edits,
     pause,
     resume: vi.fn(async () => false),
     resuming: false,
@@ -115,7 +120,13 @@ function renderHeldQueue(
       isWorking: false,
       composerScopeKey: undefined,
       // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the list only awaits mutate; its answer is never read.
-      mutate: mutate as StructuredAgentSessionMutate
+      mutate: mutate as StructuredAgentSessionMutate,
+      editTransport: {
+        target: { kind: 'local' },
+        sessionId: 'session',
+        capable: false,
+        write: async () => ({ kind: 'dropped' })
+      }
     })
     return <NativeChatQueuedMessageList controller={owner} />
   }
@@ -675,6 +686,43 @@ describe('NativeChatQueuedMessageList', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: 'More actions' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Turn off queueing' }))
     expect(mocks.updateSettings).toHaveBeenCalledWith({ nativeChatQueueFollowUps: false })
+  })
+
+  it('a host that cannot edit in place offers no Edit, and an empty menu is not shown', async () => {
+    const owner = controller([card({ messageId: 'kept', hold: 'paused' })], null, false, {
+      editCapable: false,
+      editor: undefined
+    })
+    renderList(owner)
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeTruthy()
+  })
+
+  it('the card being edited shows its editor in place of its text and actions; others cannot open one', async () => {
+    const editor = {
+      messageId: 'draft-1',
+      text: 'editing',
+      acquiring: false,
+      saving: false,
+      canSave: true,
+      change: vi.fn(),
+      save: vi.fn(),
+      cancel: vi.fn()
+    }
+    const owner = controller(
+      [card({ messageId: 'draft-1' }), card({ messageId: 'draft-2', position: 2 })],
+      null,
+      true,
+      { editCapable: true, editor }
+    )
+    renderList(owner)
+    const [edited, other] = screen.getAllByRole('listitem')
+    expect(within(edited!).getByRole('textbox', { name: 'Edit message' })).toBeTruthy()
+    expect(within(edited!).queryByRole('button', { name: 'Delete' })).toBeNull()
+    expect(within(edited!).queryByText('text of draft-1')).toBeNull()
+    fireEvent.pointerDown(within(other!).getByRole('button', { name: 'More actions' }))
+    const item = await screen.findByRole('menuitem', { name: 'Edit message' })
+    expect(item.getAttribute('aria-disabled')).toBe('true')
   })
 
   // A kept message shows as a card even where the host does not queue sends; there the setting
