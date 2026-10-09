@@ -14,7 +14,7 @@ vi.mock('../../pty-host-bindings', () => ({
 }))
 vi.mock('../../../daemon/daemon-provider-state', () => ({
   isTerminalFromBeforeDaemonProtocol: (id: string, protocolVersion: number) =>
-    protocolVersion === 42 && mocks.olderPtyIds.has(id)
+    protocolVersion === 44 && mocks.olderPtyIds.has(id)
 }))
 
 import { installPtyClaudeOldTerminalIpcHandler } from './claude-old-terminal'
