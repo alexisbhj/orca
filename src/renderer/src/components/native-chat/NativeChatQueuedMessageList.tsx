@@ -5,6 +5,7 @@ import { useAppStore } from '../../store'
 import { translate } from '@/i18n/i18n'
 import { NativeChatQueuedMessageCard } from './NativeChatQueuedMessageCard'
 import type { StructuredAgentSessionQueuedMessagesController } from './use-structured-agent-session-queued-messages'
+import type { AgentSessionFailureFact } from '../../../../shared/agent-session-failure'
 
 /**
  * Host-held drafts stacked between the transcript and the composer — never in
@@ -13,10 +14,17 @@ import type { StructuredAgentSessionQueuedMessagesController } from './use-struc
  */
 export function NativeChatQueuedMessageList({
   controller,
+  chatWorktreeId,
+  agentName,
+  statedFailures,
   steerHeld = false,
   focusComposer
 }: {
   controller: StructuredAgentSessionQueuedMessagesController
+  /** Where a card's sender is opened from; null shows it unlinked. */
+  chatWorktreeId: string | null
+  agentName?: string
+  statedFailures?: readonly AgentSessionFailureFact[]
   /** The chat reads Stopping: no card steers into the turn a Stop is ending. */
   steerHeld?: boolean
   /** Where focus goes once Steer, Edit or Delete takes the focused card away. */
@@ -80,6 +88,9 @@ export function NativeChatQueuedMessageList({
                 <NativeChatQueuedMessageCard
                   key={card.messageId}
                   card={card}
+                  chatWorktreeId={chatWorktreeId}
+                  agentName={agentName}
+                  statedFailures={statedFailures}
                   showsSteerShortcut={controller.queueCapable && card === newest}
                   steerHeld={steerHeld}
                   onSteer={() => refocusAfter(controller.steer(card.messageId))}
