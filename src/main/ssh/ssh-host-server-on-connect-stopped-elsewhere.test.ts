@@ -135,19 +135,12 @@ describe('redeploying a host another desktop stopped, across Orca versions', () 
     expect(releasedPlan(stopped, '1.5.0')).toBe('update')
   })
 
-  it('does not guess for a stop recorded without the app version', () => {
+  it('redeploys a stop recorded without the app version', () => {
     // What a stop committed by a build that predates keeping the app version leaves.
     const legacy = withDeactivatedVersion(servedBy('1.5.0', '1.5.0+new'))
-    expect(plan(legacy, '1.6.0')).toEqual({ action: 'skip', reason: 'stopped-version-unknown' })
-    // The same build that was stopped is always safe to start again.
-    expect(
-      planManagedOrcadAutoUpdate({
-        record: legacy,
-        candidateVersion: '1.5.0+new',
-        appVersion: '1.5.0',
-        failedBefore: false
-      })
-    ).toEqual({ action: 'update' })
+    expect(plan(legacy, '1.6.0')).toEqual({ action: 'update' })
+    expect(plan(legacy, '1.4.0')).toEqual({ action: 'update' })
+    expect(plan(legacy, '1.4.0', true)).toEqual({ action: 'update' })
   })
 
   it('retries the redeploy after an earlier failure, since nothing serves', () => {
