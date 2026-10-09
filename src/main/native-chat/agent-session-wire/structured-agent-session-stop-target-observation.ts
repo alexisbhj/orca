@@ -7,6 +7,7 @@ import {
   agentSessionStopTargetIsLive,
   type AgentSessionStopTarget
 } from '../../../shared/agent-session-stop-target'
+import { structuredAgentSessionStopTookEffect } from './structured-agent-session-stopping'
 import type { AgentSessionTurnContext } from './structured-agent-session-turns'
 
 type StopTargetObservation =
@@ -84,7 +85,7 @@ export function observeStructuredAgentSessionStopTarget(
   if (activeTurnId !== null) {
     return { verdict: 'unverifiable' }
   }
-  // A Stop of everything in flight, recorded after the send reached the agent, already ended it.
+  // A Stop of everything in flight that took effect after the send reached the agent ended it.
   const latestStop = ctx.journal.stopMarks.latest()
   const reachedAgentAt =
     ctx.journal.item(agentJournalSubmissionKey(submission.clientMessageId))?.sequence ??
@@ -92,6 +93,7 @@ export function observeStructuredAgentSessionStopTarget(
   if (
     latestStop !== null &&
     latestStop.event.turnId === undefined &&
+    structuredAgentSessionStopTookEffect(latestStop) &&
     reachedAgentAt !== undefined &&
     latestStop.sequence > reachedAgentAt
   ) {
