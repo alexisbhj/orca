@@ -196,6 +196,23 @@ it.each([
 })
 
 const MARKDOWN_CONVERSION_SPEC = 'tests/e2e/ssh-orcad-markdown-conversion.spec.ts'
+
+it.each([
+  'src/renderer/src/components/settings/McpConfigSection.tsx',
+  'src/renderer/src/components/settings/RepositoryPane.tsx',
+  'src/renderer/src/components/settings/mcp-config-inspection.ts',
+  'src/renderer/src/components/settings/mcp-config-workspace-owner.ts',
+  'src/renderer/src/runtime/runtime-file-mutation-client.ts'
+])('runs %s ownership checks in the template-building Docker lane', (file) => {
+  const spec = 'tests/e2e/ssh-orcad-mcp-config-owner.spec.ts'
+  expect(selectPrE2eSpecs([file])).toContain(spec)
+  expect(classify([spec])).toEqual({ e2e_run_changed: false, e2e_needs_build: true })
+  const job = workflow.jobs['orcad-auto-convert-docker']
+  expect(job.if).toContain(spec)
+  expect(job.steps.find((step) => step.name === 'Convert a relay-era Docker host').run).toContain(
+    spec
+  )
+})
 const MARKDOWN_LINK_REFRESH_SPEC = 'tests/e2e/ssh-orcad-markdown-link-refresh.spec.ts'
 const MARKDOWN_LIVE_DOCUMENTS_SPEC = 'tests/e2e/ssh-orcad-markdown-live-documents.spec.ts'
 

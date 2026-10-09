@@ -122,6 +122,18 @@ export const PR_E2E_SOURCE_ROUTES = [
         ))
   },
   {
+    id: 'ssh.orcad-mcp-config-owner',
+    specs: ['tests/e2e/ssh-orcad-mcp-config-owner.spec.ts'],
+    matches: (file) =>
+      /^tests\/e2e\/helpers\/(?:orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-relay-target)\.ts$/.test(
+        file
+      ) ||
+      (isProductSource(file) &&
+        /^src\/(?:shared\/mcp-config\.ts|renderer\/src\/(?:components\/settings\/(?:McpConfigSection\.tsx|RepositoryPane\.tsx|mcp-config-(?:inspection|workspace-owner)\.ts)|runtime\/runtime-file-(?:client|mutation-client|read-client|metadata-client|routing)\.ts))$/.test(
+          file
+        ))
+  },
+  {
     id: 'ssh.orcad-idle-exit',
     specs: ['tests/e2e/ssh-orcad-idle-exit.spec.ts'],
     matches: (file) =>
