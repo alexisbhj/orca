@@ -17,8 +17,26 @@ export type LoginShellEnvironmentCapture = {
   env: NodeJS.ProcessEnv
 }
 
-const environmentCache = new Map<string, Promise<LoginShellEnvironmentCapture>>()
+type CachedEnvironment = { capture: Promise<LoginShellEnvironmentCapture>; captured: boolean }
+
+const environmentCache = new Map<string, CachedEnvironment>()
 const MAX_CACHED_ENVIRONMENTS = 8
+
+function cacheEnvironment(key: string, capture: Promise<LoginShellEnvironmentCapture>): void {
+  const entry: CachedEnvironment = { capture, captured: false }
+  void capture.then((result) => {
+    entry.captured = result.status === 'captured'
+  })
+  environmentCache.delete(key)
+  while (environmentCache.size >= MAX_CACHED_ENVIRONMENTS) {
+    const oldest = environmentCache.keys().next().value
+    if (oldest === undefined) {
+      break
+    }
+    environmentCache.delete(oldest)
+  }
+  environmentCache.set(key, entry)
+}
 
 function processEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   return Object.fromEntries(
@@ -156,7 +174,7 @@ export function captureLoginShellEnvironment(
   const shellKey = `${shell ?? ''}\0${fallback ?? ''}\0${envKey}`
   const cached = environmentCache.get(shellKey)
   if (cached && !options.force) {
-    return cached
+    return cached.capture
   }
   const fellBack: LoginShellEnvironmentCapture = { status: 'fallback', env }
   if (!shell) {
@@ -169,18 +187,22 @@ export function captureLoginShellEnvironment(
       return captured ? { status: 'captured', env: captured } : fellBack
     })
     .catch(() => fellBack)
-  environmentCache.delete(shellKey)
-  while (environmentCache.size >= MAX_CACHED_ENVIRONMENTS) {
-    const oldest = environmentCache.keys().next().value
-    if (oldest === undefined) {
-      break
-    }
-    environmentCache.delete(oldest)
+  if (cached?.captured) {
+    // Why: readers keep the last good env while a forced refresh runs; only a real capture replaces it.
+    void pending.then((capture) => {
+      if (capture.status === 'captured') {
+        cacheEnvironment(shellKey, Promise.resolve(capture))
+      }
+    })
+    return pending
   }
-  // Why: a forced capture that falls back must not replace a good one other readers share.
-  environmentCache.set(
+  // Why: a forced capture that falls back yields to whatever the earlier entry settles to.
+  const previous = cached?.capture
+  cacheEnvironment(
     shellKey,
-    cached ? pending.then((capture) => (capture.status === 'captured' ? capture : cached)) : pending
+    previous
+      ? pending.then((capture) => (capture.status === 'captured' ? capture : previous))
+      : pending
   )
   return pending
 }

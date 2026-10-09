@@ -88,3 +88,22 @@ it('says whether the shell produced the env, and a failed forced capture keeps t
   await expect(resolveLoginShellEnvironment(options)).resolves.toEqual({ PATH: '/profile/bin' })
   expect(spawner).toHaveBeenCalledTimes(2)
 })
+
+it('serves the cached env to other readers while a forced capture runs', async () => {
+  const release = Promise.withResolvers<NodeJS.ProcessEnv | null>()
+  const spawner = vi
+    .fn<(shell: string, env: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv | null>>()
+    .mockResolvedValueOnce({ PATH: '/first' })
+    .mockReturnValueOnce(release.promise)
+  const options = { shellOverride: '/bin/bash', env: { HOME: '/host' }, spawner }
+  await resolveLoginShellEnvironment(options)
+  const forced = resolveLoginShellEnvironment({ ...options, force: true })
+  const tick = new Promise((resolve) => setImmediate(() => resolve('still waiting')))
+  await expect(Promise.race([resolveLoginShellEnvironment(options), tick])).resolves.toEqual({
+    PATH: '/first'
+  })
+  release.resolve({ PATH: '/second' })
+  await expect(forced).resolves.toEqual({ PATH: '/second' })
+  await expect(resolveLoginShellEnvironment(options)).resolves.toEqual({ PATH: '/second' })
+  expect(spawner).toHaveBeenCalledTimes(2)
+})
