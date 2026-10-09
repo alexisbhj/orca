@@ -18258,9 +18258,11 @@
         "pausedSendFailedWaiting": "No se pudo enviar. Cuando el agente termine, pulsa Enviar para reintentar.",
         "save": "Guardar",
         "cancel": "Cancelar",
-        "editChanged": "Este mensaje cambió mientras lo editabas. Cancela y vuelve a editarlo para cambiar el texto más reciente.",
+        "editChanged": "Este mensaje cambió mientras lo editabas. Tu edición está en el cuadro de chat.",
+        "editChangedPrompt": "Este mensaje cambió mientras lo editabas. Tu edición estará en el cuadro de chat cuando respondas al agente.",
         "editFailed": "Este mensaje no se puede editar.",
-        "editGone": "Este mensaje ya se envió o se eliminó. Tu edición está en el cuadro de chat."
+        "editGone": "Este mensaje ya se envió o se eliminó. Tu edición está en el cuadro de chat.",
+        "editGonePrompt": "Este mensaje ya se envió o se eliminó. Tu edición estará en el cuadro de chat cuando respondas al agente."
       },
       "thought": "Pensó",
       "thoughtForDuration": "Pensó durante {{duration}}",

@@ -69,8 +69,7 @@ export function wireStructuredAgentSessionQueuedMessages(
     queuedMessageEditHold: (
       caller: StructuredAgentSessionCaller,
       params: Parameters<typeof holdQueuedStructuredAgentMessageEdit>[2]
-    ) =>
-      holdQueuedStructuredAgentMessageEdit(context(), caller, params, (id) => sessions.touch(id)),
+    ) => holdQueuedStructuredAgentMessageEdit(context(), caller, params),
     /** Every journal publish: turn, submission, prompt, command and Stop
      *  settlements are all commits, and each re-derives the drain's gates. */
     onJournalActivity: (sessionId: string) => {

@@ -109,14 +109,6 @@ describe('queued message actions', () => {
     expect(readNativeChatDraftCache(SCOPE)).toBe('')
   })
 
-  it('the steer chord consumes a held newest card without sending it or choosing an earlier card', () => {
-    const harness = createHarness({
-      queuedMessages: [draft('earlier', 1), { ...draft('newest', 2), editHeld: true }]
-    })
-    expect(harness.result.current.steerNewest()).toBe(true)
-    expect(harness.mutate).not.toHaveBeenCalled()
-  })
-
   it('a host that cannot edit in place offers no Edit and never copies or deletes', async () => {
     const harness = createHarness()
     await act(() => harness.result.current.edit('draft-1'))

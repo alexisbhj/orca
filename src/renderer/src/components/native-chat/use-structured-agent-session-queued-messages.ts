@@ -180,10 +180,10 @@ export function useStructuredAgentSessionQueuedMessages(args: {
     messages: queuedMessages,
     cards,
     submissions,
-    composerScopeKey
+    composerScopeKey,
+    promptOpen: hasPendingPrompt
   })
 
-  const editedId = editing.editor?.messageId
   const steerNewest = useCallback((): boolean => {
     if (!enabled) {
       return false
@@ -192,12 +192,9 @@ export function useStructuredAgentSessionQueuedMessages(args: {
     if (!newest) {
       return false
     }
-    // A card being edited, here or elsewhere, is not sent by the chord, nor is another in its place.
-    if (!newest.editHeld && editedId !== newest.messageId) {
-      void steer(newest.messageId)
-    }
+    void steer(newest.messageId)
     return true
-  }, [editedId, enabled, steer])
+  }, [enabled, steer])
 
   const resumingRef = useRef(false)
   const [resuming, setResuming] = useState(false)

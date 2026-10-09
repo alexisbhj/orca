@@ -48,6 +48,8 @@ export type QueuedMessageInlineEditor = {
 
 type Edit = {
   scope: string
+  /** The chat box this edit's typing falls back to; the one it started in, never another. */
+  draftKey: string
   messageId: string
   body: AgentSessionQueuedMessage['body']
   originalText: string
@@ -59,17 +61,30 @@ type Edit = {
   lease: QueuedEditLease
 }
 
-function editNotice(key: 'editChanged' | 'editFailed' | 'editGone'): string {
+/** A question or approval holds the chat box's place, so the text there is out of sight until then. */
+function editNotice(
+  key: 'editChanged' | 'editChangedPrompt' | 'editFailed' | 'editGone' | 'editGonePrompt'
+): string {
   switch (key) {
     case 'editChanged':
       return translate(
         'components.native-chat.queuedMessages.editChanged',
-        'This message changed while you were editing. Cancel and edit it again to change the latest text.'
+        'This message changed while you were editing. Your edit is in the chat box.'
+      )
+    case 'editChangedPrompt':
+      return translate(
+        'components.native-chat.queuedMessages.editChangedPrompt',
+        'This message changed while you were editing. Your edit will be in the chat box after you answer the agent.'
       )
     case 'editGone':
       return translate(
         'components.native-chat.queuedMessages.editGone',
         'This message was already sent or removed. Your edit is in the chat box.'
+      )
+    case 'editGonePrompt':
+      return translate(
+        'components.native-chat.queuedMessages.editGonePrompt',
+        'This message was already sent or removed. Your edit will be in the chat box after you answer the agent.'
       )
     case 'editFailed':
       return translate(
@@ -87,16 +102,20 @@ export function useStructuredAgentSessionQueuedEdit(args: {
   cards: readonly QueuedMessageCard[]
   submissions: readonly AgentJournalSubmission[]
   composerScopeKey: string | undefined
+  /** A question or approval holds the chat box's place. */
+  promptOpen: boolean
 }) {
-  const { transport, messages, cards, submissions, composerScopeKey } = args
+  const { transport, messages, cards, submissions, composerScopeKey, promptOpen } = args
   const { target, sessionId, capable, write } = transport
   const scope = `${structuredAgentSessionHostKey(target)}:${sessionId}:${composerScopeKey ?? ''}`
   const active = useRef<Edit | null>(null)
   const [shown, setShown] = useState<Edit | null>(null)
-  const latest = useRef({ cards, submissions })
+  /** Save answered `changed`: the editor reopens on the newer text once this pane shows it. */
+  const reopen = useRef<{ scope: string; messageId: string; stale: string } | null>(null)
+  const latest = useRef({ messages, cards, submissions, promptOpen })
   useEffect(() => {
-    latest.current = { cards, submissions }
-  }, [cards, submissions])
+    latest.current = { messages, cards, submissions, promptOpen }
+  }, [messages, cards, submissions, promptOpen])
 
   const render = useCallback((edit: Edit | null) => {
     active.current = edit
@@ -114,20 +133,25 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       if (active.current !== edit) {
         return
       }
-      if (edit.text !== edit.originalText && composerScopeKey) {
-        appendNativeChatDraftCache(composerScopeKey, edit.text)
-        toast.error(editNotice('editGone'))
+      if (edit.text !== edit.originalText) {
+        appendNativeChatDraftCache(edit.draftKey, edit.text)
+        toast.error(editNotice(latest.current.promptOpen ? 'editGonePrompt' : 'editGone'))
       }
       close()
     },
-    [close, composerScopeKey]
+    [close]
   )
 
-  // Another chat, host or composer: the edit belongs to the one it started in.
+  // Another chat, host or composer, or the pane going away: unsaved typing goes quietly to the
+  // chat box of the chat it was typed in.
   useEffect(
     () => () => {
       const edit = active.current
       active.current = null
+      reopen.current = null
+      if (edit && edit.text !== edit.originalText) {
+        appendNativeChatDraftCache(edit.draftKey, edit.text)
+      }
       edit?.lease.end()
     },
     [scope]
@@ -136,6 +160,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
   const begin = useCallback(
     async (messageId: string): Promise<void> => {
       // One editor per pane: another card's Edit waits for this one's Save or Cancel.
+      reopen.current = null
       if (active.current || !capable || !composerScopeKey) {
         return
       }
@@ -154,6 +179,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       })
       const edit: Edit = {
         scope,
+        draftKey: composerScopeKey,
         messageId,
         body: message.body,
         originalText: text,
@@ -218,15 +244,33 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       return
     }
     edit.saving = false
-    const status = result.kind === 'done' ? result.value.status : null
-    if (status === 'updated' || status === 'unchanged' || result.kind === 'dropped') {
-      close()
-    } else if (status === 'gone') {
-      gone(edit)
-    } else if (result.kind === 'not-done' && !onScreen(latest.current.cards, edit.messageId)) {
-      // The answer was lost and the card has since left: it went out with this Save's text, or
-      // it went before the Save could land.
-      const desired = agentSessionSendBodyFingerprint(sessionId, body)
+    if (result.kind === 'done') {
+      const { status } = result.value
+      if (status === 'updated' || status === 'unchanged') {
+        close()
+      } else if (status === 'gone') {
+        gone(edit)
+      } else if (status === 'changed') {
+        // Someone else's edit landed first: the typing goes to the chat box, and the editor
+        // opens again on the newer text.
+        appendNativeChatDraftCache(edit.draftKey, edit.text)
+        toast.error(editNotice(latest.current.promptOpen ? 'editChangedPrompt' : 'editChanged'))
+        reopen.current = { scope, messageId: edit.messageId, stale: edit.baseFingerprint }
+        close()
+      } else {
+        toast.error(editNotice('editFailed'))
+        render(edit)
+      }
+      return
+    }
+    // No answer this pane can read (a lost reply, or one dropped for a moved runtime fence, which
+    // a text edit does not depend on): the published card says whether this Save landed.
+    const listed = latest.current.messages?.find((entry) => entry.messageId === edit.messageId)
+    const desired = agentSessionSendBodyFingerprint(sessionId, body)
+    if (latest.current.messages === null) {
+      render(edit)
+    } else if (!listed || !onScreen(latest.current.cards, edit.messageId)) {
+      // The card has left: it went out with this Save's text, or before the Save could land.
       const sentAsSaved = latest.current.submissions.some(
         (entry) => entry.queuedMessageId === edit.messageId && entry.payloadFingerprint === desired
       )
@@ -235,15 +279,16 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       } else {
         gone(edit)
       }
+    } else if (agentSessionSendBodyFingerprint(sessionId, listed.body) === desired) {
+      close()
     } else {
-      toast.error(
-        result.kind === 'not-done'
-          ? result.notice
-          : editNotice(status === 'changed' ? 'editChanged' : 'editFailed')
-      )
+      // A refusal says why; an unread answer leaves the editor as it was for Save again.
+      if (result.kind === 'not-done') {
+        toast.error(result.notice)
+      }
       render(edit)
     }
-  }, [close, gone, render, sessionId, write])
+  }, [close, gone, render, scope, sessionId, write])
 
   // Sent or removed elsewhere, or a lapsed lease lost the race to delivery. While a Save is out,
   // its answer decides instead: its own text going out right after it lands is a success.
@@ -253,7 +298,17 @@ export function useStructuredAgentSessionQueuedEdit(args: {
     if (edit && !edit.saving && messages !== null && !onScreen(cards, edit.messageId)) {
       gone(edit)
     }
-  }, [cards, gone, messages, shown])
+    const pending = reopen.current
+    if (!pending || edit || messages === null) {
+      return
+    }
+    const listed = messages.find((entry) => entry.messageId === pending.messageId)
+    if (pending.scope !== scope || !listed || !onScreen(cards, pending.messageId)) {
+      reopen.current = null
+    } else if (agentSessionSendBodyFingerprint(sessionId, listed.body) !== pending.stale) {
+      void begin(pending.messageId)
+    }
+  }, [begin, cards, gone, messages, scope, sessionId, shown])
 
   const editor: QueuedMessageInlineEditor | undefined =
     shown && shown.scope === scope

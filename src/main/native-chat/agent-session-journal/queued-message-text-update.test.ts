@@ -66,6 +66,18 @@ describe('atomic queued text update', () => {
     })
     expect(after.fingerprint).toBe(agentSessionSendBodyFingerprint(sessionId, after.body))
   })
+  it('saving the same text keeps several text blocks as they are', () => {
+    const body: AgentJournalMessageItem = {
+      ...initial,
+      blocks: [
+        { type: 'text', text: 'one' },
+        { type: 'text', text: 'two' }
+      ]
+    }
+    const before = insert(body)
+    expect(update('one\ntwo', before.fingerprint).status).toBe('unchanged')
+    expect(getQueuedMessage(db, sessionId, 'card')).toEqual(before)
+  })
   it('retains returned-card refusal and failure hold rather than requeueing', () => {
     insert()
     db.prepare(
@@ -122,11 +134,32 @@ describe('atomic queued text update', () => {
     expect(update('edit', unsupported.fingerprint).status).toBe('not-editable')
     expect(getQueuedMessage(db, sessionId, 'card')).toEqual(unsupported)
   })
-  it('allows empty text with a retained attachment, inserting text before it', () => {
-    const before = insert({ ...initial, blocks: [{ type: 'image-ref', path: 'file.png' }] })
+  it('allows empty text with a retained attachment, and inserts text before one with none', () => {
+    const before = insert({
+      ...initial,
+      blocks: [
+        { type: 'text', text: 'caption' },
+        { type: 'image-ref', path: 'file.png' }
+      ]
+    })
     expect(update('', before.fingerprint).status).toBe('updated')
     expect(getQueuedMessage(db, sessionId, 'card')?.body.blocks).toEqual([
       { type: 'text', text: '' },
+      { type: 'image-ref', path: 'file.png' }
+    ])
+    const imageOnly = insert(
+      { ...initial, blocks: [{ type: 'image-ref', path: 'file.png' }] },
+      'image'
+    )
+    expect(
+      updateQueuedMessageText(db, sessionId, {
+        messageId: 'image',
+        expectedBodyFingerprint: imageOnly.fingerprint,
+        text: 'added'
+      }).status
+    ).toBe('updated')
+    expect(getQueuedMessage(db, sessionId, 'image')?.body.blocks).toEqual([
+      { type: 'text', text: 'added' },
       { type: 'image-ref', path: 'file.png' }
     ])
   })

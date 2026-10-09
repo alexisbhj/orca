@@ -64,8 +64,7 @@ export function updateQueuedStructuredAgentMessage(
 export function holdQueuedStructuredAgentMessageEdit(
   context: StructuredAgentSessionMutationContext,
   caller: StructuredAgentSessionCaller,
-  params: AgentSessionQueuedMessageEditHoldParams,
-  touch: (sessionId: string) => void
+  params: AgentSessionQueuedMessageEditHoldParams
 ): Promise<AgentSessionQueuedMessageEditHoldResult> {
   const { sessionId, messageId } = params
   const key = { callerKey: caller.callerKey, editId: params.editId }
@@ -82,22 +81,17 @@ export function holdQueuedStructuredAgentMessageEdit(
     if (!session) {
       return { status: 'gone' }
     }
-    // An open editor is activity: the idle sweep must not close the conversation under it.
-    touch(sessionId)
     const queued = session.journal.queuedMessages
-    let result: AgentSessionQueuedMessageEditHoldResult
-    if (params.action === 'acquire') {
-      const row = queued.get(messageId)
-      result =
-        row && queuedMessageEditableText(row.body) === null
-          ? { status: 'not-editable' }
-          : queued.editLeases.acquire(key, {
-              messageId,
-              fingerprint: params.expectedBodyFingerprint
-            })
-    } else {
-      result = queued.editLeases.renew(key, messageId)
+    if (params.action !== 'acquire') {
+      // Moves no held card, so nothing to publish; and a publish is idle-sweep activity, which an
+      // editor left open must not renew forever.
+      return queued.editLeases.renew(key, messageId)
     }
+    const row = queued.get(messageId)
+    const result: AgentSessionQueuedMessageEditHoldResult =
+      row && queuedMessageEditableText(row.body) === null
+        ? { status: 'not-editable' }
+        : queued.editLeases.acquire(key, { messageId, fingerprint: params.expectedBodyFingerprint })
     republish(context, sessionId, session.journal)
     return result
   })

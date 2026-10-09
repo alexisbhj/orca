@@ -76,6 +76,7 @@ type Props = {
   messages: AgentSessionQueuedMessage[] | null
   sessionId?: string
   submissions?: AgentJournalSubmission[]
+  promptOpen?: boolean
 }
 function harness(capable = true, initial: Props = { messages: [message] }) {
   return renderHook(
@@ -91,7 +92,8 @@ function harness(capable = true, initial: Props = { messages: [message] }) {
         messages: props.messages,
         cards: projectQueuedMessageCards(props.messages, submissions, { hasPendingPrompt: true }),
         submissions,
-        composerScopeKey: SCOPE
+        composerScopeKey: SCOPE,
+        promptOpen: props.promptOpen ?? false
       })
     },
     { initialProps: initial }
@@ -106,6 +108,9 @@ function holdCalls(action: string) {
 }
 function done(value: AgentSessionQueuedMessageUpdateResult): () => Promise<Outcome> {
   return async () => ({ kind: 'done', value })
+}
+function withText(text: string): AgentSessionQueuedMessage {
+  return { ...message, body: { ...message.body, blocks: [{ type: 'text', text }] } }
 }
 
 beforeEach(() => {
@@ -225,22 +230,42 @@ describe('inline queued editor', () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
-  it('changed keeps the typing and the original base; a second Save never overwrites', async () => {
+  it('changed puts the typing in the chat box and reopens on the newer text once it shows', async () => {
+    writeNativeChatDraftCache(SCOPE, 'existing')
     answer = done({ status: 'changed', messageId: 'card' })
     const hook = harness()
     await begin(hook)
     act(() => hook.result.current.editor?.change('local'))
     act(() => hook.result.current.editor?.save())
-    await waitFor(() => expect(toast.error).toHaveBeenCalledOnce())
-    const remote = {
-      ...message,
-      body: { ...message.body, blocks: [{ type: 'text' as const, text: 'remote' }] }
-    }
+    await waitFor(() => expect(hook.result.current.editor).toBeUndefined())
+    expect(readNativeChatDraftCache(SCOPE)).toBe('existing\n\nlocal')
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'This message changed while you were editing. Your edit is in the chat box.'
+    )
+    // The newer text has not reached this pane yet: nothing opens on the old one.
+    hook.rerender({ messages: [message] })
+    expect(hook.result.current.editor).toBeUndefined()
+    const remote = withText('remote')
     hook.rerender({ messages: [remote] })
-    expect(hook.result.current.editor).toMatchObject({ text: 'local', saving: false })
+    await waitFor(() => expect(hook.result.current.editor).toMatchObject({ text: 'remote' }))
+    expect(holdCalls('acquire')[1]?.[2]).toMatchObject({
+      expectedBodyFingerprint: agentSessionSendBodyFingerprint(SESSION, remote.body)
+    })
+    expect(writeSpy).toHaveBeenCalledOnce()
+    expect(toast.error).toHaveBeenCalledOnce()
+  })
+
+  it('while a question holds the chat box, the notice says when the edit will be there', async () => {
+    answer = done({ status: 'gone', messageId: 'card', disposition: 'dispatched' })
+    const hook = harness(true, { messages: [message], promptOpen: true })
+    await begin(hook)
+    act(() => hook.result.current.editor?.change('unsaved'))
     act(() => hook.result.current.editor?.save())
-    await waitFor(() => expect(writeSpy).toHaveBeenCalledTimes(2))
-    expect(writeSpy.mock.calls[1]?.[2]).toEqual(writeSpy.mock.calls[0]?.[2])
+    await waitFor(() => expect(hook.result.current.editor).toBeUndefined())
+    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
+      'This message was already sent or removed. Your edit will be in the chat box after you answer the agent.'
+    )
+    expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved')
   })
 
   it('a refused Save says why once and keeps the editor', async () => {
@@ -259,7 +284,7 @@ describe('inline queued editor', () => {
     expect(hook.result.current.editor).toMatchObject({ text: 'long', saving: false })
   })
 
-  it('Save answering gone puts the typing in the chat box; another chat drops the edit', async () => {
+  it('Save answering gone puts the typing in the chat box; another chat keeps it there quietly', async () => {
     answer = done({ status: 'gone', messageId: 'card', disposition: 'dispatched' })
     const hook = harness()
     await begin(hook)
@@ -267,12 +292,90 @@ describe('inline queued editor', () => {
     act(() => hook.result.current.editor?.save())
     await waitFor(() => expect(hook.result.current.editor).toBeUndefined())
     expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved')
+    expect(toast.error).toHaveBeenCalledOnce()
     await begin(hook)
     act(() => hook.result.current.editor?.change('another draft'))
     hook.rerender({ messages: [message], sessionId: 'another-session' })
     expect(hook.result.current.editor).toBeUndefined()
-    expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved')
+    expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved\n\nanother draft')
+    expect(toast.error).toHaveBeenCalledOnce()
     await waitFor(() => expect(holdCalls('release')).toHaveLength(2))
+  })
+
+  it('closing the pane keeps unsaved typing in the chat box, quietly; clean edits leave nothing', async () => {
+    const dirty = harness()
+    await begin(dirty)
+    act(() => dirty.result.current.editor?.change('unsaved'))
+    dirty.unmount()
+    expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved')
+    const clean = harness()
+    await begin(clean)
+    clean.unmount()
+    expect(readNativeChatDraftCache(SCOPE)).toBe('unsaved')
+    expect(toast.error).not.toHaveBeenCalled()
+    await waitFor(() => expect(holdCalls('release')).toHaveLength(2))
+  })
+
+  describe('a Save whose answer this pane cannot read reads the published card', () => {
+    const dropped: () => Promise<Outcome> = async () => ({ kind: 'dropped' })
+    function deferred() {
+      let finish: (outcome: Outcome) => void = () => {}
+      answer = () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+      return (outcome: Outcome) => act(async () => finish(outcome))
+    }
+
+    it('the card already shows the saved text: the editor closes, quietly', async () => {
+      const finish = deferred()
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('saved'))
+      act(() => hook.result.current.editor?.save())
+      hook.rerender({ messages: [withText('saved')] })
+      await finish({ kind: 'dropped' })
+      expect(hook.result.current.editor).toBeUndefined()
+      expect(toast.error).not.toHaveBeenCalled()
+      expect(readNativeChatDraftCache(SCOPE)).toBe('')
+    })
+
+    it('a lost answer for a Save that landed says nothing either', async () => {
+      const finish = deferred()
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('saved'))
+      act(() => hook.result.current.editor?.save())
+      hook.rerender({ messages: [withText('saved')] })
+      await finish({ kind: 'not-done', notice: 'lost', failure: { kind: 'unconfirmed' } })
+      expect(hook.result.current.editor).toBeUndefined()
+      expect(toast.error).not.toHaveBeenCalled()
+    })
+
+    it('the card still shows other text: the editor stays as it was, quietly', async () => {
+      answer = dropped
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('typed'))
+      act(() => hook.result.current.editor?.save())
+      await waitFor(() => expect(hook.result.current.editor?.saving).toBe(false))
+      expect(hook.result.current.editor).toMatchObject({ text: 'typed' })
+      expect(toast.error).not.toHaveBeenCalled()
+    })
+
+    it('the card left with its old text (sent elsewhere first): the typing goes to the chat box', async () => {
+      const finish = deferred()
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('typed'))
+      act(() => hook.result.current.editor?.save())
+      hook.rerender({ messages: [] })
+      expect(hook.result.current.editor?.saving).toBe(true)
+      await finish({ kind: 'dropped' })
+      expect(hook.result.current.editor).toBeUndefined()
+      expect(readNativeChatDraftCache(SCOPE)).toBe('typed')
+      expect(toast.error).toHaveBeenCalledOnce()
+    })
   })
 
   it('a Save that lands and then drains reads as success, even with its answer lost', async () => {

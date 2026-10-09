@@ -34,8 +34,6 @@ export type QueuedMessageCard = {
   /** The draft's text blocks joined; drafts are text-only in v1. */
   text: string
   state: 'waiting' | 'returned'
-  /** Someone is editing it in place, here or on another device: it does not send meanwhile. */
-  editHeld?: true
   hold: QueuedMessageCardHold
   /** A conversation command such as /compact: it never steers into a running turn. */
   command?: true
@@ -92,7 +90,6 @@ export function projectQueuedMessageCards(
       position: message.position,
       text: queuedMessageCardText(message.body),
       state: message.state,
-      ...(message.editHeld ? { editHeld: true as const } : {}),
       hold,
       ...(message.body.command !== undefined
         ? {

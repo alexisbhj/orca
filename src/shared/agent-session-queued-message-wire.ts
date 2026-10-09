@@ -40,9 +40,6 @@ export type AgentSessionQueuedMessage = {
   state: 'waiting' | 'returned'
   /** This one card is held, whatever the queue's pause: its conversion failed. */
   paused?: true
-  /** Someone is editing this card in place: automatic delivery waits at it until the edit ends
-   *  or its lease expires. Absent on older hosts, and never paired with `paused`. */
-  editHeld?: true
   /** Why it is held, as a marker the client localizes: 'send_failed' ("couldn't send"); only an
    *  explicit Send releases it. A client must treat an unknown marker as a plain hold, so a newer
    *  host can add one. The queue-level pause is `queuePause`, published beside the list. */

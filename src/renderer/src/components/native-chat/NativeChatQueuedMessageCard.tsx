@@ -211,8 +211,7 @@ export function NativeChatQueuedMessageCard({
                   variant="ghost"
                   size="xs"
                   onClick={onSteer}
-                  // Someone is editing it on another device; their Save, Cancel or lapse frees it.
-                  disabled={steerHeld || card.editHeld}
+                  disabled={steerHeld}
                 >
                   {sendNow.steers ? (
                     <CornerDownRight className="size-3" />

@@ -316,6 +316,31 @@ describe('consume', () => {
     expect(journal.queuedMessages.get('draft-1')?.state).toBe('withdrawn')
   })
 
+  it('a consume carrying text the card no longer holds loses: an edit since the read never sends the old text', async () => {
+    const journal = await open()
+    await queueDraft(journal, 'draft-1', 'old')
+    const read = journal.queuedMessages.get('draft-1')!
+    await journal.queuedMessages.update({
+      messageId: 'draft-1',
+      expectedBodyFingerprint: read.fingerprint,
+      text: 'new'
+    })
+    await expect(
+      journal.appendSubmission(
+        {
+          clientMessageId: 'sub-draft-1',
+          payloadFingerprint: read.fingerprint,
+          body: read.body,
+          fence: 0,
+          handoverRecorded: true
+        },
+        { messageId: 'draft-1', expect: 'waiting', settledByOp: null }
+      )
+    ).rejects.toBeInstanceOf(QueuedMessageNotConsumableError)
+    expect(journal.submissions()).toHaveLength(0)
+    expect(journal.queuedMessages.get('draft-1')?.state).toBe('waiting')
+  })
+
   it('a failed submission insert rolls the draft transition back', async () => {
     const journal = await open()
     await queueDraft(journal, 'draft-1')

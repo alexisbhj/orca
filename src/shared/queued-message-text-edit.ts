@@ -23,6 +23,10 @@ export function queuedMessageWithEditedText(
   ) {
     return null
   }
+  // Unchanged text keeps its blocks, so a Save that changes nothing is a no-op.
+  if (text === queuedMessageEditableText(body)) {
+    return body
+  }
   const blocks: AgentJournalMessageItem['blocks'] = []
   let placed = false
   for (const block of body.blocks) {

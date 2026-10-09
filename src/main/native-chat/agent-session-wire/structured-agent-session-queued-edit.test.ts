@@ -81,6 +81,9 @@ function publication() {
 function published(id: string) {
   return publication().queuedMessages.find((message) => message.messageId === id)
 }
+function held() {
+  return [...journal().queuedMessages.editLeases.heldIds()]
+}
 
 describe('saving a queued card in place', () => {
   it('keeps id, position and sender; text that reads like a command stays text', async () => {
@@ -184,7 +187,7 @@ describe('edit leases and automatic delivery', () => {
     const edited = await queue('edited')
     const last = await queue('last')
     expect(await hold(edited)).toMatchObject({ status: 'held', leaseDurationMs: 120_000 })
-    expect(published(edited)?.editHeld).toBe(true)
+    expect(held()).toEqual([edited])
     expect(published(edited)?.paused).toBeUndefined()
     await rig.settleAccepted(work, 'work-done')
     await eventually(async () => expect(await rig.handoff(first)).toBeDefined())
@@ -211,7 +214,7 @@ describe('edit leases and automatic delivery', () => {
     expect(await update(id, fingerprint(id), 'after')).toMatchObject({
       value: { status: 'updated' }
     })
-    expect(published(id)?.editHeld).toBeUndefined()
+    expect(held()).toEqual([])
     await hold(id, 'release')
     await eventually(async () => expect(await rig.handoff(id)).toBeDefined())
     const submissions = (await rig.host.journalSnapshot(HOST_TEST_SESSION)).submissions
@@ -224,18 +227,21 @@ describe('edit leases and automatic delivery', () => {
     )
   })
 
-  it("one editor's release keeps another's hold; a renewal re-sends nothing", async () => {
+  it("one editor's release keeps another's hold; a renewal re-sends nothing and is not activity", async () => {
     await rig.workingSend()
     const id = await queue('base')
     await hold(id)
     await hold(id, 'acquire', 'edit-1', { callerKey: 'phone' })
     const before = publication()
+    const touch = vi.spyOn(rig.host.collaboratorsForTests().sessions, 'touch')
     expect(await hold(id, 'renew')).toMatchObject({ status: 'held' })
+    // An open editor does not keep the agent's process from its idle stop.
+    expect(touch).not.toHaveBeenCalled()
     expect(publication()).toBe(before)
     expect(await hold(id, 'release')).toEqual({ status: 'released' })
-    expect(published(id)?.editHeld).toBe(true)
+    expect(held()).toEqual([id])
     await hold(id, 'release', 'edit-1', { callerKey: 'phone' })
-    expect(published(id)?.editHeld).toBeUndefined()
+    expect(held()).toEqual([])
   })
 
   it('acquiring after delivery won answers gone; Save without a lease still works', async () => {
@@ -289,7 +295,7 @@ describe('edit leases and automatic delivery', () => {
     await hold(id)
     await rig.stop()
     await rig.resume()
-    expect(published(id)).toMatchObject({ editHeld: true })
+    expect(held()).toEqual([id])
     expect(published(id)?.paused).toBeUndefined()
     expect(publication().nextQueuedMessageId).toBeNull()
   })

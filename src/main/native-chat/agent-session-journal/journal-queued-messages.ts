@@ -290,7 +290,7 @@ export class JournalQueuedMessages {
    *  throws so the whole append — draft transition AND submission row — rolls back. */
   consumeInTransaction(
     db: Database.Database,
-    input: JournalSubmissionConsume & { consumedAs: string }
+    input: JournalSubmissionConsume & { consumedAs: string; fingerprint: string }
   ): void {
     const { db: own } = this.deps.database()
     if (own !== db) {
