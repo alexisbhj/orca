@@ -71,7 +71,7 @@ function editNotice(key: 'editChanged' | 'editFailed' | 'editGone'): string {
         'components.native-chat.queuedMessages.editGone',
         'This message was already sent or removed. Your edit is in the chat box.'
       )
-    default:
+    case 'editFailed':
       return translate(
         'components.native-chat.queuedMessages.editFailed',
         "This message can't be edited."
