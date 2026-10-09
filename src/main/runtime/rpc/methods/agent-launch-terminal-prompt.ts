@@ -23,6 +23,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { TuiAgent } from '../../../../shared/tui-agent'
+import { resolveDraftPasteReadyTimeoutMs } from '../../../../shared/draft-paste-ready-timeout'
 import type { RuntimeTerminalWait } from '../../../../shared/runtime-terminal-contracts'
 import { isAgentPromptStalledError } from '../../agent-prompt-submission-verification'
 import {
@@ -71,7 +72,9 @@ async function waitThroughBlockingPrompts(
   /** Main's desktop paste rule: qualify a timed-out composer with positive fallback evidence. */
   desktopFallback: boolean
 ): Promise<RuntimeTerminalWait | 'fallback-ready' | undefined> {
-  const deadline = clock.now() + AGENT_READY_TIMEOUT_MS
+  // The desktop dialog waits on this delivery, so it keeps main's window budget, not 60 s.
+  const budgetMs = desktopFallback ? resolveDraftPasteReadyTimeoutMs(agent) : AGENT_READY_TIMEOUT_MS
+  const deadline = clock.now() + budgetMs
   for (;;) {
     // At least 1 ms: the terminal wait reads 0 as "use the 5-minute default", and a late sleep can
     // land past the deadline.
