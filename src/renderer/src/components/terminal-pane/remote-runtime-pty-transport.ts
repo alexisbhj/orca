@@ -69,7 +69,8 @@ import {
 } from './remote-runtime-pty-batching'
 import {
   REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS,
-  RemoteRuntimePtyRecoveryState
+  RemoteRuntimePtyRecoveryState,
+  type RemoteRuntimePtyRecoveryPhase
 } from './remote-runtime-pty-recovery-state'
 import { createBrowserUuid } from '@/lib/browser-uuid'
 import {
@@ -318,15 +319,28 @@ export function createRemoteRuntimePtyTransport(
     onRefusalsPersist: () => notifyWriteUnavailable()
   })
   const disconnectedInputGrace = createRemoteRuntimeDisconnectedInputGrace()
+  let previousRecoveryPhase: RemoteRuntimePtyRecoveryPhase = 'idle'
+  // Why: the web Reconnect path cancels to idle only to replay its attach; the outage goes on.
+  let replayingFromDisconnected = false
   const recovery = new RemoteRuntimePtyRecoveryState(() => {
+    const leftLatchForRetry =
+      previousRecoveryPhase === 'disconnected' && (recovery.isActive || replayingFromDisconnected)
+    previousRecoveryPhase = recovery.currentPhase
     if (recovery.currentPhase === 'disposed') {
       clearPublishedHandleWait()
       disconnectedInputGrace.reset()
       discardPendingInput()
     }
-    if (recovery.isActive && discardExpiredDisconnectedInput()) {
-      // Why: a retry after the grace starts fresh; keys typed during it belong to this attempt.
-      disconnectedInputGrace.reset()
+    if (leftLatchForRetry) {
+      if (discardExpiredDisconnectedInput()) {
+        // Why: a retry after the grace starts fresh; keys typed during it belong to this attempt.
+        disconnectedInputGrace.reset()
+      } else {
+        // Why: held input keeps its grace through the retry; keys typed during it are not charged to it.
+        disconnectedInputGrace.seal(recoveryInputHold.sealCohort())
+      }
+    } else if (recovery.isActive) {
+      discardExpiredDisconnectedInput()
     }
     if (recovery.currentPhase === 'disconnected') {
       disconnectedInputGrace.start()
@@ -339,9 +353,11 @@ export function createRemoteRuntimePtyTransport(
     }
     if (recovery.currentPhase === 'idle') {
       autoRecoveryWindowSpent = false
-      // Why before the reset: input that outlived the grace must not release into the recovered pane.
-      discardExpiredDisconnectedInput()
-      disconnectedInputGrace.reset()
+      if (!replayingFromDisconnected) {
+        // Why before the reset: input that outlived the grace must not release into the recovered pane.
+        discardExpiredDisconnectedInput()
+        disconnectedInputGrace.reset()
+      }
     }
     if (
       recovery.currentPhase === 'disconnected' ||
@@ -1497,12 +1513,19 @@ export function createRemoteRuntimePtyTransport(
     return recovery.isActive || (connecting && !connected) || recoveryInputHold.isHolding()
   }
 
+  /** Drops held input that outlived its grace; true when the current latch's own grace ran out. */
   function discardExpiredDisconnectedInput(): boolean {
-    if (!disconnectedInputGrace.isExpired()) {
-      return false
+    const expired = disconnectedInputGrace.takeExpired()
+    if (expired === 'all') {
+      discardPendingInput()
+      return true
     }
-    discardPendingInput()
-    return true
+    if (expired !== null) {
+      // Why the whole journal: its bytes were sent before the oldest held cohort was typed.
+      inputJournal.discard()
+      recoveryInputHold.discardThroughCohort(expired)
+    }
+    return false
   }
 
   function discardPendingInput(): void {
@@ -3042,7 +3065,12 @@ export function createRemoteRuntimePtyTransport(
         isWebTerminalSurfaceTabId(tabId ?? '') &&
         recovery.currentPhase === 'disconnected'
       ) {
-        recovery.cancel()
+        replayingFromDisconnected = true
+        try {
+          recovery.cancel()
+        } finally {
+          replayingFromDisconnected = false
+        }
         if (replayLastTransportEntryPoint()) {
           return true
         }

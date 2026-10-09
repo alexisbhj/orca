@@ -141,4 +141,28 @@ describe('remote runtime recovery input hold', () => {
     await expect(accepted).resolves.toBe(false)
     expect(hold.isHolding()).toBe(false)
   })
+
+  it('drops a sealed cohort without the keys typed after it, even mid-word', async () => {
+    const hold = createRemoteRuntimeRecoveryInputHold()
+    const { sent, writer } = createWriter()
+    hold.enqueue(endpoint, 'git push', 'driving')
+    const staleAccepted = hold.enqueueAccepted(endpoint, ' -f\r', 'driving')
+    const stale = hold.sealCohort()
+    hold.enqueue(endpoint, 'y', 'driving')
+    hold.enqueue(endpoint, '\r', 'driving')
+
+    hold.discardThroughCohort(stale)
+    await expect(staleAccepted).resolves.toBe(false)
+    hold.release(endpoint, writer)
+    await vi.waitFor(() => expect(hold.isHolding()).toBe(false))
+
+    expect(sent.join('')).toBe('y\r')
+  })
+
+  it('stops holding once dropping a cohort leaves nothing queued', () => {
+    const hold = createRemoteRuntimeRecoveryInputHold()
+    hold.enqueue(endpoint, 'ls\r', 'driving')
+    hold.discardThroughCohort(hold.sealCohort())
+    expect(hold.isHolding()).toBe(false)
+  })
 })

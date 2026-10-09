@@ -20,6 +20,7 @@ export type PtyPreconnectInputEntry = {
 export type AcceptedInputOptions = { signal?: AbortSignal }
 
 type BufferedInput = PtyPreconnectInputEntry & {
+  cohort: number
   resolve?: (accepted: boolean) => void
   signal?: AbortSignal
 }
@@ -56,6 +57,8 @@ export type PtyPreconnectInputBuffer = {
     options?: AcceptedInputOptions
   ) => Promise<boolean>
   flush: (writer: PreconnectInputWriter) => Promise<void>
+  /** Drops queued input enqueued in `cohort` or earlier; later input stays queued in order. */
+  dropThroughCohort: (cohort: number) => void
   clear: () => void
 }
 
@@ -66,6 +69,8 @@ export type PtyPreconnectInputBufferOptions = {
    * for the next release instead of dropping it.
    */
   recoveryHold?: boolean
+  /** Tags each entry so an older cohort can be dropped without the input typed after it. */
+  cohort?: () => number
 }
 
 export function createPtyPreconnectInputBuffer(
@@ -91,6 +96,7 @@ export function createPtyPreconnectInputBuffer(
       buffering &&
       input.kind === 'ordinary' &&
       tail?.kind === 'ordinary' &&
+      tail.cohort === input.cohort &&
       tail.inputKind === input.inputKind &&
       input.data.length <= PTY_PRECONNECT_INPUT_MAX_CODE_UNITS - pendingCodeUnits - activeCodeUnits
     ) {
@@ -119,6 +125,7 @@ export function createPtyPreconnectInputBuffer(
     data,
     kind,
     inputKind,
+    cohort: options.cohort?.() ?? 0,
     ...(resolve ? { resolve } : {}),
     ...(signal ? { signal } : {})
   })
@@ -160,6 +167,18 @@ export function createPtyPreconnectInputBuffer(
       input.resolve?.(false)
     }
     stopFlush()
+  }
+
+  const dropThroughCohort = (cohort: number): void => {
+    const dropped = pending.filter((input) => input.cohort <= cohort)
+    if (dropped.length === 0) {
+      return
+    }
+    pending = pending.filter((input) => input.cohort > cohort)
+    for (const input of dropped) {
+      pendingCodeUnits -= input.data.length
+      input.resolve?.(false)
+    }
   }
 
   const runFlush = async (writer: PreconnectInputWriter): Promise<void> => {
@@ -283,6 +302,7 @@ export function createPtyPreconnectInputBuffer(
       })
     },
     flush,
+    dropThroughCohort,
     clear
   }
 }
