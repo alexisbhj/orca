@@ -39,6 +39,8 @@ it.each([
     const host = await fixture.permissionAcquisitionHost(agent, initial)
     const before = await host.readOptions()
     await host.start()
+    // Claude withholds its initialize answer, so the default changes under a still-starting child.
+    expect(host.childPhase()).toBe(agent === 'claude' ? 'starting' : 'ready')
     expect(await host.storedIntent()).toMatchObject({
       options: { permissionMode: initial },
       permissionRevision: 0
@@ -98,6 +100,7 @@ it.each([
         current: initial,
         revision: 0
       })
+      expect(result.current.optionSurface.permissionPicker?.current).toBe(host.launchMode())
     } finally {
       unmount()
       await host.close()
