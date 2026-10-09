@@ -4,17 +4,26 @@ import { NativeChatVisualUnavailable } from './NativeChatInlineVisual'
 import type { OpenChatVisualTabState } from './native-chat-visual-tab'
 import { useNativeChatVisualDocument } from './use-native-chat-visual-document'
 
-/** A chat visual in its own tab: the same isolated frame as inline, filling the tab. */
+/**
+ * A chat visual in its own tab: the same isolated frame as inline, filling the tab. It stays mounted
+ * while hidden, so it re-asks the host each time it is shown or reopened; an unchanged revision
+ * keeps the page as the reader left it.
+ */
 export function NativeChatVisualTab({
-  visual
+  visual,
+  isVisible,
+  reloadNonce
 }: {
   visual: OpenChatVisualTabState
+  isVisible: boolean
+  reloadNonce: number
 }): React.JSX.Element {
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [retired, setRetired] = useState(false)
   const state = useNativeChatVisualDocument(
     { target: visual.target, sessionId: visual.sessionId, file: visual.file },
-    true
+    isVisible,
+    reloadNonce
   )
 
   if (retired || state.status === 'unavailable') {

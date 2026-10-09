@@ -52,6 +52,7 @@ vi.mock('./NativeChatVisualTab', async () => {
 })
 
 import ChatVisualPaneOverlayLayer from './ChatVisualPaneOverlayLayer'
+import { acquireWebviewsDragPassthrough } from '../browser-pane/host-guest/webview-drag-passthrough'
 
 const WORKTREE_ID = 'wt-1'
 const VISUAL_FILE_ID = 'wt-1::chat-visual::session-1::latency.html'
@@ -91,7 +92,7 @@ describe('ChatVisualPaneOverlayLayer', () => {
   it('keeps the visual mounted while its tab is inactive or moved to another split', () => {
     const view = render(<ChatVisualPaneOverlayLayer worktreeId={WORKTREE_ID} isWorktreeActive />)
     const frame = visualFrame(view.container)
-    expect(frame.parentElement?.getAttribute('aria-hidden')).toBe('false')
+    expect(hostOf(frame).getAttribute('aria-hidden')).toBe('false')
 
     act(() => {
       mocks.store?.setState({
@@ -99,8 +100,8 @@ describe('ChatVisualPaneOverlayLayer', () => {
       })
     })
     expect(visualFrame(view.container)).toBe(frame)
-    expect(frame.parentElement?.getAttribute('aria-hidden')).toBe('true')
-    expect(frame.parentElement?.hasAttribute('inert')).toBe(true)
+    expect(hostOf(frame).getAttribute('aria-hidden')).toBe('true')
+    expect(hostOf(frame).hasAttribute('inert')).toBe(true)
 
     act(() => {
       mocks.store?.setState({
@@ -113,16 +114,30 @@ describe('ChatVisualPaneOverlayLayer', () => {
       })
     })
     expect(visualFrame(view.container)).toBe(frame)
-    expect(frame.parentElement?.getAttribute('aria-hidden')).toBe('false')
+    expect(hostOf(frame).getAttribute('aria-hidden')).toBe('false')
     expect(mocks.mounts).toBe(1)
     expect(mocks.unmounts).toBe(0)
+  })
+
+  it('lets a dragged tab pass over the frame while a tab drag holds passthrough', () => {
+    const view = render(<ChatVisualPaneOverlayLayer worktreeId={WORKTREE_ID} isWorktreeActive />)
+    const wrapper = visualFrame(view.container).parentElement
+
+    expect(wrapper?.dataset.dragPassthrough).toBe('false')
+    let release = (): void => {}
+    act(() => {
+      release = acquireWebviewsDragPassthrough()
+    })
+    expect(wrapper?.dataset.dragPassthrough).toBe('true')
+    act(() => release())
+    expect(wrapper?.dataset.dragPassthrough).toBe('false')
   })
 
   it('hides the visual with its workspace and drops it when the tab closes', () => {
     const view = render(
       <ChatVisualPaneOverlayLayer worktreeId={WORKTREE_ID} isWorktreeActive={false} />
     )
-    expect(visualFrame(view.container).parentElement?.getAttribute('aria-hidden')).toBe('true')
+    expect(hostOf(visualFrame(view.container)).getAttribute('aria-hidden')).toBe('true')
 
     act(() => {
       mocks.store?.setState({ unifiedTabsByWorktree: { [WORKTREE_ID]: [CHAT_TAB] } })
@@ -149,6 +164,14 @@ function tab(id: string, entityId: string, contentType: Tab['contentType'], grou
 
 function group(id: string, activeTabId: string): TabGroup {
   return { id, worktreeId: WORKTREE_ID, activeTabId, tabOrder: [activeTabId] }
+}
+
+function hostOf(frame: HTMLElement): HTMLElement {
+  const host = frame.closest<HTMLElement>('[data-retained-pane-host]')
+  if (!host) {
+    throw new Error('missing retained pane host')
+  }
+  return host
 }
 
 function visualFrame(container: HTMLElement): HTMLElement {

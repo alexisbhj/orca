@@ -164,7 +164,12 @@ export type EditorFilesSlice = {
     state: CheckRunDetailsTabPatch
   ) => void
   reloadOpenCheckRunDetailsTab: (fileId: string) => Promise<void>
-  openChatVisualTab: (worktreeId: string, visual: OpenChatVisualTabState) => void
+  /** Focuses the visual's tab in any split, or opens it (in `newTabGroupId` when given); returns its file id. */
+  openChatVisualTab: (
+    worktreeId: string,
+    visual: OpenChatVisualTabState,
+    options?: { newTabGroupId?: string }
+  ) => string
   openBranchAllDiffs: (
     worktreeId: string,
     worktreePath: string,

@@ -3,7 +3,7 @@ import {
   resolveUnifiedTabLabel
 } from '../../../shared/tab-title-resolution'
 import type { Tab } from '../../../shared/tab-types'
-import { getEditorDisplayLabel } from '@/components/editor/editor-labels'
+import { getEditorDisplayLabel, getEditorSearchPaths } from '@/components/editor/editor-labels'
 import { buildPaletteTabDocument } from './palette-match/tab-document'
 import {
   getPaletteWorktreeIdentity,
@@ -285,13 +285,13 @@ export function buildSearchableWorkspaceTabEntries({
       entries.push({
         ...baseEntry,
         title,
-        secondaryText: file.relativePath,
+        secondaryText: getEditorSearchPaths(file)[0] ?? '',
         titleSearchText: title,
-        secondarySearchTexts: [file.relativePath, file.filePath],
+        secondarySearchTexts: getEditorSearchPaths(file),
         document: buildPaletteTabDocument({
           id: tab.id,
           title,
-          secondaryTexts: [file.relativePath, file.filePath],
+          secondaryTexts: getEditorSearchPaths(file),
           worktreeName,
           branch,
           repoName

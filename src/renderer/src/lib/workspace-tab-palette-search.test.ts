@@ -382,6 +382,10 @@ describe('workspace-tab-palette-search', () => {
     expect(searchWorkspaceTabs(entries, 'conflict review')[0]?.tabId).toBe('conflict-tab')
     expect(searchWorkspaceTabs(entries, 'typecheck')[0]?.tabId).toBe('check-tab')
     expect(searchWorkspaceTabs(entries, 'latency')[0]?.tabId).toBe('visual-tab')
+    // A virtual tab's path is an internal id: never shown, never matched.
+    const visualEntry = entries.find((entry) => entry.tab.id === 'visual-tab')
+    expect(visualEntry?.secondaryText).toBe('')
+    expect(searchWorkspaceTabs(entries, 'session-1')).toEqual([])
   })
 
   it('attaches live, retained, and sleeping agent metadata only to matching terminal tabs', () => {

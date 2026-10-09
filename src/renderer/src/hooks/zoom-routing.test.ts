@@ -114,6 +114,7 @@ describe('registerZoomIpcBridge', () => {
       nativeChatAppearance?: NativeChatAppearanceSettings
       editorFontZoomLevel?: number
       pdfTakesZoom?: boolean
+      activeFileMode?: 'edit' | 'check-details' | 'chat-visual'
     } = {}
   ) {
     const {
@@ -123,7 +124,8 @@ describe('registerZoomIpcBridge', () => {
       uiZoomLevel = 0,
       editorFontZoomLevel = 0,
       nativeChatAppearance,
-      pdfTakesZoom = false
+      pdfTakesZoom = false,
+      activeFileMode = 'edit'
     } = args
 
     const applyUIZoom = vi.fn()
@@ -144,6 +146,8 @@ describe('registerZoomIpcBridge', () => {
         getState: () => ({
           activeView,
           activeTabType,
+          activeFileId: 'file-1',
+          openFiles: [{ id: 'file-1', mode: activeFileMode }],
           editorFontZoomLevel,
           setEditorFontZoomLevel,
           settings,
@@ -268,6 +272,22 @@ describe('registerZoomIpcBridge', () => {
     expect(zoom.dispatchZoomLevelChanged).toHaveBeenCalledWith('editor', 108)
     expect(zoom.applyUIZoom).not.toHaveBeenCalled()
   })
+
+  it.each(['check-details', 'chat-visual'] as const)(
+    'applies app zoom for an active %s tab, which has no editor text',
+    async (activeFileMode) => {
+      const zoom = await mountZoomBridge({
+        activeTabType: 'editor',
+        activeElement: makeTarget({}),
+        activeFileMode
+      })
+
+      zoom.fire('in')
+
+      expect(zoom.setEditorFontZoomLevel).not.toHaveBeenCalled()
+      expect(zoom.applyUIZoom).toHaveBeenCalledWith(0.5)
+    }
+  )
 
   it('hands editor-tab zoom to the PDF it shows instead of editor font zoom', async () => {
     const zoom = await mountZoomBridge({

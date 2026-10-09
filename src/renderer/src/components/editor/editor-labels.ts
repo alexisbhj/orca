@@ -1,5 +1,6 @@
 import type { OpenFile } from '@/store/slices/editor'
 import { basename } from '@/lib/path'
+import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
 
 type EditorLabelVariant = 'fileName' | 'relativePath' | 'fullPath'
 
@@ -64,4 +65,9 @@ export function getEditorDisplayLabel(
   const baseLabel = getBaseLabel(file, variant)
   const suffix = (source && DIFF_SOURCE_LABELS[source]) ?? 'diff'
   return `${baseLabel} (${suffix})`
+}
+
+/** The paths a file's tab can be searched by; a virtual tab's path is an internal id and its relativePath repeats its title. */
+export function getEditorSearchPaths(file: OpenFile): string[] {
+  return isVirtualEditorFile(file) ? [] : [file.relativePath, file.filePath]
 }

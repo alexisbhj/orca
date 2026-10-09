@@ -3,7 +3,7 @@ import { createEditorTabsStore } from './editor-slice-test-harness'
 import { buildPersistedUnifiedTabSessionData } from '@/lib/workspace-session-unified-tabs'
 import { isMobilePublishableOpenFile } from '@/runtime/sync-runtime-graph/mobile-session-surfaces'
 import { buildChatVisualTabId } from '@/components/native-chat/native-chat-visual-tab'
-import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../../shared/constants'
+import { FLOATING_TERMINAL_WORKTREE_ID, getDefaultSettings } from '../../../../shared/constants'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 vi.mock('@/runtime/close-mirrored-editor-tab', () => ({
@@ -64,6 +64,53 @@ describe('chat visual tabs', () => {
       expect.objectContaining({ id: TAB_ID, mode: 'chat-visual', chatVisual: visual })
     ])
     expect(visualTabs(store)).toEqual([expect.objectContaining({ entityId: TAB_ID })])
+  })
+
+  it('reopening a closed visual that is open again elsewhere focuses that tab', () => {
+    const store = createEditorTabsStore()
+    const chat = store
+      .getState()
+      .createUnifiedTab('wt-1', 'agent-session', { entityId: 'session-1', label: 'Chat' })
+    store.getState().openChatVisualTab('wt-1', visual)
+    store.getState().dropUnifiedTab(visualTabs(store)[0]!.id, {
+      groupId: chat.groupId,
+      splitDirection: 'right'
+    })
+    const splitGroupId = visualTabs(store)[0]!.groupId
+    store.getState().openFile(
+      {
+        filePath: '/repo/b.ts',
+        relativePath: 'b.ts',
+        worktreeId: 'wt-1',
+        language: 'typescript',
+        mode: 'edit'
+      },
+      { targetGroupId: splitGroupId }
+    )
+    store.getState().closeFile(TAB_ID)
+    store.getState().focusGroup('wt-1', chat.groupId)
+    store.getState().activateTab(chat.id)
+    store.getState().openChatVisualTab('wt-1', visual)
+
+    expect(store.getState().reopenClosedEditorTab('wt-1')).toBe(true)
+
+    expect(visualTabs(store)).toEqual([expect.objectContaining({ groupId: chat.groupId })])
+    expect(store.getState().openFiles.filter((file) => file.mode === 'chat-visual')).toHaveLength(1)
+  })
+
+  it('reopens a visual under its own id while a runtime environment is active', () => {
+    const store = createEditorTabsStore()
+    store.setState({
+      settings: { ...getDefaultSettings('/tmp/orca-test'), activeRuntimeEnvironmentId: 'env-1' }
+    })
+    store.getState().openChatVisualTab('wt-1', visual)
+    store.getState().closeFile(TAB_ID)
+    store.getState().openChatVisualTab('wt-1', visual)
+
+    store.getState().reopenClosedEditorTab('wt-1')
+
+    expect(store.getState().openFiles.map((file) => file.id)).toEqual([TAB_ID])
+    expect(visualTabs(store)).toHaveLength(1)
   })
 
   it('takes the newest title when the same visual is opened again', () => {

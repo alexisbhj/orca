@@ -6,6 +6,7 @@ import {
 } from './editor/editor-autosave'
 import { getEditorCmdSaveFileId } from './editor/editor-cmd-save-target'
 import { isEventTargetInsideFloatingWorkspacePanel } from '@/lib/floating-workspace-terminal-actions'
+import { isActiveEditorFileVirtual } from '@/store/slices/editor/tabs/editor-tab-content-type'
 
 type EditorShortcutContext = {
   event: KeyboardEvent
@@ -48,7 +49,12 @@ export function handleTerminalWorkspaceEditorShortcut({
   // Why: long/structured files need a discoverable unwrap path without Settings (#9974).
   if (!event.repeat && matchShortcut('editor.toggleWordWrap')) {
     const state = useAppStore.getState()
-    if (state.activeTabType === 'editor' && state.activeFileId) {
+    // Why: a virtual tab has no text to wrap; leave the chord unclaimed instead of flipping the saved setting.
+    if (
+      state.activeTabType === 'editor' &&
+      state.activeFileId &&
+      !isActiveEditorFileVirtual(state)
+    ) {
       event.preventDefault()
       notifyTerminalCapture('editor.toggleWordWrap')
       // Why: diff surfaces use diffWordWrap; plain editors use editorWordWrap (#10086).

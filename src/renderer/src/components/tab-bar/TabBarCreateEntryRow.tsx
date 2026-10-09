@@ -1,5 +1,6 @@
 import React from 'react'
 import {
+  ChartColumn,
   FilePlus,
   FileText,
   GitCompare,
@@ -133,6 +134,9 @@ function getOpenTabIcon(option: Extract<ActiveOption, { kind: 'tab' }>['option']
   }
   if (contentType === 'editor') {
     return <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+  }
+  if (contentType === 'chat-visual') {
+    return <ChartColumn className="size-3.5 shrink-0" aria-hidden="true" />
   }
   return <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
 }

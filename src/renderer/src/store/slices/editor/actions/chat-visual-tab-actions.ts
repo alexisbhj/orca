@@ -10,7 +10,7 @@ export function createChatVisualTabActions(
   get: EditorGet
 ): Pick<EditorSlice, 'openChatVisualTab'> {
   return {
-    openChatVisualTab: (worktreeId, visual) => {
+    openChatVisualTab: (worktreeId, visual, options) => {
       const id = buildChatVisualTabId(worktreeId, visual)
       const label = visual.title ?? visual.file
       set((s) => {
@@ -26,10 +26,17 @@ export function createChatVisualTabActions(
         }
         const exists = s.openFiles.some((f) => f.id === id)
         return {
-          // Why: a later message can retitle the same visual, so reopening takes its newest title.
+          // Why: a later message can retitle or rewrite the same visual; the nonce makes its open tab re-ask the host.
           openFiles: exists
             ? s.openFiles.map((f) =>
-                f.id === id ? { ...f, relativePath: label, chatVisual: visual } : f
+                f.id === id
+                  ? {
+                      ...f,
+                      relativePath: label,
+                      chatVisual: visual,
+                      fileContentReloadNonce: (f.fileContentReloadNonce ?? 0) + 1
+                    }
+                  : f
               )
             : [...s.openFiles, file],
           ...buildEditorActiveResult(s, worktreeId, id)
@@ -54,8 +61,9 @@ export function createChatVisualTabActions(
         label,
         'chat-visual',
         undefined,
-        openTab?.groupId
+        openTab?.groupId ?? options?.newTabGroupId
       )
+      return id
     }
   }
 }

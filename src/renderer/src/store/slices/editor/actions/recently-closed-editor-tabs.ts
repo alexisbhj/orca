@@ -37,10 +37,16 @@ export function createRecentlyClosedEditorTabs(
         }
       }))
       const { position, reopenId, ...file } = next
-      const restoredFileId = get().openFile(file, {
-        targetGroupId: position?.groupId,
-        reopenId
-      })
+      // Why: the visual opener owns one-tab-per-visual across splits and its id; openFile would add a runtime owner and dedupe per group only.
+      const restoredFileId =
+        file.mode === 'chat-visual' && file.chatVisual
+          ? get().openChatVisualTab(worktreeId, file.chatVisual, {
+              newTabGroupId: position?.groupId
+            })
+          : get().openFile(file, {
+              targetGroupId: position?.groupId,
+              reopenId
+            })
       restoreRecentlyClosedTabPosition(get, worktreeId, restoredFileId, position)
       return true
     },
