@@ -98,14 +98,26 @@ it("steps aside while the newest send's own line says the notice's reason", () =
   })
   const lines = (...ids: string[]) =>
     new Map(ids.map((id) => [agentJournalSubmissionKey(id), { text: 'line' }]))
-  const notice = (submissions: ReturnType<typeof sent>[], deliveryNotices = lines('a', 'b')) =>
+  const rows = (...ids: string[]): AgentJournalRenderItem[] =>
+    ids.map((id, index) => ({
+      itemId: agentJournalSubmissionKey(id),
+      revision: 1,
+      sequence: index + 1,
+      observedAt: index + 1,
+      body: { kind: 'message', role: 'user', text: id, blocks: [] }
+    }))
+  const notice = (
+    submissions: ReturnType<typeof sent>[],
+    deliveryNotices = lines('a', 'b'),
+    journalItems = rows('a', 'b')
+  ) =>
     renderHook(() =>
       useNativeChatAvailabilityNotice({
         agent: 'pi',
         agentLabel: 'Pi',
         unavailable: { reason: 'notSignedIn' },
         launchFailure: null,
-        journalItems: [],
+        journalItems,
         submissions,
         deliveryNotices
       })
@@ -117,6 +129,9 @@ it("steps aside while the newest send's own line says the notice's reason", () =
   )
   // Its line gone (a returned card deleted, the row trimmed): the notice is the only guidance.
   expect(notice([sent('a', { at: 1 }, 'notSignedIn')], lines())?.text).toContain('/login')
+  expect(notice([sent('a', { at: 1 }, 'notSignedIn')], lines('a'), rows())?.text).toContain(
+    '/login'
+  )
   // The host's send order decides, not a clock that moved back.
   expect(
     notice([sent('a', { at: 5, sequence: 1 }, 'notSignedIn'), sent('b', { at: 2, sequence: 2 })])

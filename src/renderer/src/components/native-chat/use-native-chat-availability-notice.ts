@@ -36,14 +36,19 @@ type NoticeSubmission = Pick<
   'clientMessageId' | 'dispatchState' | 'rejection' | 'submittedAt' | 'submittedSequence'
 >
 
-/** Why the newest send was turned away, while that send's own line on screen says so. */
+/** Why the newest send was turned away, while that send's own line on screen says so: its row is
+ *  loaded and carries the line. */
 function shownRejectionReason(
   submissions: readonly NoticeSubmission[],
-  shownLines: ReadonlyMap<string, unknown>
+  shownLines: ReadonlyMap<string, unknown>,
+  items: readonly AgentJournalRenderItem[]
 ): string | null {
   const newest = inSendOrder(submissions, (submission) => submission).at(-1)
+  const key = newest && agentJournalSubmissionKey(newest.clientMessageId)
   return newest?.dispatchState === 'rejected' &&
-    shownLines.has(agentJournalSubmissionKey(newest.clientMessageId))
+    key !== undefined &&
+    shownLines.has(key) &&
+    items.some((item) => item.itemId === key)
     ? (readAgentSessionFailureFact(newest.rejection)?.kind ?? null)
     : null
 }
@@ -73,8 +78,13 @@ export function useNativeChatAvailabilityNotice(input: {
   }
   const rowReason = useMemo(() => failedStartReason(journalItems), [journalItems])
   const sendReason = useMemo(
-    () => shownRejectionReason(input.submissions ?? [], input.deliveryNotices ?? new Map()),
-    [input.submissions, input.deliveryNotices]
+    () =>
+      shownRejectionReason(
+        input.submissions ?? [],
+        input.deliveryNotices ?? new Map(),
+        journalItems ?? []
+      ),
+    [input.submissions, input.deliveryNotices, journalItems]
   )
   if (!unavailable || (dismissal.key === key && dismissal.dismissed)) {
     return null
