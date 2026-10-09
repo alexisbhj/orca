@@ -6,11 +6,11 @@ const GAP = 12
 const MORE = 20
 // Roster order, as the status bar renders it.
 const chips = [
-  { provider: 'claude', width: 60, urgent: false },
-  { provider: 'codex', width: 60, urgent: false },
-  { provider: 'gemini', width: 60, urgent: false },
-  { provider: 'grok', width: 60, urgent: false },
-  { provider: 'cursor', width: 60, urgent: true }
+  { provider: 'claude', width: 60, urgent: false, percentage: true },
+  { provider: 'codex', width: 60, urgent: false, percentage: true },
+  { provider: 'gemini', width: 60, urgent: false, percentage: true },
+  { provider: 'grok', width: 60, urgent: false, percentage: true },
+  { provider: 'cursor', width: 60, urgent: true, percentage: true }
 ]
 
 describe('pickCollapsedUsageChips', () => {
@@ -43,6 +43,18 @@ describe('pickCollapsedUsageChips', () => {
   it('drops urgent agents from the end of the roster too', () => {
     const allUrgent = chips.map((chip) => ({ ...chip, urgent: true }))
     expect(pickCollapsedUsageChips(allUrgent, 10, MORE, GAP)).toEqual(['cursor'])
+  })
+
+  it('keeps a provider visible when hiding the last percentage also frees the unit label', () => {
+    const mixed = [
+      { provider: 'claude', width: 60, urgent: true, percentage: false },
+      { provider: 'codex', width: 60, urgent: false, percentage: true }
+    ]
+    expect(pickCollapsedUsageChips(mixed, 60, MORE, GAP, 30)).toEqual(['codex'])
+  })
+
+  it('reserves the unit label while any percentage stays visible', () => {
+    expect(pickCollapsedUsageChips(chips, 60, MORE, GAP, 30)).toEqual(['grok', 'gemini'])
   })
 })
 

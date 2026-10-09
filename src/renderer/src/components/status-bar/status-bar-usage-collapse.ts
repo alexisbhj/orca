@@ -17,6 +17,7 @@ export type UsageRowMeasure = {
   chips: UsageChipMeasure[]
   moreChipWidth: number
   chipGap: number
+  unitLabelWidth: number
 }
 
 /**
@@ -24,10 +25,11 @@ export type UsageRowMeasure = {
  * from the end of the roster; urgent ones only when calm ones can't free enough room.
  */
 export function pickCollapsedUsageChips(
-  chips: readonly Pick<UsageChipMeasure, 'provider' | 'width' | 'urgent'>[],
+  chips: readonly Pick<UsageChipMeasure, 'provider' | 'width' | 'urgent' | 'percentage'>[],
   overflowPx: number,
   moreChipWidth: number,
-  chipGap: number
+  chipGap: number,
+  unitLabelWidth = 0
 ): string[] {
   if (overflowPx <= 0) {
     return []
@@ -40,12 +42,19 @@ export function pickCollapsedUsageChips(
   ]
   const collapsed: string[] = []
   let freed = 0
+  let remainingPercentageChips = chips.filter((chip) => chip.percentage).length
   for (const chip of dropOrder) {
     if (freed >= needed) {
       break
     }
     collapsed.push(chip.provider)
     freed += chip.width + chipGap
+    if (chip.percentage) {
+      remainingPercentageChips -= 1
+      if (remainingPercentageChips === 0 && unitLabelWidth > 0) {
+        freed += unitLabelWidth + chipGap
+      }
+    }
   }
   return collapsed
 }
@@ -59,7 +68,8 @@ export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
       renderedWidth: 0,
       chips: [],
       moreChipWidth: 0,
-      chipGap: 0
+      chipGap: 0,
+      unitLabelWidth: 0
     }
   }
   const renderedWidth = usage.getBoundingClientRect().width
@@ -81,7 +91,8 @@ export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
     .reduce((sum, chip) => sum + chip.width + chipGap, 0)
   // Why: the unit label stays mounted while collapsed, so count it like a collapsed chip.
   const unit = usage.querySelector<HTMLElement>('[data-usage-unit]')
-  const unitWidth = unit ? unit.getBoundingClientRect().width + chipGap : 0
+  const unitLabelWidth = unit?.getBoundingClientRect().width ?? 0
+  const unitWidth = unit ? unitLabelWidth + chipGap : 0
   const unitCollapsed = unit?.dataset.usageCollapsed === 'true'
   const naturalWidth =
     renderedWidth +
@@ -102,6 +113,7 @@ export function measureUsageRow(usage: HTMLElement | null): UsageRowMeasure {
     renderedWidth,
     chips,
     moreChipWidth,
-    chipGap
+    chipGap,
+    unitLabelWidth
   }
 }

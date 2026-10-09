@@ -3,30 +3,15 @@ import type { ProviderRateLimits } from '../../../../shared/rate-limit-types'
 import type { StatusBarUsageMode } from '../../../../shared/status-bar-usage-mode'
 import type { UsagePercentageDisplay } from '../../../../shared/usage-percentage-display'
 import { translate } from '@/i18n/i18n'
-import { isVisibleStatusBarBucket } from './StatusBarProviderSegment'
-import { getTightestUsageSection, getUsageHeadlineSection } from './UsageRosterPanel'
+import { getStatusBarUsageSections } from './status-bar-usage-sections'
 
 export type UsageUnitLabelState = 'absent' | 'collapsed' | 'shown'
 
-/** Mirrors `ProviderSegment`'s branching: true when the chip renders at least one percentage. */
 export function usageChipShowsPercentage(
   p: ProviderRateLimits | null,
   mode: StatusBarUsageMode
 ): boolean {
-  if (!p || p.status === 'idle' || p.status === 'unavailable') {
-    return false
-  }
-  const headline = mode === 'compact' ? getUsageHeadlineSection(p) : getTightestUsageSection(p)
-  if (!headline) {
-    return false
-  }
-  if (mode === 'verbose' && p.buckets && p.buckets.length > 0) {
-    return (
-      p.buckets.some((bucket) => isVisibleStatusBarBucket(bucket.name, p.provider)) ||
-      Boolean(p.session ?? p.monthly ?? p.weekly)
-    )
-  }
-  return true
+  return getStatusBarUsageSections(p, mode).length > 0
 }
 
 export function getUsageUnitLabelState(
@@ -43,7 +28,7 @@ export function getUsageUnitLabelState(
     : 'shown'
 }
 
-/** States the used/remaining unit once for the row; stays mounted while collapsed so density measuring stays stable. */
+/** Stays measurable while collapsed so the density calculation remains stable. */
 export function UsageUnitLabel({
   collapsed,
   display

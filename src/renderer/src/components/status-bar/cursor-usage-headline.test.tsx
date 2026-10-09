@@ -87,8 +87,13 @@ describe('Cursor compact usage headline', () => {
       expect(
         pickCollapsedUsageChips(
           [
-            { provider: 'codex', width: 60, urgent: false },
-            { provider: 'cursor', width: 60, urgent: getUsageTone(p) === 'urgent' }
+            { provider: 'codex', width: 60, urgent: false, percentage: true },
+            {
+              provider: 'cursor',
+              width: 60,
+              urgent: getUsageTone(p) === 'urgent',
+              percentage: true
+            }
           ],
           20,
           10,
