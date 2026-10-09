@@ -115,10 +115,7 @@ vi.mock('@/store', () => ({
   }
 }))
 
-import {
-  resetStructuredAgentSessionSendsForTests,
-  sendStructuredAgentSessionMessage
-} from '@/components/native-chat/structured-agent-session-message-sender'
+import { resetStructuredAgentSessionSendsForTests } from '@/components/native-chat/structured-agent-session-message-sender'
 import {
   appendNativeChatAttachmentCache,
   clearNativeChatAttachmentCacheForTests
@@ -127,7 +124,6 @@ import {
   clearNativeChatDraftCacheForTests,
   writeNativeChatDraftCache
 } from '@/components/native-chat/native-chat-draft-cache'
-import { structuredAgentSessionTabId } from '../../../shared/structured-agent-session-projection'
 import {
   hydrateNativeChatComposerDrafts,
   structuredAgentSessionDraftScopeKey
@@ -270,204 +266,36 @@ beforeEach(() => {
 })
 
 describe('a second "new chat" with no text', () => {
-  it('focuses the empty chat still starting instead of opening another', () => {
+  it('opens a second chat while the first empty one is still starting', () => {
     mocks.launch.mockImplementation(() => new Promise(() => undefined))
     const firstPick = pick('plus-pick-1')
     const secondPick = pick('plus-pick-2')
 
-    expect(secondPick.sessionId).toBe(firstPick.sessionId)
-    expect(mocks.createIntent).toHaveBeenCalledOnce()
-    expect(store.state.unifiedTabsByWorktree[WORKTREE_ID]).toHaveLength(1)
-    expect(mocks.activateTab).toHaveBeenCalledWith(structuredAgentSessionTabId(first.sessionId), {
-      worktreeId: WORKTREE_ID
-    })
+    expect(firstPick.sessionId).toBe(first.sessionId)
+    expect(secondPick.sessionId).toBe(second.sessionId)
+    expect(store.state.unifiedTabsByWorktree[WORKTREE_ID]).toHaveLength(2)
   })
 
-  it('focuses the empty chat that published and sits idle, and reports that session', async () => {
+  it('opens a second chat beside an empty one that published and sits idle', async () => {
     pick('plus-pick-1')
     await publishIdle(first.sessionId)
 
     const secondPick = pick('plus-pick-2')
 
-    expect(secondPick.sessionId).toBe(first.sessionId)
-    expect(mocks.createIntent).toHaveBeenCalledOnce()
-    expect(mocks.activateTab).toHaveBeenCalledWith(structuredAgentSessionTabId(first.sessionId), {
-      worktreeId: WORKTREE_ID
-    })
+    expect(secondPick.sessionId).toBe(second.sessionId)
+    expect(store.state.unifiedTabsByWorktree[WORKTREE_ID]).toHaveLength(2)
     await expect(secondPick.settlement).resolves.toEqual({
       kind: 'structured',
-      sessionId: first.sessionId
+      sessionId: second.sessionId
     })
   })
 
-  it('opens a new chat when the idle chat has a typed draft', async () => {
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-    // Under the conversation's key, which the composer and every hand-back write.
-    writeNativeChatDraftCache(structuredAgentSessionDraftScopeKey(first.sessionId), 'half a q')
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('opens a new chat when the idle chat has an image in its composer', async () => {
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-    appendNativeChatAttachmentCache(structuredAgentSessionDraftScopeKey(first.sessionId), [
-      { id: 'shot', path: '/tmp/shot.png' }
-    ])
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('opens a new chat when the idle chat holds a launch draft its composer has not taken', async () => {
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-    store.state.nativeChatLaunchDraftByTabId[structuredAgentSessionTabId(first.sessionId)] = {
-      text: 'PR context'
-    }
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('opens a new chat when its host holds a sent message', async () => {
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-    mocks.statusBySession.set(first.sessionId, 'idle')
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('opens a new chat when its host cannot be heard from', async () => {
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-    mocks.liveSessions.clear()
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('opens a new chat when the starting chat has a message queued', () => {
+  it('opens one chat when the same pick is delivered twice', () => {
     mocks.launch.mockImplementation(() => new Promise(() => undefined))
     const firstPick = pick('plus-pick-1')
-    // The chat is not up yet, so its user's own send is still waiting on it.
-    mocks.callRuntimeRpc.mockImplementation(() => new Promise(() => undefined))
-    sendStructuredAgentSessionMessage({
-      sessionId: firstPick.sessionId,
-      target: { kind: 'local' },
-      text: 'my own question'
-    })
 
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('never reuses a chat whose start failed', async () => {
-    const { StructuredAgentSessionCreateRefusalError } =
-      await import('@/lib/launch-structured-agent-session')
-    mocks.launch.mockRejectedValueOnce(new StructuredAgentSessionCreateRefusalError('refused'))
-    pick('plus-pick-1')
-    await flush()
-    expect(getStructuredAgentSessionLaunchLifecycle(WORKTREE_ID, first.sessionId)).toBe('failed')
-    mocks.liveSessions.add(first.sessionId)
-    mocks.statusBySession.set(first.sessionId, null)
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it('never reuses a chat whose start is unconfirmed', async () => {
-    mocks.launch.mockRejectedValueOnce(new Error('answer lost'))
-    mocks.refreshTabs.mockResolvedValue(published())
-    pick('plus-pick-1')
-    await flush()
-    expect(getStructuredAgentSessionLaunchLifecycle(WORKTREE_ID, first.sessionId)).toBe(
-      'visibility-unknown'
-    )
-    mocks.liveSessions.add(first.sessionId)
-    mocks.statusBySession.set(first.sessionId, null)
-
-    expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
-  })
-
-  it("never reuses another agent's or another workspace's idle empty chat", async () => {
-    mocks.createIntent
-      .mockReset()
-      .mockReturnValueOnce(first)
-      .mockReturnValueOnce({ ...second, agent: 'claude' })
-      .mockReturnValueOnce(launchIntent('session-third', 'wt-other'))
-    pick('plus-pick-1')
-    await publishIdle(first.sessionId)
-
-    expect(pick('claude-pick', { agent: 'claude' }).sessionId).toBe(second.sessionId)
-    expect(pick('other-pick', { worktreeId: 'wt-other' }).sessionId).toBe('session-third')
-  })
-
-  it("never reuses another agent's or another workspace's starting empty chat", async () => {
-    mocks.launch.mockImplementation(() => new Promise(() => undefined))
-    mocks.createIntent
-      .mockReset()
-      .mockReturnValueOnce(first)
-      .mockReturnValueOnce({ ...second, agent: 'claude' })
-      .mockReturnValueOnce(launchIntent('session-third', 'wt-other'))
-    pick('plus-pick-1')
-
-    expect(pick('claude-pick', { agent: 'claude' }).sessionId).toBe(second.sessionId)
-    expect(pick('other-pick', { worktreeId: 'wt-other' }).sessionId).toBe('session-third')
-  })
-})
-
-describe('a second "new chat" with no text in another split', () => {
-  function tabOf(sessionId: string): Tab | undefined {
-    return store.state.unifiedTabsByWorktree[WORKTREE_ID]?.find(
-      (tab) => tab.id === structuredAgentSessionTabId(sessionId)
-    )
-  }
-
-  it('opens a new chat in its own split beside an idle empty one, and focus stays there', async () => {
-    pick('plus-pick-1', { group: 'group-left' })
-    await publishIdle(first.sessionId)
-
-    const right = pick('plus-pick-2', { group: 'group-right' })
-
-    expect(right.sessionId).toBe(second.sessionId)
-    expect(tabOf(second.sessionId)?.groupId).toBe('group-right')
-    expect(mocks.focusGroup).not.toHaveBeenCalled()
-    expect(mocks.activateTab).not.toHaveBeenCalled()
-  })
-
-  it('reuses the idle empty chat in the split it was picked in', async () => {
-    pick('plus-pick-1', { group: 'group-right' })
-    await publishIdle(first.sessionId)
-
-    expect(pick('plus-pick-2', { group: 'group-right' }).sessionId).toBe(first.sessionId)
-    expect(mocks.focusGroup).toHaveBeenCalledWith(WORKTREE_ID, 'group-right')
-  })
-
-  it('opens a new chat in its own split beside a starting empty one', () => {
-    mocks.launch.mockImplementation(() => new Promise(() => undefined))
-    pick('plus-pick-1', { group: 'group-left' })
-
-    const right = pick('plus-pick-2', { group: 'group-right' })
-
-    expect(right.sessionId).toBe(second.sessionId)
-    expect(tabOf(second.sessionId)?.groupId).toBe('group-right')
-    expect(mocks.focusGroup).not.toHaveBeenCalled()
-  })
-
-  it('reuses the starting empty chat in the split it was picked in', () => {
-    mocks.launch.mockImplementation(() => new Promise(() => undefined))
-    const firstPick = pick('plus-pick-1', { group: 'group-right' })
-
-    expect(pick('plus-pick-2', { group: 'group-right' }).sessionId).toBe(firstPick.sessionId)
+    expect(pick('plus-pick-1').sessionId).toBe(firstPick.sessionId)
     expect(mocks.createIntent).toHaveBeenCalledOnce()
-  })
-
-  // The dashboard and other callers name no group: the workspace's active one is where they open.
-  it('treats a pick that names no split as made in the active one', async () => {
-    pick('plus-pick-1', { group: 'group-right' })
-    await publishIdle(first.sessionId)
-
-    expect(pick('dashboard-pick').sessionId).toBe(second.sessionId)
-    expect(tabOf(second.sessionId)?.groupId).toBe('group-left')
-    store.state.activeGroupIdByWorktree[WORKTREE_ID] = 'group-right'
-    expect(pick('dashboard-pick-2').sessionId).toBe(first.sessionId)
   })
 })
 
