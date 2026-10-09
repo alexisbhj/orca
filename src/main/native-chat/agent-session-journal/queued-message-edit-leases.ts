@@ -39,13 +39,19 @@ export class QueuedMessageEditLeases {
     }
     const byId = new Map(rows.map((row) => [row.messageId, row]))
     const now = this.now()
+    let lapsed = false
     for (const [key, lease] of this.leases) {
       const row = byId.get(lease.messageId)
+      lapsed ||= lease.until <= now
       if (lease.until <= now || !row || !leaseMatchesRow(lease, row)) {
         this.leases.delete(key)
       }
     }
     this.schedule()
+    // A deadline pruned here before its timer ran: that timer is gone, so this wakes in its place.
+    if (lapsed) {
+      this.wake?.()
+    }
     return new Set([...this.leases.values()].map((lease) => lease.messageId))
   }
 

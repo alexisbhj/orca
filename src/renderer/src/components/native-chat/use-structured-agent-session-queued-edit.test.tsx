@@ -112,6 +112,19 @@ function done(value: AgentSessionQueuedMessageUpdateResult): () => Promise<Outco
 function withText(text: string): AgentSessionQueuedMessage {
   return { ...message, body: { ...message.body, blocks: [{ type: 'text', text }] } }
 }
+function submittedAs(text: string): AgentJournalSubmission {
+  return {
+    clientMessageId: 'submission',
+    queuedMessageId: 'card',
+    payloadFingerprint: agentSessionSendBodyFingerprint(SESSION, withText(text).body),
+    fence: 3,
+    dispatchState: 'pending',
+    providerItemId: null,
+    reason: null,
+    submittedAt: 1,
+    resolvedAt: null
+  }
+}
 
 beforeEach(() => {
   rpc.mockClear()
@@ -316,6 +329,21 @@ describe('inline queued editor', () => {
     await waitFor(() => expect(holdCalls('release')).toHaveLength(2))
   })
 
+  it('a reload, which unmounts nothing, keeps unsaved typing in the chat box once', async () => {
+    writeNativeChatDraftCache(SCOPE, 'existing')
+    const hook = harness()
+    await begin(hook)
+    act(() => hook.result.current.editor?.change('unsaved'))
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+    expect(readNativeChatDraftCache(SCOPE)).toBe('existing\n\nunsaved')
+    hook.unmount()
+    expect(readNativeChatDraftCache(SCOPE)).toBe('existing\n\nunsaved')
+    expect(toast.error).not.toHaveBeenCalled()
+    await waitFor(() => expect(holdCalls('release')).toHaveLength(1))
+  })
+
   describe('a Save whose answer this pane cannot read reads the published card', () => {
     const dropped: () => Promise<Outcome> = async () => ({ kind: 'dropped' })
     function deferred() {
@@ -363,6 +391,34 @@ describe('inline queued editor', () => {
       expect(toast.error).not.toHaveBeenCalled()
     })
 
+    it('an answer that beats its own publication closes once the card shows the saved text, before it drains', async () => {
+      answer = dropped
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('saved text'))
+      act(() => hook.result.current.editor?.save())
+      await waitFor(() => expect(hook.result.current.editor?.saving).toBe(false))
+      expect(hook.result.current.editor).toMatchObject({ text: 'saved text' })
+      hook.rerender({ messages: [withText('saved text')] })
+      expect(hook.result.current.editor).toBeUndefined()
+      hook.rerender({ messages: [], submissions: [submittedAs('saved text')] })
+      expect(toast.error).not.toHaveBeenCalled()
+      expect(readNativeChatDraftCache(SCOPE)).toBe('')
+    })
+
+    it('a card that drains with exactly the typed text, unseen, closes quietly too', async () => {
+      answer = dropped
+      const hook = harness()
+      await begin(hook)
+      act(() => hook.result.current.editor?.change('saved text'))
+      act(() => hook.result.current.editor?.save())
+      await waitFor(() => expect(hook.result.current.editor?.saving).toBe(false))
+      hook.rerender({ messages: [], submissions: [submittedAs('saved text')] })
+      expect(hook.result.current.editor).toBeUndefined()
+      expect(toast.error).not.toHaveBeenCalled()
+      expect(readNativeChatDraftCache(SCOPE)).toBe('')
+    })
+
     it('the card left with its old text (sent elsewhere first): the typing goes to the chat box', async () => {
       const finish = deferred()
       const hook = harness()
@@ -388,22 +444,7 @@ describe('inline queued editor', () => {
     await begin(hook)
     act(() => hook.result.current.editor?.change('saved text'))
     act(() => hook.result.current.editor?.save())
-    const saved = agentSessionSendBodyFingerprint(SESSION, {
-      ...message.body,
-      blocks: [{ type: 'text', text: 'saved text' }]
-    })
-    const submission: AgentJournalSubmission = {
-      clientMessageId: 'submission',
-      queuedMessageId: 'card',
-      payloadFingerprint: saved,
-      fence: 3,
-      dispatchState: 'pending',
-      providerItemId: null,
-      reason: null,
-      submittedAt: 1,
-      resolvedAt: null
-    }
-    hook.rerender({ messages: [], submissions: [submission] })
+    hook.rerender({ messages: [], submissions: [submittedAs('saved text')] })
     expect(hook.result.current.editor?.saving).toBe(true)
     await act(async () =>
       finish({ kind: 'not-done', notice: 'lost', failure: { kind: 'unconfirmed' } })

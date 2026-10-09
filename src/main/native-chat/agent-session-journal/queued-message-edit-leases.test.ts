@@ -88,6 +88,20 @@ describe('queued edit leases', () => {
     expect(leases.renew(desktop, 'card')).toEqual({ status: 'expired' })
   })
 
+  it("a renew that prunes another editor's lapsed lease before its timer runs still wakes the queue", () => {
+    rows.push({ ...card('second'), position: 2, fingerprint: 'second-base' })
+    const phone = { callerKey: 'phone', editId: 'edit-9' }
+    leases.acquire(desktop, base)
+    clock = 10_000
+    leases.acquire(phone, { messageId: 'second', fingerprint: 'second-base' })
+    // The first deadline has passed on the host clock; its timer is late and has not run.
+    clock = QUEUED_MESSAGE_EDIT_LEASE_MS + 1
+    expect(leases.renew(phone, 'second')).toMatchObject({ status: 'held' })
+    expect([...leases.heldIds()]).toEqual(['second'])
+    vi.advanceTimersByTime(QUEUED_MESSAGE_EDIT_LEASE_MS - 1)
+    expect(wake).toHaveBeenCalledOnce()
+  })
+
   it('release frees only the exact caller and edit, never another editor on the same card', () => {
     leases.acquire(desktop, base)
     leases.acquire({ callerKey: 'phone', editId: 'edit-1' }, base)

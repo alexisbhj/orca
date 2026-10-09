@@ -83,8 +83,8 @@ export function holdQueuedStructuredAgentMessageEdit(
     }
     const queued = session.journal.queuedMessages
     if (params.action !== 'acquire') {
-      // Moves no held card, so nothing to publish; and a publish is idle-sweep activity, which an
-      // editor left open must not renew forever.
+      // Holds nothing new, so nothing to publish (a lapsed lease it prunes wakes the queue itself);
+      // and a publish is idle-sweep activity, which an editor left open must not renew forever.
       return queued.editLeases.renew(key, messageId)
     }
     const row = queued.get(messageId)
@@ -97,8 +97,8 @@ export function holdQueuedStructuredAgentMessageEdit(
   })
 }
 
-/** Leases live outside the journal, so no commit announces them: publish the held marker and
- *  wake the drain here. A failed publish is logged; the lease still stands. */
+/** Leases live outside the journal, so no commit announces them: publish the next card to send
+ *  and wake the drain here. A failed publish is logged; the lease still stands. */
 export function republish(
   context: StructuredAgentSessionMutationContext,
   sessionId: string,

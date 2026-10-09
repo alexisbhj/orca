@@ -142,10 +142,10 @@ export function useStructuredAgentSessionQueuedEdit(args: {
     [close]
   )
 
-  // Another chat, host or composer, or the pane going away: unsaved typing goes quietly to the
-  // chat box of the chat it was typed in.
-  useEffect(
-    () => () => {
+  // Another chat, host or composer, the pane going away, or a reload (which unmounts nothing):
+  // unsaved typing goes quietly to the chat box of the chat it was typed in.
+  useEffect(() => {
+    const handOff = (): void => {
       const edit = active.current
       active.current = null
       reopen.current = null
@@ -153,9 +153,13 @@ export function useStructuredAgentSessionQueuedEdit(args: {
         appendNativeChatDraftCache(edit.draftKey, edit.text)
       }
       edit?.lease.end()
-    },
-    [scope]
-  )
+    }
+    window.addEventListener('pagehide', handOff)
+    return () => {
+      window.removeEventListener('pagehide', handOff)
+      handOff()
+    }
+  }, [scope])
 
   const begin = useCallback(
     async (messageId: string): Promise<void> => {
@@ -271,10 +275,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       render(edit)
     } else if (!listed || !onScreen(latest.current.cards, edit.messageId)) {
       // The card has left: it went out with this Save's text, or before the Save could land.
-      const sentAsSaved = latest.current.submissions.some(
-        (entry) => entry.queuedMessageId === edit.messageId && entry.payloadFingerprint === desired
-      )
-      if (sentAsSaved) {
+      if (sentWith(latest.current.submissions, edit.messageId, desired)) {
         close()
       } else {
         gone(edit)
@@ -295,8 +296,23 @@ export function useStructuredAgentSessionQueuedEdit(args: {
   // An unloaded list (`null`) proves nothing: a stream that went quiet did not send the card.
   useEffect(() => {
     const edit = active.current
-    if (edit && !edit.saving && messages !== null && !onScreen(cards, edit.messageId)) {
-      gone(edit)
+    if (edit && !edit.saving && messages !== null) {
+      const typed = queuedMessageWithEditedText(edit.body, edit.text)
+      const desired = typed ? agentSessionSendBodyFingerprint(sessionId, typed) : null
+      const listed = messages.find((entry) => entry.messageId === edit.messageId)
+      if (!listed || !onScreen(cards, edit.messageId)) {
+        if (desired !== null && sentWith(submissions, edit.messageId, desired)) {
+          close()
+        } else {
+          gone(edit)
+        }
+      } else if (
+        desired !== edit.baseFingerprint &&
+        agentSessionSendBodyFingerprint(sessionId, listed.body) === desired
+      ) {
+        // The card already holds what is typed, as after a Save whose answer was lost.
+        close()
+      }
     }
     const pending = reopen.current
     if (!pending || edit || messages === null) {
@@ -308,7 +324,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
     } else if (agentSessionSendBodyFingerprint(sessionId, listed.body) !== pending.stale) {
       void begin(pending.messageId)
     }
-  }, [begin, cards, gone, messages, scope, sessionId, shown])
+  }, [begin, cards, close, gone, messages, scope, sessionId, shown, submissions])
 
   const editor: QueuedMessageInlineEditor | undefined =
     shown && shown.scope === scope
@@ -329,6 +345,17 @@ export function useStructuredAgentSessionQueuedEdit(args: {
 /** A read of the ref, not a narrowing: an await may have closed or replaced the edit. */
 function isOpen(active: { current: Edit | null }, edit: Edit): boolean {
   return active.current === edit
+}
+
+/** The card went out holding exactly this body. */
+function sentWith(
+  submissions: readonly AgentJournalSubmission[],
+  messageId: string,
+  fingerprint: string
+): boolean {
+  return submissions.some(
+    (entry) => entry.queuedMessageId === messageId && entry.payloadFingerprint === fingerprint
+  )
 }
 
 function onScreen(cards: readonly QueuedMessageCard[], messageId: string): boolean {
