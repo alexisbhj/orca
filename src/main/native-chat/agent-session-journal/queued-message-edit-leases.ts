@@ -159,7 +159,16 @@ export class QueuedMessageEditLeases {
       },
       Math.max(1, next - this.now())
     )
-    this.timer.unref?.()
+    // Read untyped: this module also compiles into the phone's tests, where a timer is a number.
+    const timer: unknown = this.timer
+    if (
+      typeof timer === 'object' &&
+      timer &&
+      'unref' in timer &&
+      typeof timer.unref === 'function'
+    ) {
+      timer.unref()
+    }
   }
 }
 
