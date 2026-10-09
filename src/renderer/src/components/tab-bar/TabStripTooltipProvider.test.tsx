@@ -1,8 +1,29 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useContext } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { TAB_TOOLTIP_DELAY_MS, TabStripTooltipProvider } from './TabStripTooltipProvider'
+import { TabCloseTooltip } from './TabCloseTooltip'
+import { TabHoverCard } from './TabHoverCard'
+import {
+  TAB_TOOLTIP_DELAY_MS,
+  TAB_TOOLTIP_SKIP_DELAY_MS,
+  TabCardOpenContext,
+  TabStripTooltipProvider
+} from './TabStripTooltipProvider'
+
+vi.mock('@/hooks/useShortcutLabel', () => ({ useOptionalShortcutLabel: () => null }))
+
+function CardEvents({ id }: { id: string }): React.JSX.Element {
+  const strip = useContext(TabCardOpenContext)
+  return (
+    <>
+      <button onClick={() => strip?.onOpenChange(id, true)}>open {id}</button>
+      <button onClick={() => strip?.onOpenChange(id, false)}>close {id}</button>
+      <output aria-label={`${id} delay`}>{strip?.isWarm ? 'immediate' : 'delayed'}</output>
+    </>
+  )
+}
 
 function renderTooltip(label: string, tip: string): void {
   render(
@@ -93,5 +114,45 @@ describe('TabStripTooltipProvider', () => {
       vi.advanceTimersByTime(1)
     })
     expect(screen.getByText('first tip')).toBeTruthy()
+  })
+
+  it('ignores a late close from the previous card and resets the delay after the active card closes', () => {
+    render(
+      <TabStripTooltipProvider>
+        <CardEvents id="first" />
+        <CardEvents id="second" />
+      </TabStripTooltipProvider>
+    )
+    const delay = screen.getByLabelText('first delay')
+    expect(delay.textContent).toBe('delayed')
+    fireEvent.click(screen.getByText('open first'))
+    fireEvent.click(screen.getByText('close first'))
+    fireEvent.click(screen.getByText('open second'))
+    fireEvent.click(screen.getByText('close first'))
+    act(() => vi.advanceTimersByTime(TAB_TOOLTIP_SKIP_DELAY_MS + 1))
+    expect(delay.textContent).toBe('immediate')
+
+    fireEvent.click(screen.getByText('close second'))
+    act(() => vi.advanceTimersByTime(TAB_TOOLTIP_SKIP_DELAY_MS - 1))
+    expect(delay.textContent).toBe('immediate')
+    act(() => vi.advanceTimersByTime(1))
+    expect(delay.textContent).toBe('delayed')
+  })
+
+  it('shows only the close hint when the close button receives keyboard focus', () => {
+    const { container } = render(
+      <TabStripTooltipProvider>
+        <TabHoverCard title="Build" icon={<span />} programName="Terminal">
+          <div tabIndex={0}>
+            <TabCloseTooltip>
+              <button>close</button>
+            </TabCloseTooltip>
+          </div>
+        </TabHoverCard>
+      </TabStripTooltipProvider>
+    )
+    act(() => screen.getByRole('button', { name: 'close' }).focus())
+    expect(container.ownerDocument.querySelector('[data-tab-close-tooltip]')).not.toBeNull()
+    expect(container.ownerDocument.querySelector('[data-tab-hover-card]')).toBeNull()
   })
 })

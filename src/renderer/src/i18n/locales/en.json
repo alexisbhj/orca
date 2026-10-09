@@ -19649,5 +19649,10 @@
       "updateRuntime": "Update the remote runtime to change workspace links",
       "updateRuntimeSafely": "Update the remote runtime to safely change workspace links"
     }
+  },
+  "tabHoverCard": {
+    "browser": "Browser",
+    "editor": "Editor",
+    "terminal": "Terminal"
   }
 }

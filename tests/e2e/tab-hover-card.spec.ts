@@ -121,6 +121,15 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   await first.click({ position: { x: 3, y: firstBox.height / 2 } })
   await expect(card).toHaveCount(0)
 
+  await first.locator('[data-tab-close-button]').focus()
+  await expect(orcaPage.locator('[data-tab-close-tooltip]')).toBeVisible()
+  await expect(card).toHaveCount(0)
+  await first.focus()
+  await expect(cardTitle).toHaveText('Build and test the hover cards')
+  await expect(orcaPage.locator('[data-tab-close-tooltip]')).toHaveCount(0)
+  await first.press('Escape')
+  await expect(card).toHaveCount(0)
+
   await orcaPage.mouse.move(firstBox.x + 3, firstBox.y + firstBox.height + 100)
   await orcaPage.waitForTimeout(400)
   await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)

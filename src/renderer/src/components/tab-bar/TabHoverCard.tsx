@@ -25,21 +25,30 @@ export function TabHoverCard({
   const openContext = useContext(TabCardOpenContext)
   const notifyOpenChange = openContext?.onOpenChange
 
+  const captureClosedPlacement = useCallback(
+    (element: HTMLDivElement | null) => {
+      const previous = placement?.current
+      if (!element || previous?.element !== element) {
+        return
+      }
+      const { left, top } = element.getBoundingClientRect()
+      previous.left = left
+      previous.top = top
+      previous.closedAt = performance.now()
+    },
+    [placement]
+  )
+
   const setContentElement = useCallback(
     (element: HTMLDivElement | null) => {
       const previous = content.current
       if (!element && previous) {
         notifyOpenChange?.(cardId, false)
-      }
-      if (!element && previous && placement?.current?.element === previous) {
-        const rect = previous.getBoundingClientRect()
-        placement.current.left = rect.left
-        placement.current.top = rect.top
-        placement.current.closedAt = performance.now()
+        captureClosedPlacement(previous)
       }
       content.current = element
     },
-    [placement, cardId, notifyOpenChange]
+    [captureClosedPlacement, cardId, notifyOpenChange]
   )
 
   const handlePlaced = (): void => {
@@ -50,8 +59,8 @@ export function TabHoverCard({
     const rect = element.getBoundingClientRect()
     const previous = placement.current
     if (
-      previous?.closedAt !== null &&
-      previous?.closedAt !== undefined &&
+      previous &&
+      previous.closedAt !== null &&
       performance.now() - previous.closedAt < TAB_TOOLTIP_SKIP_DELAY_MS &&
       !window.matchMedia('(prefers-reduced-motion: reduce)').matches
     ) {
@@ -75,21 +84,22 @@ export function TabHoverCard({
       delayDuration={openContext?.isWarm ? 0 : undefined}
       onOpenChange={(open) => {
         openContext?.onOpenChange(cardId, open)
-        if (
-          !open &&
-          content.current?.isConnected &&
-          placement?.current?.element === content.current
-        ) {
-          const rect = content.current?.getBoundingClientRect()
-          if (rect) {
-            placement.current.left = rect.left
-            placement.current.top = rect.top
-          }
-          placement.current.closedAt = performance.now()
+        if (!open && content.current?.isConnected) {
+          captureClosedPlacement(content.current)
         }
       }}
     >
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipTrigger
+        asChild
+        onFocus={(event) => {
+          // Nested controls own their focus hints.
+          if (event.target !== event.currentTarget) {
+            event.preventDefault()
+          }
+        }}
+      >
+        {children}
+      </TooltipTrigger>
       <TooltipContent
         ref={setContentElement}
         variant="tab-preview"
