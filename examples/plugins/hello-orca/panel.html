@@ -83,9 +83,12 @@
         return call('invokeOwnCommand', params)
       }
 
-      document.getElementById('own-command').addEventListener('click', function () {
+      var ownCommandButton = document.getElementById('own-command')
+      ownCommandButton.addEventListener('click', function () {
+        ownCommandButton.disabled = true
         invokeOwnCommand({ commandId: 'hello-ping', args: { source: 'panel' } }).then(
           function (result) {
+            ownCommandButton.disabled = false
             statusEl.textContent = result.ok
               ? JSON.stringify(result.value)
               : 'command failed: ' + (result.error || result.errorCode)

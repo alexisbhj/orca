@@ -80,26 +80,12 @@ export class PluginPanelController {
     if (!parsed.success) {
       return { ok: false, code: 'invalid_request', error: 'malformed panel action call' }
     }
-    const plugin = this.options.resolveApprovedPlugin(binding.pluginKey)
-    const panelExists = plugin?.manifest.contributes.panels.some(
-      (panel) => panel.id === binding.panelId
-    )
-    if (
-      !plugin ||
-      plugin.rootDir !== binding.rootDir ||
-      JSON.stringify(plugin.manifest) !== binding.manifestRevision ||
-      !panelExists
-    ) {
+    const isCurrent = (): boolean => this.isSessionCurrent(ownerKey, sessionToken, binding)
+    if (!isCurrent()) {
       return { ok: false, code: 'unavailable', error: 'panel session is no longer available' }
     }
     const assertSessionCurrent = (): void => {
-      const current = this.options.resolveApprovedPlugin(binding.pluginKey)
-      if (
-        !this.sessions.resolve(ownerKey, sessionToken) ||
-        !current ||
-        current.rootDir !== binding.rootDir ||
-        JSON.stringify(current.manifest) !== binding.manifestRevision
-      ) {
+      if (!isCurrent()) {
         throw new Error('panel session is no longer available')
       }
     }
@@ -108,6 +94,21 @@ export class PluginPanelController {
       parsed.data.action,
       parsed.data.params,
       assertSessionCurrent
+    )
+  }
+
+  private isSessionCurrent(
+    ownerKey: string,
+    sessionToken: string,
+    binding: PluginPanelSessionBinding
+  ): boolean {
+    const plugin = this.options.resolveApprovedPlugin(binding.pluginKey)
+    return Boolean(
+      this.sessions.resolve(ownerKey, sessionToken) &&
+      plugin &&
+      plugin.rootDir === binding.rootDir &&
+      JSON.stringify(plugin.manifest) === binding.manifestRevision &&
+      plugin.manifest.contributes.panels.some((panel) => panel.id === binding.panelId)
     )
   }
 

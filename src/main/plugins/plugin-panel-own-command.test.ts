@@ -204,3 +204,13 @@ it('retains the per-plugin message size and rate limits', async () => {
   })
   expect(invoke).toHaveBeenCalledTimes(29)
 })
+
+it('bounds schema errors that contain an attacker-controlled unknown key', async () => {
+  const { call, invoke } = await harness()
+  const failure = await call({ commandId: 'echo', ['x'.repeat(4_000)]: null })
+  expect(failure).toMatchObject({ ok: false, code: 'invalid_params' })
+  if (!failure.ok) {
+    expect(failure.error.length).toBeLessThanOrEqual(1024)
+  }
+  expect(invoke).not.toHaveBeenCalled()
+})

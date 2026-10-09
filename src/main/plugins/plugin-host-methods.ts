@@ -52,7 +52,7 @@ export async function executePluginHostCall(
     return {
       ok: false,
       code: 'invalid_params',
-      error: `${path}: ${issue?.message ?? 'invalid params'}`
+      error: `${path}: ${issue?.message ?? 'invalid params'}`.slice(0, 1024)
     }
   }
   if (!input.services) {
