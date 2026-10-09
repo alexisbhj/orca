@@ -10,32 +10,6 @@ import type { CommandOf, LayoutContext } from './workspace-layout-command-types'
 import type { WorkspaceLayout, WorkspaceLayoutModel } from './workspace-layout-model'
 import { withWorkspace } from './workspace-layout-removal'
 
-function groupTreeOf(workspace: WorkspaceLayout): TabGroupLayoutNode | undefined {
-  const first = workspace.groups[0]
-  return workspace.groupLayout ?? (first ? { type: 'leaf', groupId: first.id } : undefined)
-}
-
-/** The moves keep each group's per-view selection out; only order and membership come back. */
-function withGroups(
-  workspace: WorkspaceLayout,
-  groups: readonly { id: string; tabOrder: string[] }[],
-  layout: TabGroupLayoutNode | null
-): WorkspaceLayout {
-  const next: WorkspaceLayout = {
-    ...workspace,
-    groups: groups.map((group) => ({ id: group.id, tabOrder: group.tabOrder }))
-  }
-  if (layout) {
-    next.groupLayout = layout
-  } else {
-    delete next.groupLayout
-  }
-  return next
-}
-
-const asMoveGroups = (workspace: WorkspaceLayout) =>
-  workspace.groups.map((group) => ({ id: group.id, activeTabId: null, tabOrder: group.tabOrder }))
-
 function sourceGroupOf(workspace: WorkspaceLayout, tabId: string) {
   return findTab(workspace, tabId)
     ? workspace.groups.find((group) => group.tabOrder.includes(tabId))
@@ -60,8 +34,8 @@ export function moveTab(model: WorkspaceLayoutModel, command: CommandOf<'moveTab
     return applied(withWorkspace(model, command.workspace, { ...workspace, groups }))
   }
   const moved = buildHeadlessTabGroupMove({
-    groups: asMoveGroups(workspace),
-    layout: groupTreeOf(workspace),
+    groups: workspace.groups,
+    layout: workspace.groupLayout,
     tabId: command.tabId,
     targetGroupId: command.toGroupId,
     index: command.index
@@ -70,7 +44,11 @@ export function moveTab(model: WorkspaceLayoutModel, command: CommandOf<'moveTab
     return refuse('invalid_params')
   }
   return applied(
-    withWorkspace(model, command.workspace, withGroups(workspace, moved.groups, moved.layout))
+    withWorkspace(model, command.workspace, {
+      ...workspace,
+      groups: moved.groups,
+      groupLayout: moved.layout ?? undefined
+    })
   )
 }
 
@@ -90,7 +68,7 @@ export function splitGroup(
   if (source.tabOrder.length === 1 && source.id !== command.besideGroupId) {
     // The group's only tab moves with its group, so the group keeps its id (ids never change).
     const groupLayout = moveGroupLeafBeside(
-      groupTreeOf(workspace)!,
+      workspace.groupLayout ?? { type: 'leaf', groupId: source.id },
       source.id,
       command.besideGroupId,
       command.direction
@@ -100,8 +78,8 @@ export function splitGroup(
     })
   }
   const split = buildHeadlessTabGroupSplit({
-    groups: asMoveGroups(workspace),
-    layout: groupTreeOf(workspace),
+    groups: workspace.groups,
+    layout: workspace.groupLayout,
     tabId: command.tabId,
     targetGroupId: command.besideGroupId,
     splitDirection: command.direction,
@@ -112,8 +90,14 @@ export function splitGroup(
     return refuse('invalid_params')
   }
   return applied(
-    withWorkspace(model, command.workspace, withGroups(workspace, split.groups, split.layout)),
-    { groupId: split.newGroupId }
+    withWorkspace(model, command.workspace, {
+      ...workspace,
+      groups: split.groups,
+      groupLayout: split.layout
+    }),
+    {
+      groupId: split.newGroupId
+    }
   )
 }
 
@@ -133,7 +117,8 @@ export function setGroupRatios(
   command: CommandOf<'setGroupRatios'>
 ): Applied {
   const workspace = model.workspaces[command.workspace]!
-  const current = groupTreeOf(workspace)
+  const first = workspace.groups[0]
+  const current = workspace.groupLayout ?? (first && { type: 'leaf' as const, groupId: first.id })
   if (!current || !sameGroupsIgnoringRatios(current, command.groupLayout)) {
     return refuse('group_set_changed')
   }

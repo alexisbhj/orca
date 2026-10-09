@@ -80,7 +80,7 @@ class Harness {
   apply(step: Step): ReturnType<typeof applyLayoutCommand> {
     const result = step.command
       ? applyLayoutCommand(this.model, step.command, this.context)
-      : applyLayoutTransition(this.model, step.transition!, this.context)
+      : applyLayoutTransition(this.model, step.transition!)
     this.log.push(`${step.label} → ${result.ok ? 'ok' : result.code}`)
     if (result.ok) {
       expect(
@@ -124,7 +124,7 @@ class Harness {
       mintId: () => `reload-${++minted}`,
       mintLeafId: () => `reload-leaf-${++minted}`
     })
-    expect(loaded.normalizations, this.log.join('\n')).toEqual([])
+    expect(loaded.changes, this.log.join('\n')).toEqual([])
     expect(saveWorkspaceLayout({ ...emptyLayoutBeside(), layout: loaded.layout })).toEqual(saved)
     this.model = loaded.layout
     this.log.push('reopen')

@@ -3,7 +3,6 @@ import { applyLayoutCommand } from './workspace-layout-commands'
 import type { LayoutCommand, LayoutContext } from './workspace-layout-command-types'
 import {
   build,
-  emptyModel,
   terminalTab,
   testContext,
   WS,
@@ -11,7 +10,6 @@ import {
 } from './workspace-layout-command.test-fixture'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
 import { checkWorkspaceLayoutModelRules } from './workspace-layout-model-rules'
-import { moveWorkspaceToPartition } from './workspace-layout-owner-transitions'
 import { applyLayoutTransition, type LayoutTransition } from './workspace-layout-transitions'
 
 /** One terminal tab split in two, the first pane running `pty-1`. */
@@ -24,17 +22,13 @@ function setup() {
     [{ type: 'splitPane', workspace: WS, tabId: tabId!, leafId: leafId!, direction: 'vertical' }],
     created.model
   )
-  const started = applyLayoutTransition(
-    split.model,
-    {
-      type: 'processStarted',
-      workspace: WS,
-      paneKey: paneKey!,
-      ptyId: 'pty-1',
-      incarnationId: 'inc-1'
-    },
-    context
-  )
+  const started = applyLayoutTransition(split.model, {
+    type: 'processStarted',
+    workspace: WS,
+    paneKey: paneKey!,
+    ptyId: 'pty-1',
+    incarnationId: 'inc-1'
+  })
   if (!started.ok) {
     throw new Error(started.code)
   }
@@ -54,31 +48,28 @@ const leavesOf = (model: WorkspaceLayoutModel, tabId: string) =>
 
 describe('layout transitions', () => {
   it('binds a started terminal once and refuses binding it to a second pane', () => {
-    const { model, context, tabId, leafId, leaf2 } = setup()
+    const { model, tabId, leafId, leaf2 } = setup()
     expect(leavesOf(model, tabId)).toEqual({ [leafId]: 'pty-1' })
     expect(model.records.incarnationsByPaneKey).toEqual({ [`${tabId}:${leafId}`]: 'inc-1' })
-    const twice = applyLayoutTransition(
-      model,
-      {
-        type: 'processStarted',
-        workspace: WS,
-        paneKey: `${tabId}:${leaf2}`,
-        ptyId: 'pty-1',
-        incarnationId: 'inc-1'
-      },
-      context
-    )
+    const twice = applyLayoutTransition(model, {
+      type: 'processStarted',
+      workspace: WS,
+      paneKey: `${tabId}:${leaf2}`,
+      ptyId: 'pty-1',
+      incarnationId: 'inc-1'
+    })
     expect(twice).toEqual({ ok: false, code: 'pane_already_bound' })
-    const missing = applyLayoutTransition(
-      model,
-      { type: 'processStarted', workspace: WS, paneKey: `${tabId}:nope`, ptyId: 'pty-9' },
-      context
-    )
+    const missing = applyLayoutTransition(model, {
+      type: 'processStarted',
+      workspace: WS,
+      paneKey: `${tabId}:nope`,
+      ptyId: 'pty-9'
+    })
     expect(missing).toEqual({ ok: false, code: 'pane_not_found' })
   })
 
   it('retires an exited pane only while it still shows that terminal and incarnation', () => {
-    const { model, context, tabId, leafId } = setup()
+    const { model, tabId, leafId } = setup()
     const surface = { worktreeId: WS, terminalTabId: tabId, leafId, ptyId: 'pty-1' }
     const stale: LayoutTransition = {
       type: 'processExited',
@@ -89,14 +80,13 @@ describe('layout transitions', () => {
       surface: { ...surface, ptyId: 'pty-other' }
     }
     for (const transition of [stale, other]) {
-      const result = applyLayoutTransition(model, transition, context)
+      const result = applyLayoutTransition(model, transition)
       expect(result.ok && leavesOf(result.model, tabId)).toEqual({ [leafId]: 'pty-1' })
     }
-    const exited = applyLayoutTransition(
-      model,
-      { type: 'processExited', surface: { ...surface, incarnationId: 'inc-1' } },
-      context
-    )
+    const exited = applyLayoutTransition(model, {
+      type: 'processExited',
+      surface: { ...surface, incarnationId: 'inc-1' }
+    })
     expect(exited.ok && exited.model.records.incarnationsByPaneKey).toEqual({})
     expect(exited.ok && terminalTab(exited.model, tabId).panes!.root).toEqual({
       type: 'leaf',
@@ -105,127 +95,52 @@ describe('layout transitions', () => {
   })
 
   it('unbinds panes whose SSH lease ended without closing them', () => {
-    const { model, context, tabId } = setup()
-    const result = applyLayoutTransition(
-      model,
-      { type: 'sshLeaseTerminated', ptyIds: ['pty-1'] },
-      context
-    )
+    const { model, tabId } = setup()
+    const result = applyLayoutTransition(model, { type: 'sshLeaseTerminated', ptyIds: ['pty-1'] })
     expect(result.ok && leavesOf(result.model, tabId)).toEqual({})
   })
 
-  it('adopts an orphan terminal into a new bound tab', () => {
-    const context = testContext()
-    const result = applyLayoutTransition(
-      emptyModel(),
-      { type: 'orphanAdopted', workspace: WS, ptyId: 'orphan-1' },
-      context
-    )
-    expect(result.ok && checkWorkspaceLayoutModelRules([asLoaded(result.model)])).toEqual([])
-    expect(result.ok && leavesOf(result.model, result.result.tabId!)).toEqual({
-      [result.ok ? result.result.leafId! : '']: 'orphan-1'
+  it('removes and renames a workspace with the records that name it', () => {
+    const { model, context } = setup()
+    const renamed = applyLayoutTransition(model, {
+      type: 'identityRenamed',
+      from: WS,
+      to: 'repo-1::/renamed'
     })
-  })
-
-  it('removes, renames and rehomes a workspace with the records that name it', () => {
-    const { model, context, tabId, leafId } = setup()
-    const renamed = applyLayoutTransition(
-      model,
-      { type: 'identityRenamed', from: WS, to: 'repo-1::/renamed' },
-      context
-    )
     expect(renamed.ok && Object.keys(renamed.model.workspaces)).toEqual(['repo-1::/renamed'])
     expect(renamed.ok && renamed.model.workspaces['repo-1::/renamed']!.worktreeId).toBe(
       'repo-1::/renamed'
     )
-    // Closed-tab records follow, so removing the renamed workspace still clears them.
+    // Closed-tab records live in their workspace, so they follow a rename and go with a removal.
     const withClosed = {
       ...model,
-      records: {
-        ...model.records,
-        closedTerminalTabTombstones: {
-          closed: { closedAt: 1, worktreeId: WS, reason: 'user' as const }
+      workspaces: {
+        [WS]: {
+          ...model.workspaces[WS]!,
+          closedTerminalTabs: { closed: { closedAt: 1, reason: 'user' as const } }
         }
       }
     }
-    const renamedWithClosed = applyLayoutTransition(
-      withClosed,
-      { type: 'identityRenamed', from: WS, to: 'repo-1::/renamed' },
-      context
-    )
+    const renamedWithClosed = applyLayoutTransition(withClosed, {
+      type: 'identityRenamed',
+      from: WS,
+      to: 'repo-1::/renamed'
+    })
     expect(
       renamedWithClosed.ok &&
-        renamedWithClosed.model.records.closedTerminalTabTombstones!.closed!.worktreeId
-    ).toBe('repo-1::/renamed')
-    const removedRenamed =
-      renamedWithClosed.ok &&
-      applyLayoutTransition(
-        renamedWithClosed.model,
-        { type: 'ownerRemoved', workspaces: ['repo-1::/renamed'] },
-        context
-      )
-    expect(
-      removedRenamed &&
-        removedRenamed.ok &&
-        removedRenamed.model.records.closedTerminalTabTombstones
-    ).toEqual({})
+        renamedWithClosed.model.workspaces['repo-1::/renamed']!.closedTerminalTabs
+    ).toEqual({ closed: { closedAt: 1, reason: 'user' } })
     const occupied = build(
       context,
       [{ type: 'createTerminalTab', workspace: 'repo-1::/other' }],
       model
     ).model
     expect(
-      applyLayoutTransition(
-        occupied,
-        { type: 'identityRenamed', from: WS, to: 'repo-1::/other' },
-        context
-      )
+      applyLayoutTransition(occupied, { type: 'identityRenamed', from: WS, to: 'repo-1::/other' })
     ).toEqual({ ok: false, code: 'workspace_exists' })
-    const removed = applyLayoutTransition(
-      model,
-      { type: 'ownerRemoved', workspaces: [WS] },
-      context
-    )
+    const removed = applyLayoutTransition(model, { type: 'ownerRemoved', workspaces: [WS] })
     expect(removed.ok && removed.model.workspaces).toEqual({})
     expect(removed.ok && removed.model.records.incarnationsByPaneKey).toEqual({})
-    const moved = moveWorkspaceToPartition(model, { ...emptyModel(), hostId: 'ssh:target-1' }, WS)
-    expect(Object.keys(moved.from.workspaces)).toEqual([])
-    expect(moved.to.records.incarnationsByPaneKey).toEqual({ [`${tabId}:${leafId}`]: 'inc-1' })
-  })
-
-  it('records and clears an agent launch verdict on its tab', () => {
-    const { model, context, tabId, leafId } = setup()
-    const set = applyLayoutTransition(
-      model,
-      {
-        type: 'agentLaunchVerdict',
-        workspace: WS,
-        tabId,
-        agentLaunchPane: { leafId, operationId: 'op-1' }
-      },
-      context
-    )
-    expect(set.ok && terminalTab(set.model, tabId).terminal.agentLaunchPane).toEqual({
-      leafId,
-      operationId: 'op-1'
-    })
-    const cleared =
-      set.ok &&
-      applyLayoutTransition(
-        set.model,
-        { type: 'agentLaunchVerdict', workspace: WS, tabId, agentLaunchPane: null },
-        context
-      )
-    expect(
-      cleared && cleared.ok && terminalTab(cleared.model, tabId).terminal.agentLaunchPane
-    ).toBeUndefined()
-    expect(
-      applyLayoutTransition(
-        model,
-        { type: 'agentLaunchVerdict', workspace: WS, tabId: 'nope', agentLaunchPane: null },
-        context
-      )
-    ).toEqual({ ok: false, code: 'tab_not_found' })
   })
 })
 
@@ -240,7 +155,7 @@ describe('concurrent commands, both orders', () => {
       const result =
         'command' in step
           ? applyLayoutCommand(next, step.command, context)
-          : applyLayoutTransition(next, step.transition, context)
+          : applyLayoutTransition(next, step.transition)
       codes.push(result.ok ? 'ok' : result.code)
       if (result.ok) {
         expect(checkWorkspaceLayoutModelRules([asLoaded(result.model)], [asLoaded(next)])).toEqual(

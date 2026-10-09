@@ -6,11 +6,7 @@ import {
   removeTabGroupLayoutLeaf
 } from './tab-group-moves'
 
-const group = (id: string, tabs: string[], activeTabId = tabs[0] ?? null) => ({
-  id,
-  activeTabId,
-  tabOrder: tabs
-})
+const group = (id: string, tabs: string[]) => ({ id, tabOrder: tabs })
 
 describe('buildHeadlessTabGroupSplit', () => {
   it('splits a tab into a new group to the right (horizontal, second)', () => {
@@ -89,19 +85,6 @@ describe('buildHeadlessTabGroupSplit', () => {
     ).toBeNull()
   })
 
-  it('moves the active tab out and reassigns source active to the survivor', () => {
-    const result = buildHeadlessTabGroupSplit({
-      groups: [group('g1', ['a', 'b'], 'b')],
-      layout: { type: 'leaf', groupId: 'g1' },
-      tabId: 'b',
-      targetGroupId: 'g1',
-      splitDirection: 'right',
-      newGroupId: 'g2'
-    })
-    expect(result!.groups.find((g) => g.id === 'g1')!.activeTabId).toBe('a')
-    expect(result!.groups.find((g) => g.id === 'g2')!.activeTabId).toBe('b')
-  })
-
   it('collapses an emptied source group out of the layout when moving across groups', () => {
     // g2 holds only 'b'; moving 'b' into a new split off g1 empties g2.
     const result = buildHeadlessTabGroupSplit({
@@ -155,7 +138,6 @@ describe('buildHeadlessTabGroupMove', () => {
     })
     expect(result!.groups.find((g) => g.id === 'g1')!.tabOrder).toEqual(['a'])
     expect(result!.groups.find((g) => g.id === 'g2')!.tabOrder).toEqual(['b', 'c'])
-    expect(result!.groups.find((g) => g.id === 'g2')!.activeTabId).toBe('b')
   })
 
   it('collapses the source group out of the layout when the move empties it', () => {

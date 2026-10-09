@@ -24,8 +24,7 @@ import {
   type LayoutContentTab,
   type LayoutTerminalTab,
   type WorkspaceLayout,
-  type WorkspaceLayoutModel,
-  type WorkspaceLayoutRecords
+  type WorkspaceLayoutModel
 } from './workspace-layout-model'
 import {
   advanceTopologyRevision,
@@ -68,18 +67,6 @@ export function createTerminalTab(
   )
 }
 
-function withoutPaneRecords(
-  records: WorkspaceLayoutRecords,
-  paneKeys: readonly string[]
-): WorkspaceLayoutRecords {
-  const keep = (key: string) => !paneKeys.includes(key)
-  return {
-    ...records,
-    sleepingByPaneKey: filterRecord(records.sleepingByPaneKey, keep),
-    incarnationsByPaneKey: filterRecord(records.incarnationsByPaneKey, keep)
-  }
-}
-
 /** Removes a tab and its content record; a terminal tab's pane records go with it. */
 export function closeTab(
   model: WorkspaceLayoutModel,
@@ -89,6 +76,16 @@ export function closeTab(
   const workspace = model.workspaces[key]!
   const tab = findTab(workspace, tabId)!
   let next: WorkspaceLayout = removeTabFromWorkspace(workspace, tabId)
+  const paneKeys = tab.kind === 'terminal' ? paneKeysOf(tab) : []
+  if (next.sleepingByPaneKey) {
+    next = {
+      ...next,
+      sleepingByPaneKey: filterRecord(
+        next.sleepingByPaneKey,
+        (paneKey) => !paneKeys.includes(paneKey)
+      )
+    }
+  }
   if (
     tab.kind === 'editor' &&
     next.editorFiles &&
@@ -106,7 +103,13 @@ export function closeTab(
   if (tab.kind !== 'terminal') {
     return updated
   }
-  const records = withoutPaneRecords(updated.records, paneKeysOf(tab))
+  const records = {
+    ...updated.records,
+    incarnationsByPaneKey: filterRecord(
+      updated.records.incarnationsByPaneKey,
+      (paneKey) => !paneKeys.includes(paneKey)
+    )
+  }
   return { ...updated, records: advanceTopologyRevision(records, workspace.worktreeId) }
 }
 

@@ -84,19 +84,14 @@ export function closePane(model: WorkspaceLayoutModel, command: CommandOf<'close
     { workspaceKey: command.workspace, tab },
     command.leafId
   )
-  const sleeping = { ...retired.records.sleepingByPaneKey }
-  delete sleeping[paneKeyOf(tab.entityId, command.leafId)]
-  const tabClosed = !retired.workspaces[command.workspace]!.tabs.some(
-    (entry) => entry.id === tab.id
+  const workspace = retired.workspaces[command.workspace]!
+  const tabClosed = !workspace.tabs.some((entry) => entry.id === tab.id)
+  const sleepingByPaneKey = withoutKey(
+    workspace.sleepingByPaneKey,
+    paneKeyOf(tab.entityId, command.leafId)
   )
   return applied(
-    {
-      ...retired,
-      records: {
-        ...retired.records,
-        ...(retired.records.sleepingByPaneKey ? { sleepingByPaneKey: sleeping } : {})
-      }
-    },
+    withWorkspace(retired, command.workspace, { ...workspace, sleepingByPaneKey }),
     { tabClosed },
     { stopPtyIds: ptyId ? [ptyId] : [] }
   )
@@ -239,15 +234,14 @@ export function movePaneToNewTab(
     },
     context
   )
-  const records = rekeyPaneRecords(
-    model.records,
+  const next = rekeyPaneRecords(
+    withWorkspace(model, command.workspace, placed),
+    command.workspace,
     paneKeyOf(tab.entityId, leafId),
-    paneKeyOf(id, leafId),
-    id
+    paneKeyOf(id, leafId)
   )
-  const next = withWorkspace(model, command.workspace, placed)
   return applied(
-    { ...next, records: advanceTopologyRevision(records, workspace.worktreeId) },
+    { ...next, records: advanceTopologyRevision(next.records, workspace.worktreeId) },
     { tabId: id }
   )
 }

@@ -1,6 +1,6 @@
-import type { RuntimeMobileSessionTabGroup } from '../runtime-types'
 import type { TabGroupLayoutNode } from '../tab-types'
 import { buildSplitNode, replaceLeaf } from './tab-group-layout-tree'
+import type { LayoutGroup } from './workspace-layout-model'
 
 /**
  * Headless ("Orca server") tab-GROUP split operations (distinct from terminal
@@ -8,7 +8,8 @@ import { buildSplitNode, replaceLeaf } from './tab-group-layout-tree'
  * tab into a single group, so a client drag-to-split-group was lost on the next
  * snapshot. These pure helpers let the host model + persist a real multi-group
  * layout, sharing the renderer's group tree operations so host and client
- * agree on the tree.
+ * agree on the tree. Groups are order and membership only; a caller keeping a per-view
+ * selected tab adapts it.
  */
 
 type SplitDirection = 'left' | 'right' | 'up' | 'down'
@@ -53,7 +54,7 @@ export function removeTabGroupLayoutLeaf(
 }
 
 export type HeadlessTabGroupMoveResult = {
-  groups: RuntimeMobileSessionTabGroup[]
+  groups: LayoutGroup[]
   layout: TabGroupLayoutNode | null
 }
 
@@ -65,7 +66,7 @@ export type HeadlessTabGroupMoveResult = {
  * same-group no-op.
  */
 export function buildHeadlessTabGroupMove(args: {
-  groups: readonly RuntimeMobileSessionTabGroup[]
+  groups: readonly LayoutGroup[]
   layout: TabGroupLayoutNode | null | undefined
   tabId: string
   targetGroupId: string
@@ -80,22 +81,17 @@ export function buildHeadlessTabGroupMove(args: {
     return null
   }
 
-  let groups: RuntimeMobileSessionTabGroup[] = args.groups.map((group) => {
+  let groups: LayoutGroup[] = args.groups.map((group) => {
     if (group.id === sourceGroup.id) {
-      const tabOrder = group.tabOrder.filter((id) => id !== args.tabId)
-      return {
-        ...group,
-        tabOrder,
-        activeTabId: group.activeTabId === args.tabId ? (tabOrder[0] ?? null) : group.activeTabId
-      }
+      return { id: group.id, tabOrder: group.tabOrder.filter((id) => id !== args.tabId) }
     }
     if (group.id === args.targetGroupId) {
       const tabOrder = group.tabOrder.filter((id) => id !== args.tabId)
       const at = Math.max(0, Math.min(args.index ?? tabOrder.length, tabOrder.length))
       tabOrder.splice(at, 0, args.tabId)
-      return { ...group, tabOrder, activeTabId: args.tabId }
+      return { id: group.id, tabOrder }
     }
-    return group
+    return { id: group.id, tabOrder: group.tabOrder }
   })
 
   groups = groups.filter((group) => group.tabOrder.length > 0)
@@ -110,7 +106,7 @@ export function buildHeadlessTabGroupMove(args: {
 }
 
 export type HeadlessTabGroupSplitResult = {
-  groups: RuntimeMobileSessionTabGroup[]
+  groups: LayoutGroup[]
   layout: TabGroupLayoutNode
   newGroupId: string
 }
@@ -124,7 +120,7 @@ export type HeadlessTabGroupSplitResult = {
  * the only tab off its own group — a renderer-side no-op).
  */
 export function buildHeadlessTabGroupSplit(args: {
-  groups: readonly RuntimeMobileSessionTabGroup[]
+  groups: readonly LayoutGroup[]
   layout: TabGroupLayoutNode | null | undefined
   tabId: string
   targetGroupId: string
@@ -157,17 +153,11 @@ export function buildHeadlessTabGroupSplit(args: {
   )
 
   const sourceOrder = sourceGroup.tabOrder.filter((id) => id !== args.tabId)
-  let groups: RuntimeMobileSessionTabGroup[] = args.groups.map((group) => {
-    if (group.id === sourceGroup.id) {
-      return {
-        ...group,
-        tabOrder: sourceOrder,
-        activeTabId: group.activeTabId === args.tabId ? (sourceOrder[0] ?? null) : group.activeTabId
-      }
-    }
-    return group
-  })
-  groups.push({ id: args.newGroupId, activeTabId: args.tabId, tabOrder: [args.tabId] })
+  let groups: LayoutGroup[] = args.groups.map((group) => ({
+    id: group.id,
+    tabOrder: group.id === sourceGroup.id ? sourceOrder : group.tabOrder
+  }))
+  groups.push({ id: args.newGroupId, tabOrder: [args.tabId] })
   // Drop any group emptied by the move and collapse it out of the layout.
   groups = groups.filter((group) => group.tabOrder.length > 0)
   const liveGroupIds = new Set(groups.map((group) => group.id))

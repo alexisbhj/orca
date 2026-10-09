@@ -1,6 +1,7 @@
 // Commands that start, restart, sleep or wake terminals. Their layout effect is small (bindings
 // and sleeping records); the runtime runs the returned effects after replying.
 
+import { filterRecord, omitStoredFields } from './stored-record-fields'
 import {
   applied,
   locatePane,
@@ -11,6 +12,7 @@ import {
 } from './workspace-layout-command-steps'
 import type { CommandOf } from './workspace-layout-command-types'
 import type { WorkspaceLayout, WorkspaceLayoutModel } from './workspace-layout-model'
+import { withWorkspace } from './workspace-layout-removal'
 
 function workspacePaneKeys(workspace: WorkspaceLayout): string[] {
   return workspace.tabs.flatMap((tab) => (tab.kind === 'terminal' ? paneKeysOf(tab) : []))
@@ -26,7 +28,7 @@ export function startPane(model: WorkspaceLayoutModel, command: CommandOf<'start
   if (!locatePane(model.workspaces[command.workspace]!, command.paneKey)) {
     return refuse('pane_not_found')
   }
-  if (model.records.sleepingByPaneKey?.[command.paneKey]) {
+  if (model.workspaces[command.workspace]!.sleepingByPaneKey?.[command.paneKey]) {
     return refuse('pane_sleeping')
   }
   return applied(model, {}, { startPaneKeys: [command.paneKey] })
@@ -72,33 +74,32 @@ export function sleep(model: WorkspaceLayoutModel, command: CommandOf<'sleep'>):
   const recorded = Object.fromEntries(
     command.records
       .filter((record) => targets.includes(record.paneKey))
-      .map((record) => [record.paneKey, record])
+      .map((record) => [
+        record.paneKey,
+        omitStoredFields(record, ['paneKey', 'tabId', 'worktreeId'])
+      ])
   )
   const stopPtyIds = targets.flatMap((paneKey) => boundPty(workspace, paneKey) ?? [])
   return applied(
-    {
-      ...model,
-      records: {
-        ...model.records,
-        sleepingByPaneKey: { ...model.records.sleepingByPaneKey, ...recorded }
-      }
-    },
+    withWorkspace(model, command.workspace, {
+      ...workspace,
+      sleepingByPaneKey: { ...workspace.sleepingByPaneKey, ...recorded }
+    }),
     { slept: targets },
     { stopPtyIds }
   )
 }
 
 export function wake(model: WorkspaceLayoutModel, command: CommandOf<'wake'>): Applied {
-  const sleeping = model.records.sleepingByPaneKey ?? {}
-  const panes = workspacePaneKeys(model.workspaces[command.workspace]!)
+  const workspace = model.workspaces[command.workspace]!
+  const sleeping = workspace.sleepingByPaneKey ?? {}
+  const panes = workspacePaneKeys(workspace)
   const woken = (command.paneKeys ?? panes).filter(
     (paneKey) => panes.includes(paneKey) && Object.hasOwn(sleeping, paneKey)
   )
-  const remaining = Object.fromEntries(
-    Object.entries(sleeping).filter(([key]) => !woken.includes(key))
-  )
+  const sleepingByPaneKey = filterRecord(sleeping, (key) => !woken.includes(key))
   return applied(
-    { ...model, records: { ...model.records, sleepingByPaneKey: remaining } },
+    withWorkspace(model, command.workspace, { ...workspace, sleepingByPaneKey }),
     { woken },
     { startPaneKeys: woken }
   )
