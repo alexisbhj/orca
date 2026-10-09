@@ -25,6 +25,7 @@ import { recoverInterruptedOrcadActivation } from './orcad-activation-recovery'
 import { readOrcadActivationRecord } from './orcad-activation-record-store'
 import { resolveOrcadRemoteContext } from './orcad-remote-context'
 import { deployOrcad } from './orcad-remote-deploy'
+import { refuseOrcadHostDowngrade } from './orcad-host-version-admission'
 import { pruneManagedOrcadVersions } from './orcad-managed-version-gc'
 import { tunneledOrcadPairingCode } from './orcad-tunneled-pairing'
 import { hasRegisteredDirectSshAuthority } from './ssh-target-registry'
@@ -114,6 +115,7 @@ export async function createManagedOrcadEnvironment(
       const localOrcadDir = await materializeOrcadArtifact(context.serverTarget, {
         signal: args.signal
       })
+      const appVersion = getAppEnvironment().getVersion()
       const deployResult = await deployOrcad({
         ...slot,
         conn: connection,
@@ -126,7 +128,13 @@ export async function createManagedOrcadEnvironment(
           : { liveSessions: 0, startedSinceActivation: 0, daemonProtocolVersion: null },
         censusRecord: context.activationRecord,
         force: args.force,
-        appVersion: getAppEnvironment().getVersion()
+        appVersion,
+        // Why: a host another desktop stopped may hold state its newer build migrated, and this
+        // path has no linked record to check first, so only the fenced read can refuse it.
+        admitRecord: (record, candidateVersion) => {
+          const refusal = refuseOrcadHostDowngrade(record, candidateVersion, appVersion)
+          return refusal ? `A newer Orca last ran this host's server (${refusal}).` : null
+        }
       })
       if (deployResult.outcome === 'installed-not-activated') {
         return {

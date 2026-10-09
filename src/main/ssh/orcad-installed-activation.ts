@@ -107,7 +107,7 @@ export async function activateInstalledOrcad(
   if (plan.action === 'noop') {
     return { outcome: 'already-active', fullVersion }
   }
-  const refusal = options.admitRecord?.(record)
+  const refusal = options.admitRecord?.(record, fullVersion)
   if (refusal) {
     return notActivated(ORCAD_ACTIVATION_POLICY_REFUSED_CODE, refusal)
   }

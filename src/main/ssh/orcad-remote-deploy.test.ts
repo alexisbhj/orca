@@ -568,7 +568,8 @@ describe('deployOrcad', () => {
         code: ORCAD_ACTIVATION_POLICY_REFUSED_CODE
       })
       expect(admitRecord).toHaveBeenCalledWith(
-        expect.objectContaining({ activeAppVersion: '1.6.0' })
+        expect.objectContaining({ activeAppVersion: '1.6.0' }),
+        NEW_VERSION
       )
       // Nothing was preflighted, stopped, snapshotted or launched, and the record is untouched.
       expect(script.log).toEqual([])

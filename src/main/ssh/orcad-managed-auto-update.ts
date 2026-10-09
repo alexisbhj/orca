@@ -5,8 +5,11 @@
  * terminals, and a rejected candidate is restored through the activation journal, so the old
  * version keeps serving. A host a newer Orca activated is never downgraded.
  */
-import { compareAppVersions } from '../../shared/app-version'
 import type { OrcadActivationRecord } from './orcad-activation-record'
+import {
+  refuseOrcadHostDowngrade,
+  type OrcadHostVersionRefusal
+} from './orcad-host-version-admission'
 import { materializeOrcadArtifact } from './orcad-artifact-materializer'
 import { OrcadArtifactsUnavailableError, OrcadHostUnsupportedError } from './orcad-host-unavailable'
 import { findIncompleteManagedOrcadMigration } from './orcad-managed-migration-status'
@@ -19,12 +22,10 @@ import { readLocalFullVersion } from './ssh-relay-versioned-install'
 export type ManagedOrcadAutoUpdateSkip =
   | 'current'
   | 'no-template'
-  | 'host-newer'
   | 'rolled-back'
   | 'failed-before'
   | 'migrating'
-  /** Another desktop stopped a build whose Orca version the host does not name. */
-  | 'stopped-version-unknown'
+  | OrcadHostVersionRefusal
 
 export type ManagedOrcadAutoUpdatePlan =
   | { action: 'update' }
@@ -56,40 +57,15 @@ export function planManagedOrcadAutoUpdate(input: {
   if (record.rolledBackFrom === candidateVersion) {
     return { action: 'skip', reason: 'rolled-back' }
   }
+  const refusal = refuseOrcadHostDowngrade(record, candidateVersion, input.appVersion)
+  if (refusal) {
+    return { action: 'skip', reason: refusal }
+  }
+  // Why no `failedBefore` skip on a stopped host: nothing serves, so retrying is the only way back.
   if (record.active === null && record.previous !== null) {
-    return planStoppedHostRedeploy(record, candidateVersion, input.appVersion)
-  }
-  // Why absent counts as older: only builds that predate the field omit it.
-  if (
-    record.activeAppVersion &&
-    compareAppVersions(record.activeAppVersion, input.appVersion) > 0
-  ) {
-    return { action: 'skip', reason: 'host-newer' }
-  }
-  return input.failedBefore ? { action: 'skip', reason: 'failed-before' } : { action: 'update' }
-}
-
-/**
- * A host another desktop stopped. Its state may already be migrated by the stopped build, so only
- * that build or a build at least as new may start on it. No `failedBefore` skip: nothing serves, so
- * a later connect retrying is the only way back short of a manual update.
- */
-function planStoppedHostRedeploy(
-  record: OrcadActivationRecord,
-  candidateVersion: string,
-  appVersion: string
-): ManagedOrcadAutoUpdatePlan {
-  if (record.previous === candidateVersion) {
     return { action: 'update' }
   }
-  // A stop keeps the stopped build's activeAppVersion. Absent is not older here: a stop committed
-  // by a build that predates keeping it omits it too.
-  if (!record.activeAppVersion) {
-    return { action: 'skip', reason: 'stopped-version-unknown' }
-  }
-  return compareAppVersions(record.activeAppVersion, appVersion) > 0
-    ? { action: 'skip', reason: 'host-newer' }
-    : { action: 'update' }
+  return input.failedBefore ? { action: 'skip', reason: 'failed-before' } : { action: 'update' }
 }
 
 const WAITING_CODES: ReadonlySet<string> = new Set<

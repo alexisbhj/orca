@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getAppEnvironment } from '../../shared/app-environment'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
 import { getManagedOrcadFenceEnvironmentId } from '../../shared/managed-orcad-ssh-owner'
 import { writeOrcadMigrationSourceCutover } from './orcad-migration-cutover-journal'
@@ -195,6 +196,20 @@ describe('createManagedOrcadEnvironment', () => {
       census: { liveSessions: 0, startedSinceActivation: 0, daemonProtocolVersion: null },
       nodePath: ''
     })
+  })
+
+  it('refuses, under the fence, to start an older build on a host a newer desktop stopped', async () => {
+    vi.spyOn(getAppEnvironment(), 'getVersion').mockReturnValueOnce('1.5.0')
+    await deploy()
+    const admitRecord = mocks.deploy.mock.calls[0]?.[0]?.admitRecord
+    const stopped = { ...emptyRecord, previous: '0.2.0+new' }
+    // A newer desktop's stop keeps its app version; an unlinked older desktop must not activate.
+    expect(admitRecord({ ...stopped, activeAppVersion: '1.6.0' }, VERSION)).toContain('host-newer')
+    expect(admitRecord(stopped, VERSION)).toContain('stopped-version-unknown')
+    // Restarting the stopped build itself, an older stopper, and an empty host stay admitted.
+    expect(admitRecord({ ...stopped, activeAppVersion: '1.6.0' }, '0.2.0+new')).toBeNull()
+    expect(admitRecord({ ...stopped, activeAppVersion: '1.4.0' }, VERSION)).toBeNull()
+    expect(admitRecord(emptyRecord, VERSION)).toBeNull()
   })
 
   it('refuses a host with direct SSH projects before claiming or connecting', async () => {

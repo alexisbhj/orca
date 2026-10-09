@@ -64,7 +64,7 @@ export type OrcadDeployOptions = {
    * Re-applies the caller's version policy to the record read under the host fence, since another
    * desktop can activate or stop a build while this one uploads. A reason refuses the activation.
    */
-  admitRecord?: (record: OrcadActivationRecord) => string | null
+  admitRecord?: (record: OrcadActivationRecord, candidateVersion: string) => string | null
   readinessTimeoutMs?: number
   now?: () => Date
   sleep?: (ms: number) => Promise<void>
