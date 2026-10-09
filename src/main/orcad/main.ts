@@ -22,6 +22,7 @@ import {
   WINDOWS_BREAKAWAY_LAUNCH_FLAG
 } from '../../shared/windows-breakaway-launch'
 import { runWindowsBreakawayLaunchIfRequested } from '../../shared/windows-breakaway-launcher'
+import { parseArgs } from './orcad-command-arguments'
 
 // Why exit before the preflight: reaching this line means the whole module graph resolved
 // under plain Node, which is all the build guard needs to prove. Probing natives or
@@ -60,6 +61,11 @@ if (process.argv[2] === WINDOWS_BREAKAWAY_LAUNCH_FLAG) {
 
 function startOrcadProcess(): void {
   try {
+    const argv = process.argv.slice(2)
+    if ((argv.includes('--help') || argv.includes('-h')) && parseArgs(argv).help) {
+      void main(argv).catch(failStartup)
+      return
+    }
     assertOrcadServerRuntime()
     const flag = process.argv[2]
     if (flag === ORCAD_NATIVE_PREFLIGHT_FLAG && process.argv.length === 3) {
