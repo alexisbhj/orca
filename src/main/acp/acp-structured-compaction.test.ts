@@ -8,6 +8,7 @@ import {
 import { structuredAgentSessionCommandTurn } from '../native-chat/agent-session-wire/structured-agent-session-command-turn'
 import type { StructuredAgentSessionCommandRun } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { StructuredAgentRegistry } from '../native-chat/agent-session-wire/structured-agent-registry'
+import { structuredAgentSessionChildReportedSignedOut } from '../native-chat/agent-session-wire/structured-agent-session-signed-out-child'
 import { ACP_LAUNCH_SPECS, acpLaunchSpecFor, type AcpLaunchSpec } from './acp-launch-specs'
 import { acpStructuredAgentDefinition } from './acp-structured-agent-definitions'
 import { GrokFixtureReplay } from './acp-structured-fixture-replay.test-support'
@@ -257,7 +258,8 @@ describe('ACP compaction settlement', () => {
 
   it("fails a compaction the agent answered with an error, in the agent's words", async () => {
     const { rig, command, prompt } = await compact(OPENCODE)
-    rig.child().agent.fail(prompt, -32000, 'Summarization failed: 500')
+    // -32000 means signed out to ACP; any other error code is the compaction's own failure.
+    rig.child().agent.fail(prompt, -32603, 'Summarization failed: 500')
     const { turn, inside } = await ended(rig, command)
     expect(turn).toMatchObject({ state: 'completed', outcome: 'failure' })
     expect(inside).toEqual([
@@ -270,6 +272,31 @@ describe('ACP compaction settlement', () => {
       })
     ])
   })
+
+  it.each([
+    { spec: OPENCODE, code: -32000, data: undefined },
+    { spec: OMP, code: -32603, data: { details: 'No model selected.\n\nUse /login to sign in.' } }
+  ])(
+    'says $spec.agent is not signed in, as a send does, so the next one starts a new agent',
+    async ({ spec, code, data }) => {
+      const { rig, command, prompt } = await compact(spec)
+      rig.child().agent.fail(prompt, code, 'Authentication required', data)
+      const { turn, inside } = await ended(rig, command)
+      expect(turn).toMatchObject({ state: 'completed', outcome: 'failure' })
+      expect(inside).toEqual([
+        expect.objectContaining({
+          tone: 'error',
+          failure: expect.objectContaining({ kind: 'notSignedIn' })
+        })
+      ])
+      expect(
+        structuredAgentSessionChildReportedSignedOut({
+          child: { generation: 'generation-1', fence: 1, phase: 'ready' },
+          journal: rig.rig.journal
+        })
+      ).toBe(true)
+    }
+  )
 
   it('fails a compaction the agent ended with any other stop reason', async () => {
     const { rig, command, prompt } = await compact(GROK)

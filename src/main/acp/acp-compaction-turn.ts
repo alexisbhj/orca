@@ -2,7 +2,7 @@
 // writes meanwhile is the command's output, read for how it went and never drawn; its answer ends
 // the turn with one result row, as Claude's and Codex's compactions end.
 
-import { providerDiagnostic } from '../../shared/agent-session-failure'
+import { agentSessionFailureFact, providerDiagnostic } from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import { AGENT_SESSION_COMPACTION_SKIPPED_PRESENTATION } from '../../shared/agent-session-compaction'
 import type { ProviderTimelineEvent } from '../native-chat/agent-session-timeline/provider-timeline-event'
@@ -37,6 +37,8 @@ export function acpCompactionEnd(input: {
   durationMs?: number
   /** Words the answer itself carried, for one that failed. */
   failureDetail?: string
+  /** The answer said the agent is not signed in. */
+  notSignedIn?: boolean
   dialect: AcpDialect
   agentName?: string
 }): ProviderTimelineEvent[] {
@@ -81,12 +83,17 @@ export function acpCompactionEnd(input: {
   if (verdict.outcome === 'cancellation') {
     return [end('cancellation')]
   }
+  // The same fact a signed-out send records, so its guidance shows and the child is replaced.
+  const failure =
+    verdict.failure && input.notSignedIn
+      ? agentSessionFailureFact('notSignedIn', detail ? { detail } : {})
+      : verdict.failure
   const body =
-    verdict.outcome === 'success' || !verdict.failure
+    verdict.outcome === 'success' || !failure
       ? { kind: 'status' as const, text: 'Context compacted', presentation: 'compaction' as const }
       : {
           kind: 'status' as const,
-          ...agentSessionFailureWords(verdict.failure, {
+          ...agentSessionFailureWords(failure, {
             surface: 'row',
             ...(input.agentName === undefined ? {} : { agentName: input.agentName })
           }),

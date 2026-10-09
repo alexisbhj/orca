@@ -146,6 +146,7 @@ export class AcpTimelineTranslator {
         at,
         ...(prompt.durationMs === undefined ? {} : { durationMs: prompt.durationMs }),
         ...(failureDetail === undefined ? {} : { failureDetail }),
+        ...(notSignedIn ? { notSignedIn } : {}),
         dialect: this.dialect,
         ...(this.options.agentName === undefined ? {} : { agentName: this.options.agentName })
       })
