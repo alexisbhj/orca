@@ -3,9 +3,12 @@ import { cn } from '@/lib/utils'
 import { openHttpLink } from '@/lib/http-link-routing'
 import {
   NATIVE_CHAT_VISUAL_FRAME_NAME_PREFIX,
+  NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS,
   buildNativeChatVisualDocument,
+  nativeChatVisualPingMessage,
   nativeChatVisualThemeMessage,
-  readNativeChatVisualFrameMessage
+  readNativeChatVisualFrameMessage,
+  readNativeChatVisualPong
 } from '../../../../shared/native-chat-visual-shell'
 import type { NativeChatVisualDocument } from './native-chat-visual-read-client'
 import { createNativeChatVisualHeightGovernor } from '../../../../shared/native-chat-visual-height-governor'
@@ -27,8 +30,8 @@ function newChannel(): string {
  * One agent-written visual in an opaque-origin frame that may run scripts and nothing else. Inline
  * it fits its height to the page; in a panel it fills the panel. A theme change restyles the page in
  * place, so interaction state survives it. The frame is never allowed to become another page: the
- * main process refuses its navigation, and a second load (a navigation that got through anyway)
- * retires it.
+ * main process refuses its navigation, and a later load whose document no longer answers as this
+ * visual's shell (a navigation that got through anyway) retires it.
  */
 export function NativeChatVisualFrame({
   document: visual,
@@ -53,6 +56,9 @@ export function NativeChatVisualFrame({
   }, [theme])
   const [height, setHeight] = useState(NATIVE_CHAT_VISUAL_RESERVED_HEIGHT)
   const loadsRef = useRef(0)
+  // The shell run that answered the first load, and a later load still awaiting that run's answer.
+  const shellInstanceRef = useRef<string | null>(null)
+  const unansweredRef = useRef<{ id: number; timer: ReturnType<typeof setTimeout> } | null>(null)
 
   // Built once per revision: the theme at build time paints first, later themes arrive by message.
   const built = useMemo(() => {
@@ -88,6 +94,19 @@ export function NativeChatVisualFrame({
     const onMessage = (event: MessageEvent): void => {
       const frame = frameRef.current
       if (!frame || event.source !== frame.contentWindow) {
+        return
+      }
+      const pong = readNativeChatVisualPong(event.data, built.channel)
+      if (pong !== null) {
+        if (pong.id === 1) {
+          shellInstanceRef.current ??= pong.instance
+        } else if (
+          pong.id === unansweredRef.current?.id &&
+          pong.instance === shellInstanceRef.current
+        ) {
+          clearTimeout(unansweredRef.current.timer)
+          unansweredRef.current = null
+        }
         return
       }
       const message = readNativeChatVisualFrameMessage(event.data, built.channel)
@@ -126,6 +145,18 @@ export function NativeChatVisualFrame({
     }
   }, [built.channel, layout])
 
+  // A frame rebuilt for a new revision, or unmounted, owes no answer.
+  useEffect(
+    () => () => {
+      shellInstanceRef.current = null
+      if (unansweredRef.current) {
+        clearTimeout(unansweredRef.current.timer)
+        unansweredRef.current = null
+      }
+    },
+    [built.channel]
+  )
+
   useEffect(() => {
     if (loadsRef.current > 0) {
       frameRef.current?.contentWindow?.postMessage(
@@ -153,12 +184,24 @@ export function NativeChatVisualFrame({
         style={{ colorScheme: theme.colorScheme }}
         onLoad={() => {
           loadsRef.current += 1
+          const frameWindow = frameRef.current?.contentWindow
           if (loadsRef.current > 1) {
-            onRetired()
-            return
+            // WebKit also fires load for an in-page link in a sandboxed frame. Only the same run of
+            // this visual's shell answers as itself; silence or a new run means it navigated away.
+            if (unansweredRef.current) {
+              clearTimeout(unansweredRef.current.timer)
+            }
+            unansweredRef.current = {
+              id: loadsRef.current,
+              timer: setTimeout(onRetired, NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS)
+            }
           }
+          frameWindow?.postMessage(
+            nativeChatVisualPingMessage(loadsRef.current, built.channel),
+            '*'
+          )
           // Covers a theme change that landed while the page loaded.
-          frameRef.current?.contentWindow?.postMessage(
+          frameWindow?.postMessage(
             nativeChatVisualThemeMessage(themeRef.current, built.channel),
             '*'
           )

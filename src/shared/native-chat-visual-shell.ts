@@ -1,3 +1,4 @@
+import { PANEL_WATCHDOG_PONG_TIMEOUT_MS } from './plugins/plugin-panel-bridge'
 import { PANEL_DESIGN_TOKEN_ALLOWLIST } from './plugins/plugin-panel-shell'
 
 /**
@@ -28,7 +29,7 @@ const MEDIA_SOURCES = `data: blob: ${NATIVE_CHAT_VISUAL_CDN_ORIGINS.join(' ')}`
 // It precedes the CSP, whose `base-uri 'none'` then refuses any base the visual declares.
 const INERT_BASE = '<base href="about:srcdoc">'
 
-export const NATIVE_CHAT_VISUAL_CSP = [
+const POLICY_WITHOUT_BASE = [
   "default-src 'none'",
   `script-src ${ASSET_SOURCES}`,
   `style-src ${ASSET_SOURCES}`,
@@ -41,9 +42,17 @@ export const NATIVE_CHAT_VISUAL_CSP = [
   "object-src 'none'",
   "media-src 'none'",
   "manifest-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'"
-].join('; ')
+  "form-action 'none'"
+]
+
+export const NATIVE_CHAT_VISUAL_CSP = [...POLICY_WITHOUT_BASE, "base-uri 'none'"].join('; ')
+
+/**
+ * For a page that hosts the visual frame and has no URL of its own (mobile). The srcdoc child
+ * inherits this policy before its own meta parses, so it must admit the shell's `about:srcdoc` base
+ * (CSP cannot name that URL exactly); the child's own policy then refuses every other base.
+ */
+export const NATIVE_CHAT_VISUAL_HOST_CSP = [...POLICY_WITHOUT_BASE, 'base-uri about:'].join('; ')
 
 /** Frame names carry this prefix so the main process registers them before content runs. */
 export const NATIVE_CHAT_VISUAL_FRAME_NAME_PREFIX = 'orca-chat-visual:'
@@ -51,6 +60,13 @@ export const NATIVE_CHAT_VISUAL_FRAME_NAME_PREFIX = 'orca-chat-visual:'
 export const NATIVE_CHAT_VISUAL_SIZE_TYPE = 'orca-visual-size'
 export const NATIVE_CHAT_VISUAL_OPEN_LINK_TYPE = 'orca-visual-open-link'
 export const NATIVE_CHAT_VISUAL_THEME_TYPE = 'orca-visual-theme'
+export const NATIVE_CHAT_VISUAL_PING_TYPE = 'orca-visual-ping'
+export const NATIVE_CHAT_VISUAL_PONG_TYPE = 'orca-visual-pong'
+/** How long a host waits for the shell to answer after a later load; the plugin panel deadline. */
+export const NATIVE_CHAT_VISUAL_PONG_TIMEOUT_MS = PANEL_WATCHDOG_PONG_TIMEOUT_MS
+
+/** The shell's answer: which ping, and which run of the shell (a reloaded page is a new run). */
+export type NativeChatVisualPong = { id: number; instance: string }
 
 export const NATIVE_CHAT_VISUAL_MIN_HEIGHT = 80
 export const NATIVE_CHAT_VISUAL_MAX_HEIGHT = 2000
@@ -103,7 +119,9 @@ function bootstrapScript(channel: string): string {
     channel,
     size: NATIVE_CHAT_VISUAL_SIZE_TYPE,
     link: NATIVE_CHAT_VISUAL_OPEN_LINK_TYPE,
-    theme: NATIVE_CHAT_VISUAL_THEME_TYPE
+    theme: NATIVE_CHAT_VISUAL_THEME_TYPE,
+    ping: NATIVE_CHAT_VISUAL_PING_TYPE,
+    pong: NATIVE_CHAT_VISUAL_PONG_TYPE
   })
   // Plain ES5 so it runs before, and independent of, anything the visual loads.
   return `(function () {
@@ -136,12 +154,14 @@ document.addEventListener('click', function (event) {
   if (url.protocol === 'http:' || url.protocol === 'https:') send({ type: C.link, url: url.href })
 }, true)
 document.addEventListener('submit', function (event) { event.preventDefault() }, true)
-// Theme: only the host window may restyle the visual.
+// Only the host window may restyle the visual, or ask whether this document still runs the shell.
+var instance = String(Math.random()).slice(2)
 var themeStyle = document.getElementById('orca-visual-theme')
 window.addEventListener('message', function (event) {
   var data = event.data
-  if (event.source !== host || !data || data.type !== C.theme || data.channel !== C.channel) return
-  if (typeof data.css !== 'string' || !themeStyle) return
+  if (event.source !== host || !data || data.channel !== C.channel) return
+  if (data.type === C.ping) return send({ type: C.pong, id: data.id, instance: instance })
+  if (data.type !== C.theme || typeof data.css !== 'string' || !themeStyle) return
   themeStyle.textContent = data.css
   document.documentElement.classList.toggle('dark', data.colorScheme === 'dark')
 })
@@ -246,11 +266,36 @@ export function readNativeChatVisualFrameMessage(
   return null
 }
 
+/** A visual shell's answer to a ping on `channel`, or null for anything else. */
+export function readNativeChatVisualPong(
+  data: unknown,
+  channel: string
+): NativeChatVisualPong | null {
+  if (typeof data !== 'object' || data === null || !('channel' in data) || !('type' in data)) {
+    return null
+  }
+  if (data.channel !== channel || data.type !== NATIVE_CHAT_VISUAL_PONG_TYPE) {
+    return null
+  }
+  const id = 'id' in data ? data.id : undefined
+  const instance = 'instance' in data ? data.instance : undefined
+  return typeof id === 'number' && Number.isSafeInteger(id) && typeof instance === 'string'
+    ? { id, instance }
+    : null
+}
+
 export function clampNativeChatVisualHeight(height: number): number {
   return Math.min(
     NATIVE_CHAT_VISUAL_MAX_HEIGHT,
     Math.max(NATIVE_CHAT_VISUAL_MIN_HEIGHT, Math.round(height))
   )
+}
+
+export function nativeChatVisualPingMessage(
+  id: number,
+  channel: string
+): { type: string; channel: string; id: number } {
+  return { type: NATIVE_CHAT_VISUAL_PING_TYPE, channel, id }
 }
 
 export function nativeChatVisualThemeMessage(
