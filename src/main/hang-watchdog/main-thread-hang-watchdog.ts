@@ -2,6 +2,9 @@ import { Worker } from 'node:worker_threads'
 import { app } from 'electron'
 import { hangDetectionMarkerPath } from './hang-detection-marker'
 import { resolveHangWatchdogWorkerPath } from './hang-watchdog-worker-path'
+import { resolveObservabilityConsent } from '../observability'
+import { subscribeSpanLifecycle } from '../observability/span-lifecycle'
+import { createHangWatchdogSpanTracker } from './hang-watchdog-active-spans'
 import {
   HANG_WATCHDOG_CHECK_INTERVAL_MS,
   HANG_WATCHDOG_HEARTBEAT_INTERVAL_MS,
@@ -23,7 +26,10 @@ function positiveTiming(value: string | undefined, fallback: number): number {
 export function installMainThreadHangWatchdog(options: {
   userDataPath: string
 }): MainThreadHangWatchdogHandle | null {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && process.platform !== 'win32') {
+    return null
+  }
+  if (!resolveObservabilityConsent().localFileEnabled) {
     return null
   }
   // Why: dev main threads pause in debuggers routinely; watch packaged builds only unless forced.
@@ -31,9 +37,11 @@ export function installMainThreadHangWatchdog(options: {
     return null
   }
   const workerPath = resolveHangWatchdogWorkerPath(app.getAppPath(), app.isPackaged)
+  const spanTracker = createHangWatchdogSpanTracker()
   const workerData: HangWatchdogWorkerData = {
     parentPid: process.pid,
     markerPath: hangDetectionMarkerPath(options.userDataPath),
+    activeSpanBuffer: spanTracker.buffer,
     timeoutMs: positiveTiming(process.env.ORCA_HANG_WATCHDOG_TIMEOUT_MS, HANG_WATCHDOG_TIMEOUT_MS),
     checkIntervalMs: positiveTiming(
       process.env.ORCA_HANG_WATCHDOG_CHECK_INTERVAL_MS,
@@ -42,7 +50,7 @@ export function installMainThreadHangWatchdog(options: {
   }
   let worker: Worker
   try {
-    // Why: the worker survives an AppKit main-thread deadlock without another Electron process.
+    // The worker observes a blocked main thread without another Electron process.
     worker = new Worker(workerPath, {
       name: 'orca-main-thread-hang-watchdog',
       workerData
@@ -51,9 +59,7 @@ export function installMainThreadHangWatchdog(options: {
     console.error('[hang-watchdog] failed to start watchdog worker:', error)
     return null
   }
-  worker.on('error', (error) => {
-    console.error('[hang-watchdog] watchdog worker failed:', error)
-  })
+  const unsubscribeSpans = subscribeSpanLifecycle(spanTracker.observer)
   let stopped = false
   const postMessage = (message: MainToHangWatchdogWorkerMessage): void => {
     if (stopped && message.type === 'heartbeat') {
@@ -77,12 +83,20 @@ export function installMainThreadHangWatchdog(options: {
     // closed worker cannot keep its closure (and worker handle) alive.
     app.off('will-quit', stop)
     clearInterval(heartbeatTimer)
+    unsubscribeSpans()
+    spanTracker.clear()
     postMessage({ type: 'shutdown' })
   }
+  worker.on('error', (error) => {
+    console.error('[hang-watchdog] watchdog worker failed:', error)
+    stop()
+  })
   worker.once('exit', () => {
     stopped = true
     app.off('will-quit', stop)
     clearInterval(heartbeatTimer)
+    unsubscribeSpans()
+    spanTracker.clear()
   })
   worker.unref()
   app.on('will-quit', stop)

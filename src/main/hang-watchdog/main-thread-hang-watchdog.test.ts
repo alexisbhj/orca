@@ -32,6 +32,8 @@ vi.mock('electron', () => ({
 }))
 
 import { installMainThreadHangWatchdog } from './main-thread-hang-watchdog'
+import { readHangWatchdogSpanSnapshot } from './hang-watchdog-active-spans'
+import { setActiveSink, startSpan } from '../observability/tracer'
 
 function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
   const original = process.platform
@@ -67,20 +69,96 @@ describe('installMainThreadHangWatchdog', () => {
   })
 
   afterEach(() => {
+    for (const [event, listener] of appMock.on.mock.calls) {
+      if (event === 'will-quit') {
+        listener()
+      }
+    }
+    setActiveSink(null)
+    vi.unstubAllEnvs()
     vi.useRealTimers()
     delete process.env.ORCA_HANG_WATCHDOG_FORCE
     delete process.env.ORCA_HANG_WATCHDOG_TIMEOUT_MS
     delete process.env.ORCA_HANG_WATCHDOG_CHECK_INTERVAL_MS
   })
 
-  it('is a no-op off macOS', () => {
-    expect(
-      withPlatform('win32', () => installMainThreadHangWatchdog({ userDataPath: '/ud' }))
-    ).toBeNull()
+  it('keeps Linux disabled', () => {
     expect(
       withPlatform('linux', () => installMainThreadHangWatchdog({ userDataPath: '/ud' }))
     ).toBeNull()
     expect(workerState.calls).toHaveLength(0)
+  })
+
+  it('starts the packaged watchdog on Windows', () => {
+    workerState.instance = fakeWorker()
+    const handle = withPlatform('win32', () =>
+      installMainThreadHangWatchdog({ userDataPath: '/ud' })
+    )
+    expect(handle).not.toBeNull()
+    expect(workerState.calls).toHaveLength(1)
+    handle?.stop()
+  })
+
+  it.each(['darwin', 'win32'] as const)(
+    'respects development and diagnostics gates on %s',
+    (platform) => {
+      appMock.isPackaged = false
+      expect(
+        withPlatform(platform, () => installMainThreadHangWatchdog({ userDataPath: '/ud' }))
+      ).toBeNull()
+      process.env.ORCA_HANG_WATCHDOG_FORCE = '1'
+      vi.stubEnv('ORCA_DIAGNOSTICS_DISABLED', '1')
+      expect(
+        withPlatform(platform, () => installMainThreadHangWatchdog({ userDataPath: '/ud' }))
+      ).toBeNull()
+      vi.unstubAllEnvs()
+      expect(workerState.calls).toHaveLength(0)
+    }
+  )
+
+  it.each(['stop', 'exit', 'error'] as const)('releases span tracking on worker %s', (boundary) => {
+    const worker = fakeWorker()
+    workerState.instance = worker
+    const handle = withPlatform('win32', () =>
+      installMainThreadHangWatchdog({ userDataPath: '/ud' })
+    )
+    const call = workerState.calls[0]?.[1]
+    if (typeof call !== 'object' || !call || !('workerData' in call)) {
+      throw new Error('Missing worker data')
+    }
+    const data = call.workerData
+    if (
+      typeof data !== 'object' ||
+      !data ||
+      !('activeSpanBuffer' in data) ||
+      !(data.activeSpanBuffer instanceof SharedArrayBuffer)
+    ) {
+      throw new Error('Missing span buffer')
+    }
+    setActiveSink({ push() {}, flush() {}, close() {} })
+    const span = startSpan('git.exec')
+    expect(
+      readHangWatchdogSpanSnapshot(data.activeSpanBuffer, Date.now()).inFlightSpans
+    ).toHaveLength(1)
+    if (boundary === 'stop') {
+      handle?.stop()
+    } else if (boundary === 'exit') {
+      worker.once.mock.calls.find(([event]) => event === 'exit')?.[1]()
+    } else {
+      worker.on.mock.calls.find(([event]) => event === 'error')?.[1](new Error('worker failure'))
+    }
+    expect(
+      readHangWatchdogSpanSnapshot(data.activeSpanBuffer, Date.now()).inFlightSpans
+    ).toHaveLength(0)
+    const later = startSpan('git.exec')
+    expect(
+      readHangWatchdogSpanSnapshot(data.activeSpanBuffer, Date.now()).inFlightSpans
+    ).toHaveLength(0)
+    vi.advanceTimersByTime(6_000)
+    expect(worker.postMessage.mock.calls.filter(([m]) => m.type === 'heartbeat')).toHaveLength(0)
+    span.end()
+    later.end()
+    setActiveSink(null)
   })
 
   it('is a no-op in unpackaged builds unless forced', () => {
