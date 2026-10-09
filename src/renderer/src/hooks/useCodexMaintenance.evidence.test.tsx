@@ -50,8 +50,7 @@ function state(
 ): CodexMaintenanceState {
   return {
     installation: codexCliInstallation(true, version),
-    action: { kind: 'update', command: 'codex update' },
-    canRun: true,
+    canRun: false,
     job: null,
     evidence: { expiresAt, configurationId }
   }
@@ -214,7 +213,6 @@ it('keeps the historical output without displaying running activity after the ho
   initial.job = {
     id: 'old',
     phase: 'running',
-    action: { kind: 'update', command: 'codex update' },
     output: 'old log',
     exitCode: null,
     error: null
@@ -230,12 +228,12 @@ it('keeps the historical output without displaying running activity after the ho
     await refreshCodexMaintenance(LOCAL)
     openCodexMaintenanceLog(LOCAL)
   })
-  expect(screen.getByText('Updating…')).toBeInTheDocument()
+  expect(screen.getByText('Installing…')).toBeInTheDocument()
   mocks.call.mockResolvedValue(state())
   await act(async () => {
     await refreshCodexMaintenance(LOCAL)
   })
   expect(screen.getByText('old log')).toBeInTheDocument()
-  expect(screen.queryByText('Updating…')).toBeNull()
-  expect(screen.getByText('codex update')).toBeInTheDocument()
+  expect(screen.queryByText('Installing…')).toBeNull()
+  expect(screen.getByText('npm install -g @openai/codex')).toBeInTheDocument()
 })

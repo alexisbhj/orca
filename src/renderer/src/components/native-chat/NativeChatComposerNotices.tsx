@@ -79,9 +79,6 @@ function NoticeRow({ notice }: { notice: NativeChatComposerNotice }): React.JSX.
             isHostWarning && 'text-destructive'
           )}
         >
-          {notice.title ? (
-            <span className="block font-medium text-foreground">{notice.title}</span>
-          ) : null}
           {notice.text}
         </p>
         {notice.action ? (

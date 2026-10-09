@@ -15,7 +15,6 @@ afterEach(() => vi.clearAllMocks())
 function ready(): CodexMaintenanceState {
   return {
     installation: codexCliInstallation(true, '0.136.0'),
-    action: null,
     canRun: true,
     job: null
   }
@@ -40,15 +39,11 @@ describe('Codex maintenance renderer execution host', () => {
     )
     expect(call).not.toHaveBeenCalled()
   })
-  it('keeps local and direct SSH maintenance on their explicit preload path', async () => {
+  it('keeps local maintenance on its explicit preload path', async () => {
     const maintenance = vi.fn().mockResolvedValue(ready())
     Object.assign(window, { api: { preflight: { codexMaintenance: maintenance } } })
-    await callCodexMaintenance({ kind: 'local' }, { operation: 'status' })
-    await callCodexMaintenance({ kind: 'ssh', connectionId: 'ssh-host' }, { operation: 'start' })
-    expect(maintenance.mock.calls).toEqual([
-      [{ operation: 'status' }],
-      [{ operation: 'start', connectionId: 'ssh-host' }]
-    ])
+    await callCodexMaintenance({ kind: 'local', cwd: '/project' }, { operation: 'start' })
+    expect(maintenance.mock.calls).toEqual([[{ operation: 'start', cwd: '/project' }]])
     expect(call).not.toHaveBeenCalled()
   })
 })

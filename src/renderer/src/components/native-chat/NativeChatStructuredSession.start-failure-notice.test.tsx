@@ -165,7 +165,7 @@ it("keeps the start failure's own words when its row is not loaded", async () =>
 })
 
 it.each([null, '0.100.0', '0.135.0'])(
-  'shows the Codex install/update instructions for installed version %s in the existing failure notice',
+  'states a missing or too-old Codex (installed version %s) in the existing failure notice',
   async (installedVersion) => {
     const failure: AgentSessionFailureFact = {
       kind: 'startFailed',

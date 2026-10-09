@@ -32,13 +32,12 @@ export function useNewWorkspaceCodexMaintenance(props: NewWorkspaceComposerCardP
       }) === 'structured-native-chat'
     )
   })
+  // Structured chat runs only on this computer or a paired runtime, never over SSH.
   const target = !structured
     ? null
-    : props.selectedRepoConnectionId
-      ? { kind: 'ssh' as const, connectionId: props.selectedRepoConnectionId }
-      : props.selectedRepoExecutionHostId
-        ? runtimeTargetForExecutionHostId(props.selectedRepoExecutionHostId)
-        : { kind: 'local' as const }
+    : props.selectedRepoExecutionHostId
+      ? runtimeTargetForExecutionHostId(props.selectedRepoExecutionHostId)
+      : { kind: 'local' as const }
   return useCodexMaintenance(
     target
       ? { ...target, ...(props.selectedRepoPath ? { cwd: props.selectedRepoPath } : {}) }

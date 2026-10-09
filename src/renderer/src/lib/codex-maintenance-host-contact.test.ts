@@ -15,9 +15,7 @@ const { call, listeners, hostState } = vi.hoisted(() => ({
     runtimeStatusByEnvironmentId: new Map<
       string,
       { status: RuntimeStatus | null; connectionGeneration: number; hostContactEpoch: number }
-    >(),
-    sshConnectionStates: new Map<string, { status: string; connectionGeneration: number }>(),
-    refreshRemoteDetectedAgents: vi.fn().mockResolvedValue([])
+    >()
   }
 }))
 vi.mock('@/store', () => ({
@@ -31,20 +29,11 @@ vi.mock('@/store', () => ({
 }))
 vi.mock('./codex-maintenance-client', () => ({
   callCodexMaintenance: call,
-  codexMaintenanceTargetKey: (target: { kind: string }) =>
-    target.kind === 'environment' ? 'runtime:host:codex' : 'ssh:host:codex'
+  codexMaintenanceTargetKey: () => 'runtime:host:codex'
 }))
-const TARGET = { kind: 'ssh', connectionId: 'host' } as const
-function emit(status: string): void {
-  hostState.sshConnectionStates.set('host', { status, connectionGeneration: 1 })
-  for (const listener of listeners) {
-    listener()
-  }
-}
 beforeEach(() => {
   resetCodexMaintenanceStoreForTests()
   call.mockReset()
-  emit('connected')
   hostState.runtimeStatusByEnvironmentId.clear()
 })
 afterEach(() => {
@@ -76,7 +65,6 @@ describe('maintenance host contact lifecycle', () => {
     const unsubscribe = subscribeCodexMaintenanceHostContact(target)
     call.mockResolvedValue({
       installation: codexCliInstallation(true, '0.136.0'),
-      action: null,
       evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
       canRun: true,
       job: null
@@ -91,34 +79,6 @@ describe('maintenance host contact lifecycle', () => {
     await refreshCodexMaintenance(target)
     expect(call).toHaveBeenCalledTimes(3)
     expect(getCodexMaintenanceEntry('runtime:host:codex').verification).toBe('current')
-    unsubscribe()
-    expect(listeners.size).toBe(0)
-  })
-
-  it('withdraws facts immediately on disconnect and rechecks on reconnect without a focus event', async () => {
-    const unsubscribe = subscribeCodexMaintenanceHostContact(TARGET)
-    call.mockResolvedValueOnce({
-      installation: codexCliInstallation(true, '0.135.0'),
-      action: null,
-      evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
-      canRun: true,
-      job: null
-    })
-    await refreshCodexMaintenance(TARGET)
-    expect(getCodexMaintenanceEntry('ssh:host:codex').verification).toBe('current')
-    emit('disconnected')
-    expect(getCodexMaintenanceEntry('ssh:host:codex').verification).toBe('unverifiable')
-    call.mockResolvedValueOnce({
-      installation: codexCliInstallation(true, '0.136.0'),
-      action: null,
-      evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
-      canRun: true,
-      job: null
-    })
-    emit('connected')
-    await refreshCodexMaintenance(TARGET)
-    expect(call).toHaveBeenCalledTimes(2)
-    expect(getCodexMaintenanceEntry('ssh:host:codex').state?.installation.status).toBe('ready')
     unsubscribe()
     expect(listeners.size).toBe(0)
   })

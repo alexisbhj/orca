@@ -26,12 +26,7 @@ async function executable(name: string): Promise<string> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'codex-configured-'))
   shell.mockResolvedValue({ PATH: root, HOME: root, SHELL_SETTING: 'inherited' })
-  run.mockImplementation(async (spec: { program: string }) => ({
-    code: 0,
-    stdout: spec.program.endsWith('old-codex') ? 'codex-cli 0.135.0' : 'codex-cli 0.136.0',
-    stderr: '',
-    timedOut: false
-  }))
+  run.mockResolvedValue({ code: 0, stdout: 'codex-cli 0.136.0', stderr: '', timedOut: false })
 })
 afterEach(async () => {
   await rm(root, { recursive: true, force: true })
@@ -50,7 +45,7 @@ describe('configured Codex invocation ownership', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('uses the same custom executable, overlay and directory for maintenance and native invocation', async () => {
+  it('checks the same custom executable, overlay and directory as native invocation', async () => {
     const command = await executable('company-codex')
     await executable('codex')
     const cwd = root
@@ -77,34 +72,10 @@ describe('configured Codex invocation ownership', () => {
     expect(probe.env.SHELL_SETTING).toBe('inherited')
   })
 
-  it('binds the update and verification to the selected custom install after settings change', async () => {
-    const command = await executable('old-codex')
-    const settings: CodexCommandSettings = { agentCmdOverrides: { codex: command } }
-    const result = await resolveCodexMaintenanceCommand({ cwd: root, commandSettings: settings })
-    expect(result.spec?.program).toBe(command)
-    expect(result.spec?.cwd).toBe(root)
-    expect(result.spec?.args).toEqual(['update'])
-    settings.agentCmdOverrides = { codex: await executable('company-codex') }
-    const rechecked = await result.recheck?.()
-    expect(rechecked?.spec?.program).toBe(command)
-  })
-
   it('honors the configured PATH even without an explicit Command', async () => {
     const command = await executable('codex')
     const settings: CodexCommandSettings = { agentDefaultEnv: { codex: { PATH: root } } }
     await resolveCodexMaintenanceCommand({ cwd: root, commandSettings: settings })
     expect(run.mock.calls.at(-1)?.[0].program).toBe(command)
-  })
-
-  it('offers manual repair for an old custom install that lacks self-update, without starting stock npm', async () => {
-    const command = await executable('company-codex')
-    run.mockResolvedValue({ code: 0, stdout: 'codex-cli 0.100.0', stderr: '', timedOut: false })
-    const result = await resolveCodexMaintenanceCommand({
-      cwd: root,
-      commandSettings: { agentCmdOverrides: { codex: command } }
-    })
-    expect(result.spec).toBeNull()
-    expect(result.action).toMatchObject({ kind: 'update', installationPath: command, manual: true })
-    expect(result.action?.command).toBe(`Install Codex 0.136.0 or newer at ${command}, then retry.`)
   })
 })

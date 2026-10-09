@@ -14,9 +14,7 @@ import {
 } from '@/lib/codex-maintenance-store'
 import {
   codexMaintenanceLabel,
-  codexMaintenanceReason,
-  codexMaintenanceTitle,
-  codexMaintenanceCommandText
+  codexMaintenanceReason
 } from '@/components/native-chat/codex-maintenance-copy'
 import type { NativeChatComposerNotice } from '@/components/native-chat/native-chat-composer-notice'
 
@@ -31,22 +29,15 @@ export function useCodexMaintenance(target: CodexMaintenanceTarget | null) {
   const busySnapshot = () => Boolean(target && getCodexMaintenanceHostBusy(target))
   const hostBusy = useSyncExternalStore(subscribeCodexMaintenance, busySnapshot, busySnapshot)
   const kind = target?.kind
-  const identifier =
-    target?.kind === 'environment'
-      ? target.environmentId
-      : target?.kind === 'ssh'
-        ? target.connectionId
-        : null
+  const environmentId = target?.kind === 'environment' ? target.environmentId : null
   const cwd = target?.cwd
   useLayoutEffect(() => {
     const host: CodexMaintenanceTarget | null =
       kind === 'local'
         ? { kind }
-        : kind === 'environment' && identifier
-          ? { kind, environmentId: identifier }
-          : kind === 'ssh' && identifier
-            ? { kind, connectionId: identifier }
-            : null
+        : kind === 'environment' && environmentId
+          ? { kind, environmentId }
+          : null
     if (!host) {
       return
     }
@@ -61,21 +52,18 @@ export function useCodexMaintenance(target: CodexMaintenanceTarget | null) {
       window.removeEventListener('focus', onFocus)
       unsubscribeContact()
     }
-  }, [kind, identifier, cwd])
+  }, [kind, environmentId, cwd])
   const installation =
     entry.verification === 'current' && target && codexMaintenanceHostIsReachable(target)
       ? entry.state?.installation
       : undefined
   const blocked = installation?.status === 'missing' || installation?.status === 'unsupported'
   const busy = hostBusy || entry.starting
+  // Only a missing Codex gets a button; the user updates an old one themselves.
   const action =
-    installation &&
-    target &&
-    entry.state?.action &&
-    entry.state.action.kind !== 'unknown' &&
-    entry.state.canRun
+    installation?.status === 'missing' && target && entry.state?.canRun
       ? {
-          label: codexMaintenanceLabel(entry.state.action.kind === 'update', busy),
+          label: codexMaintenanceLabel(busy),
           disabled: busy,
           busy,
           onClick: () => startCodexMaintenance(target)
@@ -86,17 +74,8 @@ export function useCodexMaintenance(target: CodexMaintenanceTarget | null) {
       ? {
           key: 'codex-installation',
           kind: 'error',
-          title: codexMaintenanceTitle(installation),
           text: codexMaintenanceReason(installation),
-          action,
-          ...(!entry.state?.canRun && entry.state?.action
-            ? {
-                errorText: codexMaintenanceCommandText(
-                  entry.state.action,
-                  installation.minimumVersion
-                )
-              }
-            : {})
+          action
         }
       : null
   return { ...entry, installation, blocked, busy, action, notice }

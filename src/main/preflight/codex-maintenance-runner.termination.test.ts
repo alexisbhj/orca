@@ -1,6 +1,5 @@
 import { expect, it, vi } from 'vitest'
 import { codexCliInstallation } from '../../shared/codex-cli-installation'
-import { codexMaintenanceAction } from '../../shared/codex-cli-maintenance'
 import { CodexMaintenanceRunner } from './codex-maintenance-runner'
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn() }))
@@ -15,11 +14,9 @@ it('settles an unverifiable job, re-derives whether its owned root is live, and 
     termination: 'unverifiable',
     isLive: () => live
   })
-  const installation = codexCliInstallation(true, '0.135.0')
   const resolve = vi.fn().mockResolvedValue({
-    installation,
-    action: codexMaintenanceAction(installation, false),
-    spec: { program: 'fake-updater' }
+    installation: codexCliInstallation(false, null),
+    spec: { program: 'fake-installer' }
   })
   const invalidate = vi.fn()
   const runner = new CodexMaintenanceRunner({ resolve, invalidate, spawn: vi.fn() })

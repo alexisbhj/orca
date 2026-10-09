@@ -7,13 +7,8 @@ import {
 } from './codex-maintenance-store'
 
 function contact(target: CodexMaintenanceTarget): string {
-  const state = useAppStore.getState()
-  if (target.kind === 'ssh') {
-    const entry = state.sshConnectionStates?.get(target.connectionId)
-    return `${entry?.status ?? 'unknown'}:${entry?.connectionGeneration ?? 0}`
-  }
   if (target.kind === 'environment') {
-    const entry = state.runtimeStatusByEnvironmentId?.get(target.environmentId)
+    const entry = useAppStore.getState().runtimeStatusByEnvironmentId?.get(target.environmentId)
     return `${runtimeHostContactForEntry(entry).verdict}:${entry?.connectionGeneration ?? 0}:${entry?.hostContactEpoch ?? 0}`
   }
   return 'live'
@@ -21,7 +16,7 @@ function contact(target: CodexMaintenanceTarget): string {
 
 export function codexMaintenanceHostIsReachable(target: CodexMaintenanceTarget): boolean {
   const current = contact(target)
-  return current === 'live' || current.startsWith('live:') || current.startsWith('connected:')
+  return current === 'live' || current.startsWith('live:')
 }
 
 export function subscribeCodexMaintenanceHostContact(target: CodexMaintenanceTarget): () => void {
@@ -33,7 +28,7 @@ export function subscribeCodexMaintenanceHostContact(target: CodexMaintenanceTar
     }
     previous = current
     invalidateCodexMaintenanceContact(target)
-    if (current.startsWith('live:') || current.startsWith('connected:')) {
+    if (current.startsWith('live:')) {
       void refreshCodexMaintenance(target)
     }
   })

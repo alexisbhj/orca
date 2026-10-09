@@ -7,7 +7,6 @@ import { isClipboardTextTooLargeError } from '../../../../shared/clipboard-text'
 
 export type NativeChatComposerNoticeContent = {
   text: string
-  title?: string
   /** Text from outside Orca (a host or system error), shown apart and copyable. */
   errorText?: string
 }

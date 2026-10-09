@@ -28,7 +28,7 @@ export function invalidateCodexCliInstallation(): void {
   cache.clear()
 }
 
-export async function codexCliPackagePaths(
+async function codexCliPackagePaths(
   input: Pick<ProcessSpec, 'program' | 'env'>
 ): Promise<string[]> {
   const resolved = resolveSpawn(input, process.platform)

@@ -19551,21 +19551,14 @@
   },
   "codex": {
     "maintenance": {
-      "updating": "Actualizando…",
       "installing": "Instalando…",
-      "update": "Actualizar Codex",
       "install": "Instalar Codex",
-      "missingTitle": "Codex no está instalado",
-      "unsupportedTitle": "Codex requiere una actualización",
       "exitCode": "El comando terminó con el código {{code}}",
       "logTitle": "Registro de configuración de Codex",
       "copyLog": "Copiar registro",
-      "manualUpdate": "Instala Codex {{minimum}} o una versión posterior en {{path}} y vuelve a intentarlo.",
       "updatedRetry": "Codex está actualizado. Vuelve a intentarlo.",
       "updatedSendAgain": "Codex está actualizado. Envía tu mensaje de nuevo.",
-      "installFailed": "No se pudo instalar Codex. Vuelve a intentarlo.",
-      "updateFailed": "No se pudo actualizar Codex. Vuelve a intentarlo.",
-      "runCommand": "Ejecuta {{command}}."
+      "installFailed": "No se pudo instalar Codex. Vuelve a intentarlo."
     }
   }
 }

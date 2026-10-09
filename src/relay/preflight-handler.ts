@@ -8,10 +8,7 @@ import { isPwshAvailableAsync } from '../main/pwsh'
 import { isWslAvailableAsync, listWslDistrosAsync } from '../main/wsl'
 import { isGitBashAvailable } from '../main/git-bash'
 import { buildPosixCommandPathLookupScript } from '../shared/posix-command-path-lookup'
-import { probeCommandVersion } from './preflight-command-version'
-import { readCodexCliInstallation } from '../main/preflight/codex-cli-installation'
-import { CodexMaintenanceRequest } from '../shared/codex-cli-maintenance'
-import { codexMaintenanceRunner } from '../main/preflight/codex-maintenance-runner'
+import { runProcess } from '../shared/child-process/run-process'
 
 const execFileAsync = promisify(execFile)
 
@@ -47,15 +44,6 @@ export class PreflightHandler {
   }
 
   private registerHandlers(): void {
-    this.dispatcher.onRequest('preflight.codexMaintenance', (p) => {
-      const params = CodexMaintenanceRequest.parse(p)
-      return params.operation === 'start'
-        ? codexMaintenanceRunner.start(params)
-        : codexMaintenanceRunner.status(
-            params.operation === 'read' ? params.jobId : undefined,
-            params
-          )
-    })
     this.dispatcher.onRequest('preflight.detectAgents', (p) => this.detectAgents(p))
     this.dispatcher.onRequest('preflight.detectWindowsTerminalCapabilities', () =>
       this.detectWindowsTerminalCapabilities()
@@ -66,8 +54,6 @@ export class PreflightHandler {
   private async detectAgents(params: Record<string, unknown>): Promise<{
     agents: string[]
     versions?: Record<string, string>
-    codexMaintenance?: true
-    codexMaintenanceContext?: true
   }> {
     const commands = params.commands as AgentDetectionCommand[]
     if (!Array.isArray(commands)) {
@@ -101,9 +87,9 @@ export class PreflightHandler {
     const versions: Record<string, string> = {}
     for (const command of detectedCommands) {
       if (
-        (command.id !== 'claude' && command.id !== 'codex') ||
+        command.id !== 'claude' ||
         command.reportVersion !== true ||
-        versions[command.id] !== undefined
+        versions.claude !== undefined
       ) {
         continue
       }
@@ -111,15 +97,7 @@ export class PreflightHandler {
       if (!executablePath) {
         continue
       }
-      const version =
-        command.id === 'codex'
-          ? (
-              await readCodexCliInstallation({
-                program: executablePath,
-                env: buildRelayCommandEnv(process.env, process.platform)
-              })
-            ).version
-          : await probeCommandVersion(executablePath)
+      const version = await probeCommandVersion(executablePath)
       if (version) {
         versions[command.id] = version
       }
@@ -127,9 +105,6 @@ export class PreflightHandler {
 
     return {
       agents: [...new Set(detectedCommands.map(({ id }) => id))],
-      ...(params.reportCodexMaintenance === true
-        ? { codexMaintenance: true as const, codexMaintenanceContext: true as const }
-        : {}),
       ...(Object.keys(versions).length > 0 ? { versions } : {})
     }
   }
@@ -160,6 +135,34 @@ export class PreflightHandler {
   // startup files sourced. Ask the user's configured shell so agent dirs added
   // by zsh/bash/fish startup hooks match the remote terminal experience.
   // Windows has no POSIX shell on native OpenSSH hosts, so use where.exe there.
+}
+
+async function probeCommandVersion(executablePath: string): Promise<string | null> {
+  try {
+    const env = buildRelayCommandEnv(process.env, process.platform)
+    const pathKey = process.platform === 'win32' && env.Path !== undefined ? 'Path' : 'PATH'
+    const executableDir = path.dirname(executablePath)
+    const inheritedPath = env[pathKey]
+    const result = await runProcess({
+      program: executablePath,
+      args: ['--version'],
+      env: {
+        ...env,
+        [pathKey]: inheritedPath
+          ? `${executableDir}${path.delimiter}${inheritedPath}`
+          : executableDir
+      },
+      timeoutMs: 5_000,
+      maxOutputBytes: 4_096
+    })
+    if (result.code !== 0) {
+      return null
+    }
+    const output = `${result.stdout}\n${result.stderr}`.trim()
+    return output.length > 0 ? output : null
+  } catch {
+    return null
+  }
 }
 
 function isDetectionUnsupportedInRuntime(

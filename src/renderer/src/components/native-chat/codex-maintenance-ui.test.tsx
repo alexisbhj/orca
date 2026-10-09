@@ -3,12 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { codexCliInstallation } from '../../../../shared/codex-cli-installation'
-import {
-  codexMaintenanceAction,
-  codexMaintenanceManualAction,
-  CodexMaintenanceStateSchema,
-  type CodexMaintenanceState
-} from '../../../../shared/codex-cli-maintenance'
+import type { CodexMaintenanceState } from '../../../../shared/codex-cli-maintenance'
 import type { CodexMaintenanceTarget } from '@/lib/codex-maintenance-client'
 import { useCodexMaintenance } from '@/hooks/useCodexMaintenance'
 import {
@@ -31,20 +26,16 @@ vi.mock('@/lib/codex-maintenance-client', () => ({
 vi.mock('@/store', () => ({
   useAppStore: {
     subscribe: () => () => {},
-    getState: () => ({
-      refreshDetectedAgents: refreshAgents,
-      sshConnectionStates: new Map([['offline', { status: 'disconnected' }]])
-    })
+    getState: () => ({ refreshDetectedAgents: refreshAgents })
   }
 }))
 const TARGET = { kind: 'local' } as const
-function state(installed: boolean, version: string | null, canRun = true): CodexMaintenanceState {
-  const installation = codexCliInstallation(installed, version)
+const TOO_OLD = 'Codex 0.135.0 is too old for chats. Update to 0.136.0 or newer.'
+function state(installed: boolean, version: string | null): CodexMaintenanceState {
   return {
     evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
-    installation,
-    action: codexMaintenanceAction(installation, false),
-    canRun,
+    installation: codexCliInstallation(installed, version),
+    canRun: !installed,
     job: null
   }
 }
@@ -76,105 +67,68 @@ async function flush() {
 describe('Codex composer and Settings maintenance', () => {
   it('does not block on a completed installation response from a host whose contact is down', async () => {
     call.mockResolvedValue(state(true, '0.135.0'))
-    const target = { kind: 'ssh', connectionId: 'offline' } as const
+    const target = { kind: 'environment', environmentId: 'offline' } as const
     render(<Composer target={target} />)
     await act(async () => {
       await refreshCodexMaintenance(target)
     })
     expect(screen.getByText('Send')).toBeEnabled()
-    expect(screen.queryByText('Codex update required')).not.toBeInTheDocument()
+    expect(screen.queryByText(TOO_OLD)).not.toBeInTheDocument()
   })
 
   it.each([
-    {
-      installed: false,
-      version: null,
-      title: 'Codex not installed',
-      action: 'Install Codex',
-      blocked: true
-    },
-    {
-      installed: true,
-      version: '0.135.0',
-      title: 'Codex update required',
-      action: 'Update Codex',
-      blocked: true
-    },
-    { installed: true, version: null, title: null, action: null, blocked: false },
-    { installed: true, version: '0.136.0', title: null, action: null, blocked: false }
+    { installed: false, version: null, text: "Codex isn't installed.", install: true },
+    { installed: true, version: '0.135.0', text: TOO_OLD, install: false },
+    { installed: true, version: null, text: null, install: false },
+    { installed: true, version: '0.136.0', text: null, install: false }
   ])('renders known installation facts, allows unknown: $version / $installed', async (f) => {
     call.mockResolvedValue(state(f.installed, f.version))
     render(<Composer />)
     await flush()
-    expect(screen.getByRole('button', { name: 'Send' })).toHaveProperty('disabled', f.blocked)
-    if (f.title && f.action) {
-      expect(screen.getByText(f.title)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: f.action })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveProperty('disabled', !!f.text)
+    if (f.text) {
+      expect(screen.getByText(f.text)).toBeInTheDocument()
     } else {
       expect(screen.queryByRole('listitem')).toBeNull()
     }
+    // A too-old Codex gets only the message: the user updates it themselves.
+    expect(screen.queryByRole('button', { name: 'Install Codex' }) !== null).toBe(f.install)
+    expect(screen.queryByRole('button', { name: /update/i })).toBeNull()
   })
-  it('renders a localized manual instruction while retaining readable text for legacy readers', async () => {
-    const initial = CodexMaintenanceStateSchema.parse({
-      ...state(true, '0.100.0', false),
-      action: codexMaintenanceManualAction('/selected/codex', '0.136.0')
-    })
-    call.mockResolvedValue(initial)
-    render(
-      <>
-        <Composer />
-        <CodexMaintenanceRow target={TARGET} />
-      </>
-    )
-    await flush()
-    expect(
-      screen.getAllByText('Install Codex 0.136.0 or newer at /selected/codex, then retry.')
-    ).toHaveLength(2)
-    expect(screen.queryByRole('button', { name: 'Update Codex' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
-  })
-  it('allows an older relay response without current evidence', async () => {
-    const legacy = state(true, '0.135.0', false)
+  it('allows a response without current evidence', async () => {
+    const legacy = state(true, '0.135.0')
     delete legacy.evidence
     call.mockResolvedValue(legacy)
     render(<Composer />)
     await flush()
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
-    expect(screen.queryByText('Codex update required')).toBeNull()
+    expect(screen.queryByText(TOO_OLD)).toBeNull()
   })
   it.each([
-    { installed: false, version: null, text: "Codex isn't installed.", action: 'Install Codex' },
-    {
-      installed: true,
-      version: '0.135.0',
-      text: 'Codex 0.135.0 is too old for chats. Update to 0.136.0 or newer.',
-      action: 'Update Codex'
-    },
-    { installed: true, version: null, text: null, action: null },
-    { installed: true, version: '0.136.0', text: null, action: null }
-  ])('uses the same action in the existing Settings row: $version / $installed', async (f) => {
+    { installed: false, version: null, text: "Codex isn't installed.", install: true },
+    { installed: true, version: '0.135.0', text: TOO_OLD, install: false },
+    { installed: true, version: null, text: null, install: false },
+    { installed: true, version: '0.136.0', text: null, install: false }
+  ])('shows the same facts in the existing Settings row: $version / $installed', async (f) => {
     call.mockResolvedValue(state(f.installed, f.version))
     const view = render(<CodexMaintenanceRow target={TARGET} />)
     await flush()
-    if (f.text && f.action) {
+    if (f.text) {
       expect(screen.getByText(f.text)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: f.action })).toBeEnabled()
+      expect(screen.queryAllByRole('button').map((button) => button.textContent)).toEqual(
+        f.install ? ['Install Codex'] : []
+      )
     } else {
       expect(view.container.textContent).toBe('')
     }
   })
   it('joins a shared host job, shows busy labels and streams a failure log with its exit code', async () => {
     const initial = state(false, null)
-    const action = initial.action
-    if (!action) {
-      throw new Error('Missing action')
-    }
     const running: CodexMaintenanceState = {
       ...initial,
       job: {
         id: 'job',
         phase: 'running',
-        action,
         output: '$ npm install -g @openai/codex\nstarted\n',
         exitCode: null,
         error: null
@@ -215,16 +169,11 @@ describe('Codex composer and Settings maintenance', () => {
   })
   it('clears both notices after successful host verification', async () => {
     const initial = state(false, null)
-    const action = initial.action
-    if (!action) {
-      throw new Error('Missing action')
-    }
     const running: CodexMaintenanceState = {
       ...initial,
       job: {
         id: 'job',
         phase: 'running',
-        action,
         output: 'installing',
         exitCode: null,
         error: null
@@ -250,7 +199,6 @@ describe('Codex composer and Settings maintenance', () => {
       () => expect(screen.getByText('Command exited with code 0')).toBeInTheDocument(),
       { timeout: 3000 }
     )
-    expect(screen.queryByText('Codex not installed')).toBeNull()
     expect(screen.queryByText("Codex isn't installed.")).toBeNull()
     expect(screen.getByText('Send', { selector: 'button' })).toBeEnabled()
   })
@@ -258,7 +206,7 @@ describe('Codex composer and Settings maintenance', () => {
     call.mockResolvedValue(state(true, '0.135.0'))
     const first = render(<Composer />)
     await flush()
-    expect(screen.getByText('Codex update required')).toBeInTheDocument()
+    expect(screen.getByText(TOO_OLD)).toBeInTheDocument()
     first.unmount()
     let rejectRead: (error: Error) => void = () => {}
     call.mockImplementation(
@@ -268,16 +216,16 @@ describe('Codex composer and Settings maintenance', () => {
         })
     )
     render(<Composer />)
-    expect(screen.queryByText('Codex update required')).toBeNull()
+    expect(screen.queryByText(TOO_OLD)).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
     await act(async () => {
       rejectRead(new Error('Host unavailable'))
     })
-    expect(screen.queryByText('Codex update required')).toBeNull()
+    expect(screen.queryByText(TOO_OLD)).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
     call.mockResolvedValue(state(true, '0.135.0'))
     await flush()
-    expect(screen.getByText('Codex update required')).toBeInTheDocument()
+    expect(screen.getByText(TOO_OLD)).toBeInTheDocument()
     let completeRead: (value: CodexMaintenanceState) => void = () => {}
     call.mockImplementation(
       () =>
@@ -288,11 +236,11 @@ describe('Codex composer and Settings maintenance', () => {
     act(() => {
       window.dispatchEvent(new Event('focus'))
     })
-    expect(screen.queryByText('Codex update required')).toBeNull()
+    expect(screen.queryByText(TOO_OLD)).toBeNull()
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
     await act(async () => {
       completeRead(state(true, '0.136.0'))
     })
-    expect(screen.queryByText('Codex update required')).toBeNull()
+    expect(screen.queryByText(TOO_OLD)).toBeNull()
   })
 })

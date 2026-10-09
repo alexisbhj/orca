@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { codexCliInstallation } from '../../../shared/codex-cli-installation'
-import {
-  codexMaintenanceAction,
-  type CodexMaintenanceState
-} from '../../../shared/codex-cli-maintenance'
+import type { CodexMaintenanceState } from '../../../shared/codex-cli-maintenance'
 import {
   invalidateCodexMaintenanceContact,
   getCodexMaintenanceEntry,
@@ -30,26 +27,19 @@ vi.mock('@/store', () => ({
 }))
 const TARGET = { kind: 'local' } as const
 function state(): CodexMaintenanceState {
-  const installation = codexCliInstallation(false, null)
   return {
-    installation,
-    action: codexMaintenanceAction(installation, false),
+    installation: codexCliInstallation(false, null),
     evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
     canRun: true,
     job: null
   }
 }
 function running(): CodexMaintenanceState {
-  const initial = state()
-  if (!initial.action) {
-    throw new Error('Missing action')
-  }
   return {
-    ...initial,
+    ...state(),
     job: {
       id: 'job',
       phase: 'running',
-      action: initial.action,
       output: 'started',
       exitCode: null,
       error: null

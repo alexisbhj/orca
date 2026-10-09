@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { setTimeout as scheduleTimeout } from 'node:timers'
 import { spawnProcess } from '../../shared/child-process/run-process'
 import { codexCliInstallation } from '../../shared/codex-cli-installation'
-import { codexMaintenanceAction } from '../../shared/codex-cli-maintenance'
 import { CodexMaintenanceRunner } from './codex-maintenance-runner'
 import { codexMaintenanceDiagnostic } from './codex-maintenance-diagnostic'
 
@@ -12,10 +11,8 @@ afterEach(() => vi.restoreAllMocks())
 function fixture(
   script = "process.stderr.write('npm ERR! EACCES: permission denied\\n'); process.exit(17)"
 ) {
-  const installation = codexCliInstallation(false, null)
   const resolve = vi.fn().mockResolvedValue({
-    installation,
-    action: codexMaintenanceAction(installation, true),
+    installation: codexCliInstallation(false, null),
     spec: { program: process.execPath, args: ['-e', script] }
   })
   const spawn = vi.fn(spawnProcess)

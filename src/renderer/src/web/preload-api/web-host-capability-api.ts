@@ -71,7 +71,6 @@ export function createPreflightApi(): NonNullable<Partial<PreloadApi>['preflight
         }
         return {
           installation: codexCliInstallation(true, null),
-          action: null,
           canRun: false,
           job: null
         }

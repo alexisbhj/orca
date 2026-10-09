@@ -1,139 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { codexCliInstallation } from '../../shared/codex-cli-installation'
-import {
-  codexMaintenanceAction,
-  type CodexMaintenanceState
-} from '../../shared/codex-cli-maintenance'
+import type { CodexMaintenanceState } from '../../shared/codex-cli-maintenance'
 import { codexMaintenanceOnHost } from './codex-maintenance-host'
 
-const { getMux, start, status } = vi.hoisted(() => ({
-  getMux: vi.fn(),
-  start: vi.fn(),
-  status: vi.fn()
-}))
-vi.mock('../ssh/ssh-target-registry', () => ({ getActiveMultiplexer: getMux }))
+const { start, status } = vi.hoisted(() => ({ start: vi.fn(), status: vi.fn() }))
 vi.mock('./codex-maintenance-runner', () => ({ codexMaintenanceRunner: { start, status } }))
 afterEach(() => vi.clearAllMocks())
 
-function state(): CodexMaintenanceState {
-  const installation = codexCliInstallation(false, null)
-  return {
-    installation,
-    action: codexMaintenanceAction(installation, false),
-    canRun: true,
-    job: null
-  }
+const STATE: CodexMaintenanceState = {
+  installation: codexCliInstallation(false, null),
+  canRun: true,
+  job: null
 }
 
-describe('Codex maintenance execution host routing', () => {
-  it('routes local status and explicit start to the same host owner', async () => {
-    start.mockResolvedValue(state())
-    status.mockResolvedValue(state())
-    await codexMaintenanceOnHost({ operation: 'status' })
-    await codexMaintenanceOnHost({ operation: 'start' })
-    expect(start).toHaveBeenCalledOnce()
-    expect(status).toHaveBeenCalledOnce()
-  })
-  it('negotiates SSH support before starting, then reads the relay job without local execution', async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce({ agents: [], codexMaintenance: true })
-      .mockResolvedValue(state())
-    getMux.mockReturnValue({ isDisposed: () => false, request })
-    expect(await codexMaintenanceOnHost({ connectionId: 'host-a', operation: 'start' })).toEqual(
-      state()
-    )
-    await codexMaintenanceOnHost({ connectionId: 'host-a', operation: 'read', jobId: 'host-job' })
-    expect(request.mock.calls.map(([method]) => method)).toEqual([
-      'preflight.detectAgents',
-      'preflight.codexMaintenance',
-      'preflight.codexMaintenance'
+describe('Codex maintenance on the execution host', () => {
+  it('routes status, job reads and an explicit start to the host runner with host settings', async () => {
+    start.mockResolvedValue(STATE)
+    status.mockResolvedValue(STATE)
+    const settings = { agentCmdOverrides: { codex: '/host/codex' } }
+    await codexMaintenanceOnHost({ operation: 'status', cwd: '/workspace' }, settings)
+    await codexMaintenanceOnHost({ operation: 'read', jobId: 'job' }, settings)
+    await codexMaintenanceOnHost({ operation: 'start' }, settings)
+    expect(status.mock.calls).toEqual([
+      [undefined, { cwd: '/workspace', commandSettings: settings }],
+      ['job', { cwd: undefined, commandSettings: settings }]
     ])
-    expect(request).toHaveBeenLastCalledWith(
-      'preflight.codexMaintenance',
-      expect.objectContaining({
-        operation: 'read',
-        jobId: 'host-job'
-      })
-    )
-    expect(start).not.toHaveBeenCalled()
-  })
-  it('forwards configured invocation context to a capable SSH execution host', async () => {
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce({
-        agents: ['codex'],
-        codexMaintenance: true,
-        codexMaintenanceContext: true
-      })
-      .mockResolvedValue(state())
-    getMux.mockReturnValue({ isDisposed: () => false, request })
-    await codexMaintenanceOnHost(
-      { connectionId: 'host', operation: 'status', cwd: '/remote/workspace' },
-      {
-        agentCmdOverrides: { codex: '/remote/company-codex' },
-        agentDefaultEnv: { codex: { PATH: '/remote/bin' } }
-      }
-    )
-    expect(request).toHaveBeenLastCalledWith(
-      'preflight.codexMaintenance',
-      expect.objectContaining({
-        cwd: '/remote/workspace',
-        commandSettings: expect.objectContaining({
-          agentCmdOverrides: { codex: '/remote/company-codex' },
-          agentDefaultEnv: { codex: { PATH: '/remote/bin' } }
-        })
-      })
-    )
-  })
-  it('treats a context-unaware relay as unknown rather than probing or updating stock Codex', async () => {
-    const request = vi.fn().mockResolvedValue({
-      agents: ['codex'],
-      versions: { codex: '0.135.0' },
-      codexMaintenance: true
-    })
-    getMux.mockReturnValue({ isDisposed: () => false, request })
-    const result = await codexMaintenanceOnHost({
-      connectionId: 'old',
-      operation: 'status',
-      cwd: '/workspace'
-    })
-    expect(result.installation.status).toBe('unknown')
-    expect(result.canRun).toBe(false)
-    expect(request).toHaveBeenCalledTimes(1)
-  })
-  it.each([{ agents: [] }, { agents: ['codex'], versions: { codex: '0.135.0' } }])(
-    'shows command text on a relay without support: %j',
-    async (legacy) => {
-      const request = vi.fn().mockResolvedValue(legacy)
-      getMux.mockReturnValue({ isDisposed: () => false, request })
-      const result = await codexMaintenanceOnHost({ connectionId: 'old', operation: 'status' })
-      expect(result.canRun).toBe(false)
-      expect(result.action?.command).toBe('npm install -g @openai/codex')
-      await expect(
-        codexMaintenanceOnHost({ connectionId: 'old', operation: 'start' })
-      ).rejects.toThrow('does not support')
-      expect(request.mock.calls.every(([method]) => method === 'preflight.detectAgents')).toBe(true)
-    }
-  )
-  it('isolates relay capabilities by connection and never substitutes local execution after contact loss', async () => {
-    const a = {
-      isDisposed: () => false,
-      request: vi
-        .fn()
-        .mockResolvedValueOnce({ agents: [], codexMaintenance: true })
-        .mockResolvedValue(state())
-    }
-    const b = { isDisposed: () => false, request: vi.fn().mockResolvedValue({ agents: ['codex'] }) }
-    getMux.mockImplementation((id) => (id === 'a' ? a : b))
-    await codexMaintenanceOnHost({ connectionId: 'a', operation: 'status' })
-    expect(
-      (await codexMaintenanceOnHost({ connectionId: 'b', operation: 'status' })).installation.status
-    ).toBe('unknown')
-    a.request.mockRejectedValue(new Error('connection lost'))
-    await expect(
-      codexMaintenanceOnHost({ connectionId: 'a', operation: 'read', jobId: 'job' })
-    ).rejects.toThrow('connection lost')
-    expect(start).not.toHaveBeenCalled()
+    expect(start).toHaveBeenCalledExactlyOnceWith({ cwd: undefined, commandSettings: settings })
   })
 })

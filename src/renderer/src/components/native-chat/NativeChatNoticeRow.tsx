@@ -157,15 +157,7 @@ export function NativeChatNoticeRow({
     >
       <div className="flex items-start gap-2">
         {Icon ? <Icon aria-hidden="true" className="mt-0.5 size-4 shrink-0" /> : null}
-        <p className="min-w-0 whitespace-pre-wrap break-words">
-          {repairNotice?.title ? (
-            <span className="block font-medium">{repairNotice.title}</span>
-          ) : null}
-          {text}
-          {repairNotice?.errorText ? (
-            <span className="block font-mono">{repairNotice.errorText}</span>
-          ) : null}
-        </p>
+        <p className="min-w-0 whitespace-pre-wrap break-words">{text}</p>
       </div>
       {repairAction ? (
         <Button

@@ -2,10 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCodexMaintenance } from '@/hooks/useCodexMaintenance'
 import type { CodexMaintenanceTarget } from '@/lib/codex-maintenance-client'
-import {
-  codexMaintenanceSettingsStatus,
-  codexMaintenanceCommandText
-} from '../native-chat/codex-maintenance-copy'
+import { codexMaintenanceSettingsStatus } from '../native-chat/codex-maintenance-copy'
 
 export function CodexMaintenanceRow({
   target
@@ -31,13 +28,6 @@ export function CodexMaintenanceRow({
           {maintenance.busy ? <Loader2 className="size-3 animate-spin" /> : null}
           {maintenance.action.label}
         </Button>
-      ) : maintenance.state?.action ? (
-        <code className="select-text font-mono text-xs">
-          {codexMaintenanceCommandText(
-            maintenance.state.action,
-            installation?.minimumVersion ?? ''
-          )}
-        </code>
       ) : null}
     </div>
   )

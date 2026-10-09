@@ -4,7 +4,7 @@ import { agentSessionRefusalCauseParts } from '../../../../shared/agent-session-
 import type { StructuredLaunchFailure } from '@/lib/structured-agent-session-launch-failure'
 import { joinSentences } from '../../../../shared/sentence-joining'
 import { agentSessionWriteNoticeText } from './agent-session-write-notice-text'
-import { codexMaintenanceReason, codexMaintenanceTitle } from './codex-maintenance-copy'
+import { codexMaintenanceReason } from './codex-maintenance-copy'
 import type {
   NativeChatComposerNotice,
   NativeChatComposerNoticeContent
@@ -16,7 +16,6 @@ function nativeChatLaunchNotice({
   failure = null,
   agentLabel,
   onRetry,
-  codexMaintenanceAction,
   codexMaintenanceNotice
 }: {
   lifecycle: StructuredAgentSessionLaunchLifecycle | null
@@ -24,7 +23,6 @@ function nativeChatLaunchNotice({
   /** Names the agent in a start failure's words. */
   agentLabel?: string
   onRetry: () => void
-  codexMaintenanceAction?: NativeChatComposerNotice['action']
   codexMaintenanceNotice?: NativeChatComposerNotice | null
 }): NativeChatComposerNotice | null {
   if (lifecycle !== 'failed' && lifecycle !== 'visibility-unknown') {
@@ -46,9 +44,7 @@ function nativeChatLaunchNotice({
       : {
           key: 'launch',
           kind: 'error',
-          title: codexMaintenanceTitle(facts),
-          text: codexMaintenanceReason(facts),
-          action: codexMaintenanceAction
+          text: codexMaintenanceReason(facts)
         }
   }
   const message =
@@ -89,7 +85,6 @@ export function structuredSessionNotices({
   sessionError,
   composerError,
   availability = null,
-  codexMaintenanceAction,
   codexMaintenanceNotice
 }: {
   launch: {
@@ -102,7 +97,6 @@ export function structuredSessionNotices({
   composerError: (NativeChatComposerNoticeContent & { onDismiss: () => void }) | null
   /** Why the host says no chat can start here, from `useNativeChatAvailabilityNotice`. */
   availability?: NativeChatComposerNotice | null
-  codexMaintenanceAction?: NativeChatComposerNotice['action']
   codexMaintenanceNotice?: NativeChatComposerNotice | null
 }): NativeChatComposerNotice[] {
   const launchNotice = nativeChatLaunchNotice({
@@ -110,7 +104,6 @@ export function structuredSessionNotices({
     failure: launch.failure,
     agentLabel,
     onRetry: launch.retry,
-    codexMaintenanceAction,
     codexMaintenanceNotice
   })
   return [

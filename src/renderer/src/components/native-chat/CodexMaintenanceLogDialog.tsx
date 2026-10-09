@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { translate } from '@/i18n/i18n'
 import { codexMaintenanceTargetKey } from '@/lib/codex-maintenance-client'
+import { CODEX_INSTALL_COMMAND } from '../../../../shared/codex-cli-maintenance'
 import {
   getCodexMaintenanceEntry,
   getCodexMaintenanceHostBusy,
@@ -32,16 +33,14 @@ export function CodexMaintenanceLogDialog(): React.JSX.Element {
   const busy = useSyncExternalStore(subscribeCodexMaintenance, busySnapshot, busySnapshot)
   const message =
     entry.error || job?.error
-      ? job?.action.kind === 'install'
-        ? translate('codex.maintenance.installFailed', 'Codex could not be installed. Try again.')
-        : translate('codex.maintenance.updateFailed', 'Codex could not be updated. Try again.')
+      ? translate('codex.maintenance.installFailed', 'Codex could not be installed. Try again.')
       : job?.phase === 'completed'
         ? translate('codex.maintenance.exitCode', 'Command exited with code {{code}}', {
             code: job.exitCode ?? '?'
           })
         : !busy || job?.phase === 'unknown'
-          ? (job?.action.command ?? '')
-          : codexMaintenanceLabel(job?.action.kind === 'update', true)
+          ? CODEX_INSTALL_COMMAND
+          : codexMaintenanceLabel(true)
   const output = job?.output ?? ''
   return (
     <Dialog

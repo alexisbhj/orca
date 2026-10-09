@@ -3,7 +3,6 @@ import '@testing-library/jest-dom/vitest'
 import { act, fireEvent, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { codexCliInstallation } from '../../../shared/codex-cli-installation'
-import { codexMaintenanceAction } from '../../../shared/codex-cli-maintenance'
 import { resetCodexMaintenanceStoreForTests } from '@/lib/codex-maintenance-store'
 import { renderCard, unmountCard } from './NewWorkspaceComposerCard.test-fixture'
 
@@ -63,12 +62,10 @@ describe('workspace composer Codex installation admission', () => {
   it.each([false, true])(
     'blocks the button, picker send and keyboard submit projection when installed=%s',
     async (installed) => {
-      const installation = codexCliInstallation(installed, installed ? '0.135.0' : null)
       mocks.call.mockResolvedValue({
-        installation,
-        action: codexMaintenanceAction(installation, false),
+        installation: codexCliInstallation(installed, installed ? '0.135.0' : null),
         evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
-        canRun: true,
+        canRun: !installed,
         job: null
       })
       const create = vi.fn()
@@ -84,18 +81,13 @@ describe('workspace composer Codex installation admission', () => {
       fireEvent.click(query.getByRole('button', { name: 'Start from picker' }))
       expect(create).not.toHaveBeenCalled()
       expect(
-        query.getByText(installed ? 'Codex update required' : 'Codex not installed')
-      ).toBeInTheDocument()
-      expect(
         query.getByText(
           installed
             ? 'Codex 0.135.0 is too old for chats. Update to 0.136.0 or newer.'
             : "Codex isn't installed."
         )
       ).toBeInTheDocument()
-      expect(
-        query.getByRole('button', { name: installed ? 'Update Codex' : 'Install Codex' })
-      ).toBeEnabled()
+      expect(query.queryByRole('button', { name: 'Install Codex' }) !== null).toBe(!installed)
       expect(mocks.route).toHaveBeenCalledWith(mocks.state, {
         agent: 'codex',
         workspace: { kind: 'git-worktree', repoId: 'repo-a', executionHostId: 'local' }
@@ -105,7 +97,6 @@ describe('workspace composer Codex installation admission', () => {
   it('allows unknown versions and does not gate terminal launches', async () => {
     mocks.call.mockResolvedValue({
       installation: codexCliInstallation(true, null),
-      action: null,
       evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' },
       canRun: true,
       job: null

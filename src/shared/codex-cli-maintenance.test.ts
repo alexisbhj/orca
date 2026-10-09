@@ -1,39 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { codexCliInstallation } from './codex-cli-installation'
-import { CodexMaintenanceStateSchema, codexMaintenanceAction } from './codex-cli-maintenance'
+import { CodexMaintenanceStateSchema } from './codex-cli-maintenance'
 import {
   agentSessionRefusalFailure,
   parseAgentSessionWriteFailure
 } from './agent-session-write-failure'
 
-describe('Codex maintenance policy and mixed-version replies', () => {
-  it('installs missing Codex and chooses updates by installation source', () => {
-    expect(codexMaintenanceAction(codexCliInstallation(false, null), false)).toEqual({
-      kind: 'install',
-      command: 'npm install -g @openai/codex'
-    })
-    expect(codexMaintenanceAction(codexCliInstallation(true, '0.135.0'), false)?.command).toBe(
-      'codex update'
-    )
-    expect(codexMaintenanceAction(codexCliInstallation(true, '0.135.0'), true)?.command).toBe(
-      'npm install -g @openai/codex'
-    )
-  })
-  it('withholds actions for unknown and supported installations', () => {
-    expect(codexMaintenanceAction(codexCliInstallation(true, null), false)).toBeNull()
-    expect(codexMaintenanceAction(codexCliInstallation(true, '0.136.0'), false)).toBeNull()
-  })
-  it.each([
-    ['0.100.0', 'npm install -g @openai/codex'],
-    ['0.125.0', 'npm install -g @openai/codex'],
-    ['0.126.0-alpha.1', 'npm install -g @openai/codex'],
-    ['0.126.0', 'codex update'],
-    ['0.135.0', 'codex update']
-  ])('uses only the source-supported updater for %s', (version, command) => {
-    expect(codexMaintenanceAction(codexCliInstallation(true, version), false)?.command).toBe(
-      command
-    )
-  })
+describe('Codex maintenance mixed-version replies', () => {
   it.each([null, '0.135.0'])(
     'retains the checked failure facts after a reload: %s',
     (installedVersion) => {
@@ -58,12 +31,10 @@ describe('Codex maintenance policy and mixed-version replies', () => {
         version: '0.150.0',
         minimumVersion: '0.136.0'
       },
-      action: { kind: 'future-action', command: 'future command' },
       canRun: true,
       job: {
         id: 'job',
         phase: 'future-phase',
-        action: { kind: 'future-action', command: 'future command' },
         output: 'host log',
         exitCode: null,
         error: null
@@ -71,14 +42,12 @@ describe('Codex maintenance policy and mixed-version replies', () => {
     })
     expect(result.installation.status).toBe('unknown')
     expect(result.installation.version).toBe('0.150.0')
-    expect(result.action?.kind).toBe('unknown')
     expect(result.job?.phase).toBe('unknown')
     expect(result.job?.output).toBe('host log')
   })
   it('accepts optional current-job and expiry evidence while preserving legacy replies', () => {
     const legacy = {
-      installation: codexCliInstallation(true, '0.135.0'),
-      action: null,
+      installation: codexCliInstallation(false, null),
       canRun: true,
       job: null
     }
@@ -94,14 +63,12 @@ describe('Codex maintenance policy and mixed-version replies', () => {
     const job = {
       id: 'job',
       phase: 'running',
-      action: { kind: 'update', command: 'codex update' },
       output: 'historical output',
       exitCode: null,
       error: null
     }
     const reply = CodexMaintenanceStateSchema.parse({
-      installation: codexCliInstallation(true, '0.135.0'),
-      action: null,
+      installation: codexCliInstallation(false, null),
       canRun: true,
       job,
       currentJob: job

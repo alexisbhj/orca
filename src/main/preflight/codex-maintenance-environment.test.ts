@@ -20,7 +20,7 @@ afterEach(async () => {
 })
 
 it.skipIf(process.platform === 'win32')(
-  'pairs the forwarding wrapper runtime identically for admission, maintenance and persistent launch',
+  'pairs the forwarding wrapper runtime identically for admission, the notice check and persistent launch',
   async () => {
     root = await mkdtemp(join(tmpdir(), 'codex-environment-'))
     const wrapperDirectory = join(root, 'wrapper')
@@ -67,10 +67,8 @@ it.skipIf(process.platform === 'win32')(
     const child = buildCodexStructuredChildEnvironment(launch, 'token', value.sessionId)
     expect(admission).toMatchObject({ status: 'unsupported', version: '0.135.0' })
     expect(maintenance.installation).toEqual(admission)
-    expect(maintenance.spec?.program).toBe(launch.command)
-    expect(maintenance.spec?.env?.PATH).toBe(launch.env?.PATH)
     expect(child.PATH).toBe(launch.env?.PATH)
     expect(child.PATH?.split(delimiter)).toContain(wrapperDirectory)
-    expect(maintenance.spec?.env?.PATH?.split(delimiter)).toContain(supportedDirectory)
+    expect(child.PATH?.split(delimiter)).toContain(supportedDirectory)
   }
 )

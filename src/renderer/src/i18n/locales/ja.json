@@ -19551,21 +19551,14 @@
   },
   "codex": {
     "maintenance": {
-      "updating": "更新中…",
       "installing": "インストール中…",
-      "update": "Codex を更新",
       "install": "Codex をインストール",
-      "missingTitle": "Codex が未インストールです",
-      "unsupportedTitle": "Codex の更新が必要です",
       "exitCode": "コマンドが終了コード {{code}} で終了しました",
       "logTitle": "Codex セットアップログ",
       "copyLog": "ログをコピー",
-      "manualUpdate": "{{path}} に Codex {{minimum}} 以降をインストールして、再試行してください。",
       "updatedRetry": "Codex は更新済みです。再試行してください。",
       "updatedSendAgain": "Codex は更新済みです。メッセージをもう一度送信してください。",
-      "installFailed": "Codex をインストールできませんでした。再試行してください。",
-      "updateFailed": "Codex を更新できませんでした。再試行してください。",
-      "runCommand": "{{command}} を実行してください。"
+      "installFailed": "Codex をインストールできませんでした。再試行してください。"
     }
   }
 }

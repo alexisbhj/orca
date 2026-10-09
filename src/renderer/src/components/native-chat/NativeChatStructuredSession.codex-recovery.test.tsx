@@ -7,10 +7,7 @@ import { agentSessionFailureWords } from '../../../../shared/agent-session-failu
 import { agentJournalItemKey } from '../../../../shared/agent-session-journal-item-key'
 import { structuredAgentSessionStartFailureRowIdentity } from '../../../../shared/structured-agent-session-start-failure-row-key'
 import { codexCliInstallation } from '../../../../shared/codex-cli-installation'
-import {
-  codexMaintenanceAction,
-  type CodexMaintenanceState
-} from '../../../../shared/codex-cli-maintenance'
+import type { CodexMaintenanceState } from '../../../../shared/codex-cli-maintenance'
 import {
   refreshCodexMaintenance,
   resetCodexMaintenanceStoreForTests
@@ -75,11 +72,9 @@ import { NativeChatStructuredSession } from './NativeChatStructuredSession'
 const target = { kind: 'local', cwd: '/repo' } as const
 const originalSettings = useAppStore.getState().settings
 function state(version: string | null): CodexMaintenanceState {
-  const installation = codexCliInstallation(version !== null, version)
   return {
-    installation,
-    action: codexMaintenanceAction(installation, false),
-    canRun: true,
+    installation: codexCliInstallation(version !== null, version),
+    canRun: version === null,
     job: null,
     evidence: { expiresAt: Date.now() + 30_000, configurationId: 'config' }
   }
@@ -158,18 +153,14 @@ it.each([null, '0.135.0'])(
     render(pane())
     await check()
     expect(
-      screen.getByText(version === null ? 'Codex not installed' : 'Codex update required')
-    ).toBeInTheDocument()
-    expect(
       screen.getByText(
         version === null
           ? "Codex isn't installed."
           : 'Codex 0.135.0 is too old for chats. Update to 0.136.0 or newer.'
       )
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: version === null ? 'Install Codex' : 'Update Codex' })
-    ).toBeEnabled()
+    // Only a missing Codex gets a button; an old one is updated by the user.
+    expect(screen.queryByRole('button', { name: /Codex/ }) !== null).toBe(version === null)
     expect(
       screen.queryByText(/Chat could not be started|selected installation|on this host|Settings/)
     ).toBeNull()
@@ -177,24 +168,17 @@ it.each([null, '0.135.0'])(
   }
 )
 
-it('automatically retries the refused chat once after the update exits and the host recheck is ready', async () => {
+it('automatically retries the refused chat once Codex is updated outside Orca and a recheck is ready', async () => {
   refuse()
-  const old = state('0.135.0')
-  const action = old.action
-  if (!action) {
-    throw new Error('No action')
-  }
-  const completed: CodexMaintenanceState = {
-    ...state('0.136.0'),
-    currentJob: null,
-    job: { id: 'updated', phase: 'completed', action, output: 'updated', exitCode: 0, error: null }
-  }
-  call.mockImplementation(async (_target, params) =>
-    params.operation === 'start' ? completed : old
-  )
+  call.mockResolvedValue(state('0.135.0'))
   const view = render(pane())
   await check()
-  fireEvent.click(screen.getByRole('button', { name: 'Update Codex' }))
+  expect(mocks.retryLaunch).not.toHaveBeenCalled()
+  // No Orca job runs: the user updates Codex, then returning to the window rechecks it.
+  call.mockResolvedValue(state('0.136.0'))
+  act(() => {
+    window.dispatchEvent(new Event('focus'))
+  })
   await waitFor(() =>
     expect(mocks.retryLaunch).toHaveBeenCalledExactlyOnceWith('wt-1', 'session-1')
   )
@@ -213,6 +197,38 @@ it('automatically retries the refused chat once after the update exits and the h
   mocks.launchLifecycle = null
   view.rerender(pane())
   expect(mocks.composerProps?.structuredTransport?.sendOut).toBeFalsy()
+})
+
+it('retries the refused chat when the saved too-old result expires, without focus or a job', async () => {
+  refuse()
+  call.mockResolvedValue({
+    ...state('0.135.0'),
+    evidence: { expiresAt: Date.now() + 50, configurationId: 'config' }
+  })
+  render(pane())
+  await check()
+  call.mockResolvedValue(state('0.136.0'))
+  await waitFor(() => expect(mocks.retryLaunch).toHaveBeenCalledOnce(), { timeout: 2_000 })
+  expect(call.mock.calls.every(([, params]) => params.operation === 'status')).toBe(true)
+})
+
+it('retries a chat refused for a missing Codex after the Install job finishes', async () => {
+  refuse(null)
+  const completed: CodexMaintenanceState = {
+    ...state('0.136.0'),
+    currentJob: null,
+    job: { id: 'installed', phase: 'completed', output: 'installed', exitCode: 0, error: null }
+  }
+  call.mockImplementation(async (_target, params) =>
+    params.operation === 'start' ? completed : state(null)
+  )
+  render(pane())
+  await check()
+  fireEvent.click(screen.getByRole('button', { name: 'Install Codex' }))
+  await waitFor(() =>
+    expect(mocks.retryLaunch).toHaveBeenCalledExactlyOnceWith('wt-1', 'session-1')
+  )
+  expect(screen.queryByText("Codex isn't installed.")).toBeNull()
 })
 
 it.each(['0.135.0', null])(
@@ -289,7 +305,7 @@ it.each(['live', 'unverifiable'] as const)(
   }
 )
 
-it('rearms recovery when a later check proves Codex old again before another update', async () => {
+it('rearms recovery when a later check proves Codex old again before it is updated again', async () => {
   refuse()
   call.mockResolvedValue(state('0.136.0'))
   render(pane())

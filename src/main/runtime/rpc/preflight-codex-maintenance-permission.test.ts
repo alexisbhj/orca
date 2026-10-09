@@ -13,7 +13,6 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({
       installation: { status: 'ready', version: '0.136.0', minimumVersion: '0.136.0' },
-      action: null,
       canRun: false,
       job: null
     })

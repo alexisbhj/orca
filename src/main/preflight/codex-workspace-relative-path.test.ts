@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,6 @@ import { identityFor } from '../codex/codex-structured-session-adapter-fixture'
 import { invalidateCodexCliInstallation, readCodexCliInstallation } from './codex-cli-installation'
 import { resolveCodexMaintenanceCommand } from './codex-maintenance-command'
 import type * as CommandResolution from '../../shared/node-cli-command-resolution'
-import { CodexMaintenanceRunner } from './codex-maintenance-runner'
 
 vi.mock('../startup/login-shell-environment', () => ({
   resolveLoginShellEnvironment: async () => ({})
@@ -37,7 +36,7 @@ afterEach(async () => {
 
 describe.skipIf(process.platform === 'win32')('workspace-relative Codex selection', () => {
   it.each(['bin', 'node_modules/.bin', '.'])(
-    'admits and repairs the child selected through PATH=%s',
+    'admits the child selected through PATH=%s and recovers once it is updated',
     async (entry) => {
       root = await mkdtemp(join(tmpdir(), 'codex-relative-path-'))
       const cwd = root
@@ -50,7 +49,6 @@ describe.skipIf(process.platform === 'win32')('workspace-relative Codex selectio
         program,
         `#!${process.execPath}\nconst fs = require('node:fs')\n` +
           `const file = __filename + '.version'\n` +
-          `if (process.argv[2] === 'update') fs.writeFileSync(file, '0.136.0')\n` +
           `console.log('codex-cli ' + fs.readFileSync(file, 'utf8'))\n`,
         { mode: 0o755 }
       )
@@ -94,19 +92,11 @@ describe.skipIf(process.platform === 'win32')('workspace-relative Codex selectio
         const context = { cwd, commandSettings: settings }
         const maintenance = await resolveCodexMaintenanceCommand(context)
         expect(maintenance.installation.status).toBe('unsupported')
-        expect(maintenance.spec?.program).toBe(program)
-        expect(maintenance.spec?.cwd).toBe(cwd)
-        expect(maintenance.spec?.args).toEqual(['update'])
-        const runner = new CodexMaintenanceRunner()
-        const started = await runner.start(context)
-        await vi.waitFor(
-          async () => {
-            expect((await runner.status(started.job?.id, context)).job?.phase).toBe('completed')
-          },
-          { timeout: 10_000 }
-        )
-        expect(await readFile(versionFile, 'utf8')).toBe('0.136.0')
-        expect((await runner.status(started.job?.id, context)).installation.status).toBe('ready')
+        expect(maintenance.spec).toBeNull()
+        // The user updates Codex outside Orca; the next check after the cache lapses sees it.
+        await writeFile(versionFile, '0.136.0')
+        invalidateCodexCliInstallation()
+        expect((await resolveCodexMaintenanceCommand(context)).installation.status).toBe('ready')
         await expect(resolve({ identity: identityFor(record.sessionId) })).resolves.toMatchObject({
           cwd
         })

@@ -180,11 +180,9 @@ function scheduleRead(target: CodexMaintenanceTarget, jobId: string, failures = 
 function refreshDetectedAgents(target: CodexMaintenanceTarget): void {
   const store = useAppStore.getState()
   const refresh =
-    target.kind === 'ssh'
-      ? store.refreshRemoteDetectedAgents(target.connectionId)
-      : target.kind === 'environment'
-        ? store.refreshRuntimeDetectedAgents(target.environmentId)
-        : store.refreshDetectedAgents()
+    target.kind === 'environment'
+      ? store.refreshRuntimeDetectedAgents(target.environmentId)
+      : store.refreshDetectedAgents()
   void refresh.catch(() => {})
 }
 

@@ -19551,21 +19551,14 @@
   },
   "codex": {
     "maintenance": {
-      "updating": "正在更新…",
       "installing": "正在安装…",
-      "update": "更新 Codex",
       "install": "安装 Codex",
-      "missingTitle": "未安装 Codex",
-      "unsupportedTitle": "需要更新 Codex",
       "exitCode": "命令已退出，退出代码为 {{code}}",
       "logTitle": "Codex 设置日志",
       "copyLog": "复制日志",
-      "manualUpdate": "在 {{path}} 安装 Codex {{minimum}} 或更高版本，然后重试。",
       "updatedRetry": "Codex 已更新。请重试。",
       "updatedSendAgain": "Codex 已更新。请重新发送消息。",
-      "installFailed": "无法安装 Codex。请重试。",
-      "updateFailed": "无法更新 Codex。请重试。",
-      "runCommand": "请运行 {{command}}。"
+      "installFailed": "无法安装 Codex。请重试。"
     }
   }
 }

@@ -8,18 +8,11 @@ import {
 import { callRuntimeRpc, runtimeEnvironmentSupportsCapability } from '@/runtime/runtime-rpc-client'
 import type { RuntimeClientTarget } from '@/runtime/runtime-client-target'
 
-export type CodexMaintenanceTarget = (
-  | RuntimeClientTarget
-  | { kind: 'ssh'; connectionId: string }
-) & { cwd?: string }
+export type CodexMaintenanceTarget = RuntimeClientTarget & { cwd?: string }
 
 export function codexMaintenanceTargetKey(target: CodexMaintenanceTarget): string {
   const host =
-    target.kind === 'environment'
-      ? `runtime:${target.environmentId}:codex`
-      : target.kind === 'ssh'
-        ? `ssh:${target.connectionId}:codex`
-        : 'local:codex'
+    target.kind === 'environment' ? `runtime:${target.environmentId}:codex` : 'local:codex'
   return target.cwd ? `${host}:${JSON.stringify(target.cwd)}` : host
 }
 
@@ -39,7 +32,6 @@ export async function callCodexMaintenance(
       }
       return {
         installation: codexCliInstallation(true, null),
-        action: null,
         canRun: false,
         job: null
       }
@@ -48,10 +40,5 @@ export async function callCodexMaintenance(
       await callRuntimeRpc(target, 'preflight.codexMaintenance', params)
     )
   }
-  return CodexMaintenanceStateSchema.parse(
-    await window.api.preflight.codexMaintenance({
-      ...params,
-      ...(target.kind === 'ssh' ? { connectionId: target.connectionId } : {})
-    })
-  )
+  return CodexMaintenanceStateSchema.parse(await window.api.preflight.codexMaintenance(params))
 }

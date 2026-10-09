@@ -11,10 +11,9 @@ afterEach(cleanup)
 
 describe('Codex maintenance in notice rows', () => {
   it.each([null, '0.135.0'])(
-    'offers the shared host action on a resumed Codex failure: %s',
+    'shows the shared notice on a resumed Codex failure, with Install only when missing: %s',
     (installedVersion) => {
       const onClick = vi.fn()
-      const label = installedVersion ? 'Update Codex' : 'Install Codex'
       const failure: AgentSessionFailureFact = {
         kind: 'startFailed',
         refusal: {
@@ -40,11 +39,15 @@ describe('Codex maintenance in notice rows', () => {
           text: installedVersion
             ? 'Codex 0.135.0 is too old for chats. Update to 0.136.0 or newer.'
             : "Codex isn't installed.",
-          action: { label, onClick }
+          ...(installedVersion ? {} : { action: { label: 'Install Codex', onClick } })
         }
       )
       expect(onClick).not.toHaveBeenCalled()
-      fireEvent.click(screen.getByRole('button', { name: label }))
+      if (installedVersion) {
+        expect(screen.queryByRole('button')).toBeNull()
+        return
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Install Codex' }))
       expect(onClick).toHaveBeenCalledOnce()
     }
   )

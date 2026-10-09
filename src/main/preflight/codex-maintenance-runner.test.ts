@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { spawnProcess } from '../../shared/child-process/run-process'
 import { codexCliInstallation } from '../../shared/codex-cli-installation'
-import { codexMaintenanceAction } from '../../shared/codex-cli-maintenance'
 import type { ProcessSpec } from '../../shared/child-process/run-process'
 import { CodexMaintenanceRunner } from './codex-maintenance-runner'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -10,10 +9,9 @@ import { tmpdir } from 'node:os'
 
 vi.mock('./codex-maintenance-command', () => ({ resolveCodexMaintenanceCommand: vi.fn() }))
 
-function fixture(exitCode = 0, npmInstalled = true, releasePath?: string) {
-  const installation = codexCliInstallation(true, '0.135.0')
+function fixture(exitCode = 0, releasePath?: string) {
+  const installation = codexCliInstallation(false, null)
   const ready = codexCliInstallation(true, '0.136.0')
-  const action = codexMaintenanceAction(installation, npmInstalled)
   const spec: ProcessSpec = {
     program: process.execPath,
     args: [
@@ -25,18 +23,17 @@ function fixture(exitCode = 0, npmInstalled = true, releasePath?: string) {
     ]
   }
   const evidence = { expiresAt: Date.now() + 30_000, configurationId: 'configuration' }
-  const resolve = vi.fn().mockResolvedValue({ installation, evidence, action, spec })
+  const resolve = vi.fn().mockResolvedValue({ installation, evidence, spec })
   const spawn = vi.fn(spawnProcess)
   const invalidate = vi.fn(() => {
     resolve.mockResolvedValue({
       installation: exitCode ? installation : ready,
       evidence,
-      action: exitCode ? action : null,
       spec: exitCode ? spec : null
     })
   })
   const runner = new CodexMaintenanceRunner({ resolve, spawn, invalidate })
-  return { runner, resolve, spawn, invalidate, action }
+  return { runner, resolve, spawn, invalidate }
 }
 
 async function finished(runner: CodexMaintenanceRunner, id: string) {
@@ -65,7 +62,7 @@ describe('host-owned Codex maintenance runner', () => {
   it('streams stdout and stderr while running, then invalidates and checks installation on exit', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'codex-maintenance-stream-'))
     const releasePath = join(directory, 'release')
-    const f = fixture(0, true, releasePath)
+    const f = fixture(0, releasePath)
     const state = await f.runner.start()
     if (!state.job) {
       throw new Error('No job')
@@ -89,7 +86,7 @@ describe('host-owned Codex maintenance runner', () => {
     expect(result.job?.output).toContain('last chunk')
     expect(result.job?.exitCode).toBe(0)
     expect(result.installation.status).toBe('ready')
-    expect(result.action).toBeNull()
+    expect(result.canRun).toBe(false)
     expect(f.invalidate).toHaveBeenCalledTimes(1)
     expect(f.resolve.mock.invocationCallOrder.at(-1)).toBeGreaterThan(
       f.invalidate.mock.invocationCallOrder[0]
@@ -105,7 +102,7 @@ describe('host-owned Codex maintenance runner', () => {
     const result = await finished(f.runner, first.job.id)
     expect(result.job?.exitCode).toBe(17)
     expect(result.job?.output).toContain('last chunk')
-    expect(result.installation.status).toBe('unsupported')
+    expect(result.installation.status).toBe('missing')
     const retry = await f.runner.start()
     expect(retry.job?.id).not.toBe(first.job.id)
     if (!retry.job) {
@@ -132,16 +129,12 @@ describe('host-owned Codex maintenance runner', () => {
     const f = fixture()
     await f.runner.status()
     expect(f.spawn).not.toHaveBeenCalled()
-    f.resolve.mockResolvedValue({
-      installation: codexCliInstallation(true, '0.136.0'),
-      action: null,
-      spec: null
-    })
+    f.resolve.mockResolvedValue({ installation: codexCliInstallation(true, '0.136.0'), spec: null })
     await expect(f.runner.start()).rejects.toThrow('does not need')
     expect(f.spawn).not.toHaveBeenCalled()
   })
 
-  it('keeps the verified result when a status read started before the update finishes late', async () => {
+  it('keeps the verified result when a status read started before the install finishes late', async () => {
     const f = fixture()
     let completeStatus: (value: unknown) => void = () => {}
     f.resolve.mockImplementationOnce(
@@ -156,11 +149,7 @@ describe('host-owned Codex maintenance runner', () => {
       throw new Error('No job')
     }
     await finished(f.runner, started.job.id)
-    completeStatus({
-      installation: codexCliInstallation(true, '0.135.0'),
-      action: f.action,
-      spec: null
-    })
+    completeStatus({ installation: codexCliInstallation(false, null), spec: null })
     expect((await pending).installation.status).toBe('ready')
   })
 
@@ -168,7 +157,6 @@ describe('host-owned Codex maintenance runner', () => {
     const f = fixture()
     f.resolve.mockResolvedValue({
       installation: codexCliInstallation(false, null),
-      action: codexMaintenanceAction(codexCliInstallation(false, null), false),
       spec: {
         program: process.execPath,
         args: ['-e', "process.stdout.write('x'.repeat(200000) + 'final diagnostic')"]
@@ -190,7 +178,6 @@ describe('host-owned Codex maintenance runner', () => {
       const tail = 'y'.repeat(128 * 1024 - 1)
       f.resolve.mockResolvedValue({
         installation: codexCliInstallation(false, null),
-        action: codexMaintenanceAction(codexCliInstallation(false, null), false),
         spec: {
           program: process.execPath,
           args: ['-e', `process.stdout.write('prefix${character}' + 'y'.repeat(128 * 1024 - 1))`]
