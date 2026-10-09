@@ -14,6 +14,7 @@ import {
 import { applyPostgresSchema } from './postgres-schema-startup.js'
 import { POSTGRES_STATEMENT_STATS_MIGRATION } from './postgres-statement-stats.js'
 import { reportPostgresQueryFailure } from './postgres-query-failure.js'
+import { markRelayDatabaseError } from './relay-database-rejection-fence.js'
 import {
   CellInventoryHoldSamples,
   emptyCellInventoryHoldCounts,
@@ -908,11 +909,15 @@ class PostgresTransaction implements RelayDatabase {
       // Simple query stops at the first error, so any server error means COMMIT never ran:
       // retryable codes take the caller's normal rollback-and-retry path. A lost connection
       // leaves the outcome unknown, and nothing retries it.
+      markRelayDatabaseError(error)
       if (String((error as { code?: unknown }).code) !== '22012') {
         rememberPostgresTransactionPhase(error, sql)
         throw error
       }
-      await this.client.query('ROLLBACK')
+      await this.client.query('ROLLBACK').catch((rollbackError: unknown) => {
+        markRelayDatabaseError(rollbackError)
+        throw rollbackError
+      })
       this.state = 'rolled-back'
       return false
     }
@@ -952,6 +957,7 @@ class PostgresTransaction implements RelayDatabase {
       const result = await this.client.query(postgresSql(sql), params)
       return returnsRows(sql) ? (result.rows as SqlRow[]) : [{ changes: result.rowCount ?? 0 }]
     } catch (error) {
+      markRelayDatabaseError(error)
       rememberPostgresTransactionPhase(error, sql)
       throw error
     }
@@ -1090,6 +1096,7 @@ export class PostgresDatabase implements RelayDatabase {
       const result = await client.query(postgresSql(sql), params)
       return returnsRows(sql) ? (result.rows as SqlRow[]) : [{ changes: result.rowCount ?? 0 }]
     } catch (error) {
+      markRelayDatabaseError(error)
       reportPostgresQueryFailure({
         error,
         phase,
@@ -1143,6 +1150,7 @@ export class PostgresDatabase implements RelayDatabase {
         this.holds.recordLockTimeout(transaction.consumeLockTimeouts())
         return result
       } catch (error) {
+        markRelayDatabaseError(error)
         const open = transaction.open
         if (open) await client.query('ROLLBACK').catch(() => undefined)
         this.holds.recordUnavailable(transaction.consumeLockUnavailable())
@@ -1230,6 +1238,15 @@ export function readRelayDatabasePoolOldestWaitMs(database: RelayDatabase): numb
   return database instanceof PostgresDatabase ? database.poolOldestWaitMs() : 0
 }
 
+// pg-pool swaps its own listeners on checkout and release; this one never leaves, so no gap
+// between them (or a future pg-pool reordering) can turn a client `error` into a crash. The
+// idle and checked-out listeners do the logging.
+export function keepPostgresClientErrorsHandled(pool: Pick<pg.Pool, 'on'>): void {
+  pool.on('connect', (client) => {
+    client.on('error', () => undefined)
+  })
+}
+
 export function absorbPostgresIdleClientErrors(pool: Pick<pg.Pool, 'on'>): void {
   pool.on('error', () => {
     // Why: node-postgres removes failed idle clients itself; leaving `error`
@@ -1274,6 +1291,7 @@ async function applySchemaOnUntimedPool(
     idle_in_transaction_session_timeout: POSTGRES_IDLE_TRANSACTION_TIMEOUT_MS
   })
   absorbPostgresIdleClientErrors(pool)
+  keepPostgresClientErrorsHandled(pool)
   const database = new PostgresDatabase(pool)
   try {
     await applyPostgresSchema(
@@ -1328,6 +1346,7 @@ export async function openRelayDatabase(input: RelayDatabaseOpenInput): Promise<
       idle_in_transaction_session_timeout: POSTGRES_IDLE_TRANSACTION_TIMEOUT_MS
     })
     absorbPostgresIdleClientErrors(pool)
+    keepPostgresClientErrorsHandled(pool)
     database = new PostgresDatabase(pool)
   } else {
     mkdirSync(input.dataDir, { recursive: true })
