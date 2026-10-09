@@ -407,12 +407,8 @@ async function startOrcadRuntime(
  * supervision contract has to prevent, so systemd's `RestartPreventExitStatus` needs a code
  * that means "do not retry" and nothing else does.
  */
-export {
-  ORCAD_EXIT_OK,
-  ORCAD_EXIT_FAILED,
-  ORCAD_EXIT_CONFIGURATION,
-  resolveOrcadExitCode
-} from './orcad-exit-code'
+export { ORCAD_EXIT_OK, ORCAD_EXIT_FAILED, ORCAD_EXIT_CONFIGURATION } from './orcad-exit-code'
+export { resolveOrcadExitCode } from './orcad-exit-code'
 
 /** Bounded so a wedged transport cannot hold a supervisor's stop past its own deadline. */
 export { ORCAD_SHUTDOWN_DEADLINE_MS } from './orcad-lifecycle'
