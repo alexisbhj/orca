@@ -28,8 +28,6 @@ function runtimeStub(overrides: {
   composerSignal?: boolean
   /** What a fresh read finds in the terminal's foreground; default: the agent. */
   foreground?: 'agent' | 'shell' | 'unknown'
-  /** Whether the host can find the agent in front at all; false is a Windows host. */
-  hostProvesAgent?: boolean
 }) {
   const queued = [...(overrides.waits ?? [])]
   const waitForTerminal = vi.fn(
@@ -52,14 +50,13 @@ function runtimeStub(overrides: {
     waitForFreshWorkerComposer,
     sendTerminalAgentPrompt,
     readLaunchedAgentForeground,
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the deliverer reaches exactly these six runtime methods; anything else would throw rather than read a wrong value.
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the deliverer reaches exactly these five runtime methods; anything else would throw rather than read a wrong value.
     runtime: {
       waitForTerminal,
       waitForFreshWorkerComposer,
       sendTerminalAgentPrompt,
       readLaunchedAgentForeground,
-      subscribeToTerminalData,
-      launchedAgentHostProvesAgent: () => overrides.hostProvesAgent ?? true
+      subscribeToTerminalData
     } as unknown as Parameters<typeof deliverTerminalAgentLaunchPrompt>[0]['runtime']
   }
 }
@@ -256,56 +253,6 @@ describe('writing a launch prompt into a terminal agent', () => {
       })
     ).resolves.toBe(delivered)
     expect(stub.readLaunchedAgentForeground).toHaveBeenCalledWith('pty-1', 'claude')
-  })
-
-  it.each([
-    ['writes when a host that cannot find the agent in front cannot tell', 'unknown', true],
-    ['still refuses when that host proves the shell is in front', 'shell', false]
-  ] as const)('with write-unless-shell, %s', async (_label, foreground, delivered) => {
-    const stub = runtimeStub({ composerSignal: true, foreground, hostProvesAgent: false })
-    stub.sendTerminalAgentPrompt.mockImplementation(async (handle, _text, options) => {
-      const { beforeWrite } = options
-      if (typeof beforeWrite === 'function') {
-        await beforeWrite('pty-1')
-      }
-      return { handle, accepted: true, bytesWritten: 12 }
-    })
-
-    await expect(
-      deliverTerminalAgentLaunchPrompt({
-        runtime: stub.runtime,
-        handle: 'term_1',
-        agent: 'goose',
-        freshLaunch: true,
-        text: 'do the thing',
-        unprovableHost: 'write-unless-shell'
-      })
-    ).resolves.toBe(delivered)
-  })
-
-  it('refuses an unknown foreground on that host by default', async () => {
-    const stub = runtimeStub({
-      composerSignal: true,
-      foreground: 'unknown',
-      hostProvesAgent: false
-    })
-    stub.sendTerminalAgentPrompt.mockImplementation(async (handle, _text, options) => {
-      const { beforeWrite } = options
-      if (typeof beforeWrite === 'function') {
-        await beforeWrite('pty-1')
-      }
-      return { handle, accepted: true, bytesWritten: 12 }
-    })
-
-    await expect(
-      deliverTerminalAgentLaunchPrompt({
-        runtime: stub.runtime,
-        handle: 'term_1',
-        agent: 'goose',
-        freshLaunch: true,
-        text: 'do the thing'
-      })
-    ).resolves.toBe(false)
   })
 
   it('checks the foreground once for the paste, its Enter and the second Enter', async () => {

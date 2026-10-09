@@ -5,8 +5,8 @@
  * default says. What stays the automation's own is in the factories: a new-per-run workspace is
  * created agent-first from the automation's create args, and an existing workspace gets a terminal
  * titled with the run. Both fold an argv agent's prompt into its command at any length, as the
- * automation always has; a post-start agent's prompt is the executor's to deliver once its composer
- * is ready.
+ * automation always has. A post-start agent's prompt goes out through the follow-up writer the create
+ * always used, for parity: the executor's composer readiness misses slow starts (a follow-up fixes it).
  */
 
 import type {
@@ -15,8 +15,8 @@ import type {
 } from '../agent-launch/agent-launch-execution'
 import { executeAgentLaunch } from '../agent-launch/agent-launch-executor'
 import type { Automation, AutomationRun } from '../../shared/automations-types'
+import { TUI_AGENT_CONFIG } from '../../shared/tui-agent-config'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
-import { deliverTerminalAgentLaunchPrompt } from '../runtime/rpc/methods/agent-launch-terminal-prompt'
 import type { HeadlessAutomationDispatchLaunch } from './headless-dispatch'
 import { buildHeadlessAutomationWorktreeCreateArgs } from './headless-workspace-create'
 import type { AutomationRunTargetResult } from './run-target-resolution'
@@ -116,15 +116,11 @@ export async function launchHeadlessAutomationAgent(
           ...(startupPrompt ? { promptRodeLaunchCommand: true } : {})
         }
       },
-      deliverTerminalPrompt: ({ handle, freshLaunch, prompt }) =>
-        deliverTerminalAgentLaunchPrompt({
-          runtime,
-          handle,
-          agent,
-          freshLaunch,
-          text: prompt.text,
-          // Automations wrote on Windows hosts before, as worker briefs do: only a proven shell refuses.
-          unprovableHost: 'write-unless-shell'
+      // Only fresh launches reach here: an automation never reuses a terminal.
+      deliverTerminalPrompt: ({ handle, prompt }) =>
+        runtime.deliverStartupFollowup(handle, {
+          expectedProcess: TUI_AGENT_CONFIG[agent].expectedProcess,
+          prompt: prompt.text
         })
     }
   }

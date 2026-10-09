@@ -102,8 +102,6 @@ export async function deliverTerminalAgentLaunchPrompt(args: {
   /** False for a reused terminal, whose agent was already running before this launch. */
   freshLaunch: boolean
   text: string
-  /** The write guard's policy on a host that cannot find the agent in front; refuses by default. */
-  unprovableHost?: 'refuse' | 'write-unless-shell'
   clock?: ReadinessClock
 }): Promise<boolean> {
   if (args.text.trim().length === 0) {
@@ -111,9 +109,7 @@ export async function deliverTerminalAgentLaunchPrompt(args: {
   }
   // Before the paste and again before Enter, for a reused pane too: a ready signal can come from a
   // shell whose agent exited, so only a read that finds the agent in front lets the text through.
-  const guard = createLaunchedAgentWriteGuard(args.runtime, args.agent, {
-    unprovableHost: args.unprovableHost
-  })
+  const guard = createLaunchedAgentWriteGuard(args.runtime, args.agent)
   try {
     const wait = await waitThroughBlockingPrompts(
       args.runtime,

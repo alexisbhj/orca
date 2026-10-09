@@ -16,7 +16,7 @@ function createPane(initial: { idle: boolean; tail: string[]; idleEdgeOnly?: boo
   // The real runtime may settle tui-idle once per idle edge: an already-idle shell only times out.
   let edgeSpent = false
   let tail = initial.tail
-  let rows: { receivedAt: number; sessionBoundary?: boolean }[] = []
+  let rows: { receivedAt: number }[] = []
   const waiters = new Set<() => void>()
   const runtime: AutomationRunTerminalHost = {
     getTerminalHandleForPaneKey: () => HANDLE,
@@ -51,7 +51,6 @@ function createPane(initial: { idle: boolean; tail: string[]; idleEdgeOnly?: boo
     runtime,
     agentRows: () => rows,
     report: (receivedAt = Date.now()) => (rows = [{ receivedAt }]),
-    reportSessionStart: () => (rows = [{ receivedAt: Date.now(), sessionBoundary: true }]),
     setTail: (next: string[]) => (tail = next),
     becomeIdle: () => {
       idle = true
@@ -114,18 +113,6 @@ describe('observing a run with agent evidence', () => {
     await vi.advanceTimersByTimeAsync(1_000)
     pane.report()
     pane.becomeIdle()
-    await run.promise
-    expect(run.settled).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }))
-  })
-
-  it('does not complete on a session-start row, which lands before the prompt', async () => {
-    const pane = createPane({ idle: true, tail: ['> '] })
-    const run = observe(pane)
-    pane.reportSessionStart()
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(run.settled).not.toHaveBeenCalled()
-    pane.report()
-    await vi.advanceTimersByTimeAsync(2_000)
     await run.promise
     expect(run.settled).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }))
   })

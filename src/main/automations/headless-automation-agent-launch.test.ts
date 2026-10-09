@@ -1,10 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const delivery = vi.hoisted(() => ({
-  deliverTerminalAgentLaunchPrompt: vi.fn(async (_args: unknown) => true)
-}))
-vi.mock('../runtime/rpc/methods/agent-launch-terminal-prompt', () => delivery)
-
+import { describe, expect, it, vi } from 'vitest'
 import { launchHeadlessAutomationAgent } from './headless-automation-agent-launch'
 
 const CHAT_DEFAULT_ON = { experimentalNativeChat: true }
@@ -34,7 +28,10 @@ function harness(options: { startupTerminal?: Record<string, unknown> | null } =
       worktreeId: 'wt-1',
       title: 'Nightly'
     })),
-    showManagedWorktree: vi.fn(async () => ({ displayName: 'repo' }))
+    showManagedWorktree: vi.fn(async () => ({ displayName: 'repo' })),
+    deliverStartupFollowup: vi.fn(
+      async (_handle: string, _followup: { expectedProcess: string; prompt: string }) => true
+    )
   }
   return runtime
 }
@@ -68,11 +65,6 @@ function launch(runtime: ReturnType<typeof harness>, overrides: Record<string, u
 }
 
 describe('headless automation agent launch', () => {
-  beforeEach(() => {
-    delivery.deliverTerminalAgentLaunchPrompt.mockReset()
-    delivery.deliverTerminalAgentLaunchPrompt.mockResolvedValue(true)
-  })
-
   it('starts an argv agent in an existing workspace with the prompt on its command', async () => {
     const runtime = harness()
 
@@ -84,7 +76,7 @@ describe('headless automation agent launch', () => {
       title: 'Nightly',
       extraAgentArgs: '--model opus'
     })
-    expect(delivery.deliverTerminalAgentLaunchPrompt).not.toHaveBeenCalled()
+    expect(runtime.deliverStartupFollowup).not.toHaveBeenCalled()
     expect(runtime.getStructuredAgentSessionCreateSupport).not.toHaveBeenCalled()
     expect(launched).toEqual({
       workspaceId: 'wt-1',
@@ -99,7 +91,7 @@ describe('headless automation agent launch', () => {
   it('starts a post-start agent bare and delivers its prompt once, after the terminal is recorded', async () => {
     const runtime = harness()
     let finishDelivery: (delivered: boolean) => void = () => {}
-    delivery.deliverTerminalAgentLaunchPrompt.mockImplementation(
+    runtime.deliverStartupFollowup.mockImplementation(
       () => new Promise<boolean>((resolve) => (finishDelivery = resolve))
     )
 
@@ -111,16 +103,11 @@ describe('headless automation agent launch', () => {
       'id:wt-1',
       expect.objectContaining({ agent: 'aider', prompt: '' })
     )
-    expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledTimes(1)
-    expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        handle: 'term_existing',
-        agent: 'aider',
-        freshLaunch: true,
-        text: 'fix the flaky test',
-        unprovableHost: 'write-unless-shell'
-      })
-    )
+    expect(runtime.deliverStartupFollowup).toHaveBeenCalledTimes(1)
+    expect(runtime.deliverStartupFollowup).toHaveBeenCalledWith('term_existing', {
+      expectedProcess: 'aider',
+      prompt: 'fix the flaky test'
+    })
     finishDelivery(true)
   })
 
@@ -148,7 +135,7 @@ describe('headless automation agent launch', () => {
     expect(args).not.toHaveProperty('awaitTerminalProvisioning')
     expect(args).not.toHaveProperty('observeSetupCompletion')
     expect(runtime.launchAgentTerminal).not.toHaveBeenCalled()
-    expect(delivery.deliverTerminalAgentLaunchPrompt).not.toHaveBeenCalled()
+    expect(runtime.deliverStartupFollowup).not.toHaveBeenCalled()
     expect(launched).toEqual({
       workspaceId: 'repo-1::/wt/auto',
       workspaceDisplayName: 'auto-nightly',
@@ -165,15 +152,11 @@ describe('headless automation agent launch', () => {
     await launch(runtime, { agentId: 'goose', workspaceMode: 'new_per_run', workspaceId: null })
 
     expect(runtime.createManagedWorktree.mock.calls[0]![0]).not.toHaveProperty('startupPrompt')
-    expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledTimes(1)
-    expect(delivery.deliverTerminalAgentLaunchPrompt).toHaveBeenCalledWith(
-      expect.objectContaining({
-        handle: 'term_new',
-        agent: 'goose',
-        text: 'fix the flaky test',
-        unprovableHost: 'write-unless-shell'
-      })
-    )
+    expect(runtime.deliverStartupFollowup).toHaveBeenCalledTimes(1)
+    expect(runtime.deliverStartupFollowup).toHaveBeenCalledWith('term_new', {
+      expectedProcess: 'goose',
+      prompt: 'fix the flaky test'
+    })
   })
 
   it('fails the run with the create warning when no agent terminal started, without a second one', async () => {
@@ -194,13 +177,13 @@ describe('headless automation agent launch', () => {
       'id:wt-1',
       expect.objectContaining({ prompt: '' })
     )
-    expect(delivery.deliverTerminalAgentLaunchPrompt).not.toHaveBeenCalled()
+    expect(runtime.deliverStartupFollowup).not.toHaveBeenCalled()
   })
 
   it('logs a failure after the terminal was recorded instead of dropping it', async () => {
     const runtime = harness()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    delivery.deliverTerminalAgentLaunchPrompt.mockRejectedValue(new Error('writer broke'))
+    runtime.deliverStartupFollowup.mockRejectedValue(new Error('writer broke'))
 
     const launched = await launch(runtime, { agentId: 'aider' })
     await vi.waitFor(() =>
