@@ -57,7 +57,10 @@ afterEach(() => {
   vi.resetModules()
 })
 
-async function startQuit(flushFinalOrThrowAsync: () => Promise<void>) {
+async function startQuit(
+  flushFinalOrThrowAsync: () => Promise<void>,
+  notificationFlush: () => Promise<void> = async () => {}
+) {
   vi.resetModules()
   vi.useFakeTimers()
   const app = Object.assign(new EventEmitter(), { quit: vi.fn() })
@@ -67,7 +70,21 @@ async function startQuit(flushFinalOrThrowAsync: () => Promise<void>) {
     freezeWritesAsync: settled()
   }
   const profileStateAdmission: typeof admission | undefined = admission
-  const state = { isQuitting: false, watcherShutdownDone: true, store, profileStateAdmission }
+  const runtime = {
+    getOffscreenBrowserBackend: () => undefined,
+    getAgentBrowserBridge: () => undefined,
+    getEmulatorBridge: () => undefined,
+    disposeSkillUploadSessions: settled(),
+    getRuntimeId: () => undefined,
+    flushMobileNotificationPersistence: vi.fn(notificationFlush)
+  }
+  const state = {
+    isQuitting: false,
+    watcherShutdownDone: true,
+    store,
+    profileStateAdmission,
+    runtime
+  }
   vi.doMock('electron', () => ({ app }))
   vi.doMock('./main-process-state', () => ({ mainProcessState: state }))
   for (const [moduleName, exports] of Object.entries(dependencies)) {
@@ -80,7 +97,7 @@ async function startQuit(flushFinalOrThrowAsync: () => Promise<void>) {
   installMainProcessQuitHandlers()
   app.emit('before-quit', { defaultPrevented: false })
   app.emit('will-quit', { preventDefault: vi.fn() })
-  return { app, admission, store, state }
+  return { app, admission, store, state, runtime }
 }
 
 it('quits at the teardown deadline without releasing admission while the writer is pending', async () => {
@@ -104,4 +121,30 @@ it('releases admission only after the final flush and freeze complete', async ()
   expect(store.freezeWritesAsync).toHaveBeenCalledOnce()
   expect(admission.release).toHaveBeenCalledOnce()
   expect(app.quit).toHaveBeenCalledOnce()
+})
+
+it('waits for pending dismissal persistence before orderly quit', async () => {
+  const pending = Promise.withResolvers<void>()
+  const { app, runtime } = await startQuit(
+    async () => {},
+    () => pending.promise
+  )
+  await vi.advanceTimersByTimeAsync(0)
+  expect(runtime.flushMobileNotificationPersistence).toHaveBeenCalledOnce()
+  expect(app.quit).not.toHaveBeenCalled()
+  pending.resolve()
+  await vi.advanceTimersByTimeAsync(0)
+  expect(app.quit).toHaveBeenCalledOnce()
+})
+
+it('bounds a stalled dismissal flush with the existing teardown deadline', async () => {
+  const { app } = await startQuit(
+    async () => {},
+    () => new Promise<void>(() => {})
+  )
+  await vi.advanceTimersByTimeAsync(WILL_QUIT_TEARDOWN_DEADLINE_MS)
+  expect(app.quit).toHaveBeenCalledOnce()
+  expect(console.warn).toHaveBeenCalledWith('[shutdown] Quit teardown deadline reached', {
+    pendingTeardowns: ['notification-dismissals']
+  })
 })
