@@ -55,8 +55,7 @@ async function readStructuredAgentSessionOptionsAtRest(
   // account's default; a built-in list's default is a guess, so with none the client keeps its own.
   const model =
     saved.model ??
-    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id) ??
-    ''
+    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id)
   // As a live child answers: the pick, else the model's default where the agent reports that.
   const effort =
     saved.effort ??
@@ -69,7 +68,7 @@ async function readStructuredAgentSessionOptionsAtRest(
       ? { fastModeSupport: catalog.fastModeSupport }
       : {}),
     current: {
-      model,
+      ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       ...(typeof fastMode === 'boolean' ? { fastMode } : {})
     }
@@ -148,6 +147,8 @@ export async function readStructuredAgentSessionOptions(
   const phase = store.getRecord(sessionId)?.rewind?.phase
   const agent = session.params.provider
   const capabilities = agents.capabilities(agent)
+  const floor = session.journal.context.floor()
+  const contextFloor = floor ? { contextFloor: floor } : {}
   return {
     ...options,
     rewind:
@@ -158,9 +159,11 @@ export async function readStructuredAgentSessionOptions(
             reason: 'unsupported'
           }),
     conversationCommands: capabilities?.compact ? ['clear', 'compact'] : ['clear'],
-    ...(capabilities?.threadGoal ? { threadGoal: { current: session.journal.threadGoal() } } : {}),
+    ...(capabilities?.threadGoal
+      ? { threadGoal: { current: session.journal.threadGoal(), ...contextFloor } }
+      : {}),
     ...(capabilities?.contextUsage
-      ? { contextUsage: { current: session.journal.contextUsage() } }
+      ? { contextUsage: { current: session.journal.contextUsage(), ...contextFloor } }
       : {})
   }
 }
