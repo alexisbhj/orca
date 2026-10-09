@@ -77,7 +77,7 @@ export function buildPersistedUnifiedTabSessionData(
   ])
 
   for (const worktreeId of worktreeIds) {
-    // Why: a chat-visual tab is in memory only, and older builds reject its kind when parsing.
+    // Why: chat-visual tabs are in memory only; the saved-session schema has no such kind.
     const tabs = (sourceTabs[worktreeId] ?? []).filter((tab) => tab.contentType !== 'chat-visual')
     if (tabs.length === 0) {
       continue

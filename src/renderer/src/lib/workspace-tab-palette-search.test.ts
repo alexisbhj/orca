@@ -323,7 +323,13 @@ describe('workspace-tab-palette-search', () => {
       relativePath: 'CI / Typecheck',
       mode: 'check-details'
     })
-    const files = [editorFile, diffFile, conflictReviewFile, checkDetailsFile]
+    const chatVisualFile = makeOpenFile({
+      id: 'wt-1::chat-visual::session-1::latency.html',
+      filePath: 'wt-1::chat-visual::session-1::latency.html',
+      relativePath: 'Latency by region',
+      mode: 'chat-visual'
+    })
+    const files = [editorFile, diffFile, conflictReviewFile, checkDetailsFile, chatVisualFile]
     const entries = buildEntries({
       unifiedTabsByWorktree: {
         'wt-1': [
@@ -346,6 +352,11 @@ describe('workspace-tab-palette-search', () => {
             id: 'check-tab',
             entityId: checkDetailsFile.id,
             contentType: 'check-details'
+          }),
+          makeUnifiedTab({
+            id: 'visual-tab',
+            entityId: chatVisualFile.id,
+            contentType: 'chat-visual'
           })
         ]
       },
@@ -354,7 +365,7 @@ describe('workspace-tab-palette-search', () => {
         'wt-1': [
           makeGroup({
             activeTabId: 'editor-tab',
-            tabOrder: ['editor-tab', 'diff-tab', 'conflict-tab', 'check-tab']
+            tabOrder: ['editor-tab', 'diff-tab', 'conflict-tab', 'check-tab', 'visual-tab']
           })
         ]
       }
@@ -364,11 +375,13 @@ describe('workspace-tab-palette-search', () => {
       'editor',
       'diff',
       'conflict-review',
-      'check-details'
+      'check-details',
+      'chat-visual'
     ])
     expect(searchWorkspaceTabs(entries, 'staged diff')[0]?.tabId).toBe('diff-tab')
     expect(searchWorkspaceTabs(entries, 'conflict review')[0]?.tabId).toBe('conflict-tab')
     expect(searchWorkspaceTabs(entries, 'typecheck')[0]?.tabId).toBe('check-tab')
+    expect(searchWorkspaceTabs(entries, 'latency')[0]?.tabId).toBe('visual-tab')
   })
 
   it('attaches live, retained, and sleeping agent metadata only to matching terminal tabs', () => {

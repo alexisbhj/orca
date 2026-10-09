@@ -2,6 +2,7 @@ import type { OpenFile } from '@/store/slices/editor'
 import type { GitBranchChangeEntry } from '../../../../shared/git-diff-compare-types'
 import type { GitStatusEntry } from '../../../../shared/git-status-types'
 import { getEditorDisplayLabel } from './editor-labels'
+import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
 
 export type EditorHeaderCopyState = {
   copyText: string | null
@@ -16,7 +17,7 @@ export type EditorHeaderOpenFileState = {
 
 /** Whether the panel shows its own path header; virtual tabs name the document themselves. */
 export function shouldShowEditorPanelHeader(file: OpenFile, isCombinedDiff: boolean): boolean {
-  return !isCombinedDiff && file.mode !== 'check-details' && file.mode !== 'chat-visual'
+  return !isCombinedDiff && !isVirtualEditorFile(file)
 }
 
 export function getEditorHeaderCopyState(file: OpenFile): EditorHeaderCopyState {

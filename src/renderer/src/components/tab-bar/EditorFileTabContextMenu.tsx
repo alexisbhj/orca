@@ -31,6 +31,7 @@ import {
 } from '@/lib/reveal-in-file-manager'
 import { TabWorkspaceLayoutMenuSection } from './TabWorkspaceLayoutMenuSection'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
+import { isVirtualEditorFile } from '@/store/slices/editor/tabs/editor-tab-content-type'
 
 type EditorFileTabContextMenuProps = {
   open: boolean
@@ -188,55 +189,58 @@ export function EditorFileTabContextMenu({
             'Close Tabs To The Left'
           )}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        {canShowMarkdownPreview ? (
+        {/* Why: virtual editor tabs have a synthetic id, not a path to copy or reveal. */}
+        {isVirtualEditorFile(file) ? null : (
           <>
+            <DropdownMenuSeparator />
+            {canShowMarkdownPreview ? (
+              <>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    onActivate()
+                    onOpenMarkdownPreview(
+                      {
+                        filePath: file.filePath,
+                        relativePath: file.relativePath,
+                        worktreeId: file.worktreeId,
+                        runtimeEnvironmentId: file.runtimeEnvironmentId,
+                        language: resolvedLanguage
+                      },
+                      { sourceFileId: file.id }
+                    )
+                  }}
+                >
+                  <Eye className="size-3.5" />
+                  {translate(
+                    'auto.components.tab.bar.EditorFileTabContextMenu.bfd5797ef4',
+                    'Open Markdown Preview'
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            ) : null}
             <DropdownMenuItem
               onSelect={() => {
-                onActivate()
-                onOpenMarkdownPreview(
-                  {
-                    filePath: file.filePath,
-                    relativePath: file.relativePath,
-                    worktreeId: file.worktreeId,
-                    runtimeEnvironmentId: file.runtimeEnvironmentId,
-                    language: resolvedLanguage
-                  },
-                  { sourceFileId: file.id }
-                )
+                void window.api.ui.writeClipboardText(file.filePath)
               }}
             >
-              <Eye className="size-3.5" />
+              <Copy className="size-3.5" />
               {translate(
-                'auto.components.tab.bar.EditorFileTabContextMenu.bfd5797ef4',
-                'Open Markdown Preview'
+                'auto.components.tab.bar.EditorFileTabContextMenu.5b85754786',
+                'Copy Path'
               )}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        ) : null}
-        <DropdownMenuItem
-          onSelect={() => {
-            void window.api.ui.writeClipboardText(file.filePath)
-          }}
-        >
-          <Copy className="size-3.5" />
-          {translate('auto.components.tab.bar.EditorFileTabContextMenu.5b85754786', 'Copy Path')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => {
-            void window.api.ui.writeClipboardText(file.relativePath)
-          }}
-        >
-          <Copy className="size-3.5" />
-          {translate(
-            'auto.components.tab.bar.EditorFileTabContextMenu.52ce4f4605',
-            'Copy Relative Path'
-          )}
-        </DropdownMenuItem>
-        {/* Why: virtual editor tabs use synthetic ids instead of on-disk paths. */}
-        {file.mode !== 'check-details' && file.mode !== 'chat-visual' && (
-          <>
+            <DropdownMenuItem
+              onSelect={() => {
+                void window.api.ui.writeClipboardText(file.relativePath)
+              }}
+            >
+              <Copy className="size-3.5" />
+              {translate(
+                'auto.components.tab.bar.EditorFileTabContextMenu.52ce4f4605',
+                'Copy Relative Path'
+              )}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               disabled={revealBlocked}

@@ -19,13 +19,13 @@ export function NativeChatVisualTab({
 
   if (retired || state.status === 'unavailable') {
     return (
-      <div className="px-4">
+      <div className="min-w-0 flex-1 px-4">
         <NativeChatVisualUnavailable />
       </div>
     )
   }
   return (
-    <div ref={boxRef} className="flex h-full min-h-0 flex-col">
+    <div ref={boxRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
       {state.status === 'ready' ? (
         <NativeChatVisualFrame
           document={state.document}

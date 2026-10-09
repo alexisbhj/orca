@@ -1,4 +1,5 @@
 import type { OpenFile } from '@/store/slices/editor'
+import type { EditorTabContentType } from '@/store/slices/editor/tabs/editor-tab-content-type'
 import type { PaletteDocument } from './palette-match/palette-document'
 import type { Tab, TabGroup, WorkspaceVisibleTabType } from '../../../shared/tab-types'
 import type { PaneForegroundAgentEntry } from '@/store/slices/pane-foreground-agent'
@@ -13,12 +14,7 @@ export {
   type WorkspaceTabPaletteSearchResult
 } from './workspace-tab-palette-results'
 
-export type WorkspaceTabContentType =
-  | 'terminal'
-  | 'editor'
-  | 'diff'
-  | 'conflict-review'
-  | 'check-details'
+export type WorkspaceTabContentType = 'terminal' | EditorTabContentType
 
 export type SearchableWorkspaceTab = {
   tab: Tab & { contentType: WorkspaceTabContentType }

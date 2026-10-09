@@ -3,8 +3,6 @@ import type { MarkdownViewMode, OpenFile, PendingEditorReveal } from '@/store/sl
 import type { GitDiffResult } from '../../../../shared/git-diff-compare-types'
 import type { GitStatusEntry } from '../../../../shared/git-status-types'
 import { CheckRunDetailsPanel } from './CheckRunDetailsPanel'
-import { NativeChatVisualTab } from '../native-chat/NativeChatVisualTab'
-import { NativeChatVisualUnavailable } from '../native-chat/NativeChatInlineVisual'
 import { CombinedDiffViewer, MarkdownPreview } from './editor-lazy-views'
 import { EditorConflictReviewSurface } from './EditorConflictReviewSurface'
 import { EditorDiffFileSurface } from './EditorDiffFileSurface'
@@ -94,7 +92,7 @@ export function EditorContent({
   handleSave: (content: string) => Promise<boolean>
   handleSaveForFile: (file: OpenFile, content: string) => Promise<boolean>
   reloadContent: (file: OpenFile) => void
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const editorViewStateKey =
     viewStateScopeId === activeFile.id
       ? activeFile.filePath
@@ -155,12 +153,8 @@ export function EditorContent({
   }
 
   if (activeFile.mode === 'chat-visual') {
-    // Why key: a different visual is a different frame, never a reused one.
-    return activeFile.chatVisual ? (
-      <NativeChatVisualTab key={activeFile.id} visual={activeFile.chatVisual} />
-    ) : (
-      <NativeChatVisualUnavailable />
-    )
+    // Why: ChatVisualPaneOverlayLayer owns visual frames so switching tabs never reloads one.
+    return null
   }
 
   if (activeFile.mode === 'conflict-review') {

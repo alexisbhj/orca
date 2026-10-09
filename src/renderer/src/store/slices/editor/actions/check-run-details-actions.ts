@@ -15,6 +15,7 @@ import { getSettingsForWorktreeRuntimeOwner } from '@/lib/worktree-runtime-owner
 import { findWorktreeById, getRepoIdFromWorktreeId } from '../../worktree-helpers'
 import type { OpenFile } from '../types/open-file'
 import { openWorkspaceEditorItem } from '../tabs/workspace-editor-item'
+import { buildEditorActiveResult } from '../tabs/editor-open-target-group'
 
 export function createCheckRunDetailsActions(
   set: EditorSet,
@@ -57,10 +58,7 @@ export function createCheckRunDetailsActions(
                   }
                 : f
             ),
-            activeFileId: id,
-            activeTabType: 'editor',
-            activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
-            activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+            ...buildEditorActiveResult(s, worktreeId, id)
           }
         }
 
@@ -77,10 +75,7 @@ export function createCheckRunDetailsActions(
 
         return {
           openFiles: [...s.openFiles, newFile],
-          activeFileId: id,
-          activeTabType: 'editor',
-          activeFileIdByWorktree: { ...s.activeFileIdByWorktree, [worktreeId]: id },
-          activeTabTypeByWorktree: { ...s.activeTabTypeByWorktree, [worktreeId]: 'editor' }
+          ...buildEditorActiveResult(s, worktreeId, id)
         }
       })
       void openWorkspaceEditorItem(get(), id, worktreeId, label, 'check-details')

@@ -208,7 +208,7 @@ async function renderMenu(
     repoConnectionId?: string | null
     runtimeEnvironmentId?: string | null
     externalSshTargetId?: string
-    mode?: 'edit' | 'check-details'
+    mode?: 'edit' | 'check-details' | 'chat-visual'
   } = {}
 ): Promise<unknown> {
   const { runtimeEnvironmentId, externalSshTargetId, mode = 'edit', ...props } = overrides
@@ -400,7 +400,27 @@ describe('EditorFileTabContextMenu reveal in file manager', () => {
     expect(extractText(reveal.props.children)).toContain('Local only')
   })
 
-  it('offers no reveal for a check-details tab, which has no file on disk', async () => {
-    expect(await renderRevealItem({ mode: 'check-details' })).toBeUndefined()
+  it.each(['check-details', 'chat-visual'] as const)(
+    'offers no path actions for a %s tab, which has no file on disk',
+    async (mode) => {
+      const tree = expandNode(await renderMenu({ mode }))
+      const labels = findElementsByType(tree, 'DropdownMenuItem').map((item) =>
+        extractText(item.props.children)
+      )
+
+      expect(labels.some((label) => /Copy Path|Copy Relative Path|Reveal in/.test(label))).toBe(
+        false
+      )
+      expect(labels.some((label) => label.includes('Close Tabs To The Left'))).toBe(true)
+    }
+  )
+
+  it('offers path actions for a file tab', async () => {
+    const tree = expandNode(await renderMenu())
+    const labels = findElementsByType(tree, 'DropdownMenuItem').map((item) =>
+      extractText(item.props.children)
+    )
+
+    expect(labels.filter((label) => /Copy Path|Copy Relative Path/.test(label))).toHaveLength(2)
   })
 })
