@@ -44,7 +44,14 @@ async function stopCardRecording(recording: JSHandle<CardRecording>): Promise<Ca
   return frames
 }
 
-test('whole-tab hover cards slide immediately between neighboring tabs', async ({ orcaPage }) => {
+test('whole-tab hover cards slide immediately between neighboring tabs', async ({
+  electronApp,
+  orcaPage
+}) => {
+  // Hidden Linux windows otherwise pause the animation frames this test samples.
+  const window = await electronApp.browserWindow(orcaPage)
+  await window.evaluate((window) => window.webContents.setBackgroundThrottling(false))
+  await window.dispose()
   await waitForSessionReady(orcaPage)
   await waitForActiveWorktree(orcaPage)
   await ensureTerminalVisible(orcaPage)
