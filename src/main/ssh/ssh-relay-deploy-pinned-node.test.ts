@@ -426,7 +426,7 @@ describe('deployAndLaunchRelay on the pinned Node runtime', () => {
     })
     vi.mocked(planHostNodeAddonRelay)
       .mockReset()
-      .mockRejectedValueOnce(new PinnedRelayFallbackError('host_node_missing', 'no Node 18+'))
+      .mockRejectedValueOnce(new PinnedRelayFallbackError('host_node_missing', 'no Node 24+'))
     vi.mocked(resolveRemoteNodePath).mockRejectedValueOnce(
       new RemoteNodeNotFoundError('Node.js not found on remote host.')
     )
@@ -814,7 +814,7 @@ describe('deployAndLaunchRelay on the pinned Node runtime', () => {
     answerHostNodeLaunchByCommand()
     vi.mocked(planHostNodeAddonRelay)
       .mockReset()
-      .mockRejectedValueOnce(new PinnedRelayFallbackError('host_node_missing', 'no Node 18+'))
+      .mockRejectedValueOnce(new PinnedRelayFallbackError('host_node_missing', 'no Node 24+'))
 
     const result = await deployAndLaunchRelay(makeConnection(), undefined, undefined, 'target-1')
 
