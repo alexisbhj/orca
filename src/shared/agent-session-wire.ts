@@ -237,8 +237,9 @@ export type AgentSessionSubscribeEvent =
  *  from the journal so no client has to replay a transcript to learn whether a
  *  turn is running. Additive surface: an older host has no such method. */
 export type AgentSessionStatusSummary = {
-  /** The chat's saved permission mode; absent from older hosts and agents without one. */
-  permissionMode?: AgentChatPermissionMode
+  /** The new-chat permission default the chat was created under (an older record's saved mode),
+   *  which decides whether an empty chat can stand in for a new one. Absent from older hosts. */
+  permissionDefaultAtCreation?: AgentChatPermissionMode
   rewindBlockedReason?: AgentSessionRewindReason
   sessionId: string
   workspaceId: string

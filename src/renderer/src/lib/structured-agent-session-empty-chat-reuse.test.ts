@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => {
     activateTab: vi.fn(),
     focusGroup: vi.fn(),
     statusBySession: new Map<string, AgentSessionStatusSummary['status']>(),
-    permissionBySession: new Map<string, AgentSessionStatusSummary['permissionMode']>(),
+    defaultBySession: new Map<string, AgentSessionStatusSummary['permissionDefaultAtCreation']>(),
     liveSessions: new Set<string>(),
     admitted
   }
@@ -29,6 +29,7 @@ type StoreState = {
   groupsByWorktree: Record<string, TabGroup[]>
   activeGroupIdByWorktree: Record<string, string>
   nativeChatLaunchDraftByTabId: Record<string, { text: string; adopted?: boolean }>
+  settings?: { nativeChatPermissionMode: string; activeRuntimeEnvironmentId: string | null }
 }
 /** A workspace split into a left (active) and a right tab group. */
 function emptyStoreState(): StoreState {
@@ -91,8 +92,15 @@ vi.mock('@/runtime/structured-agent-session-status-feed', () => ({
     getSnapshot: () =>
       new Map(
         [...mocks.statusBySession].map(([sessionId, status]) => {
-          const permissionMode = mocks.permissionBySession.get(sessionId)
-          return [sessionId, { sessionId, status, ...(permissionMode ? { permissionMode } : {}) }]
+          const permissionDefaultAtCreation = mocks.defaultBySession.get(sessionId)
+          return [
+            sessionId,
+            {
+              sessionId,
+              status,
+              ...(permissionDefaultAtCreation ? { permissionDefaultAtCreation } : {})
+            }
+          ]
         })
       )
   })
@@ -264,7 +272,7 @@ beforeEach(() => {
     discardStructuredLaunchPrompts(sessionId)
   }
   mocks.statusBySession.clear()
-  mocks.permissionBySession.clear()
+  mocks.defaultBySession.clear()
   mocks.liveSessions.clear()
   delete mocks.admitted.seed
   store.state = emptyStoreState()
@@ -431,7 +439,7 @@ describe('a second "new chat" after its host changed the new-chat permission def
     mocks.admitted.seed = { permissionMode: 'ask' }
     pick('plus-pick-1')
     await publishIdle(first.sessionId)
-    mocks.permissionBySession.set(first.sessionId, 'ask')
+    mocks.defaultBySession.set(first.sessionId, 'ask')
     mocks.admitted.seed = { permissionMode: 'bypass' }
 
     expect(pick('plus-pick-2').sessionId).toBe(second.sessionId)
@@ -443,7 +451,7 @@ describe('a second "new chat" after its host changed the new-chat permission def
   it('reuses the idle empty chat already in the default', async () => {
     pick('plus-pick-1')
     await publishIdle(first.sessionId)
-    mocks.permissionBySession.set(first.sessionId, 'bypass')
+    mocks.defaultBySession.set(first.sessionId, 'bypass')
     mocks.admitted.seed = { permissionMode: 'bypass' }
 
     expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
@@ -458,11 +466,32 @@ describe('a second "new chat" after its host changed the new-chat permission def
   })
 
   // An older host has no new-chat default, so its empty chat is reused as before.
-  it('reuses the idle empty chat when the host names no default', async () => {
+  it('reuses the idle empty chat when no new-chat default is known', async () => {
     pick('plus-pick-1')
     await publishIdle(first.sessionId)
-    mocks.permissionBySession.set(first.sessionId, 'ask')
+    mocks.defaultBySession.set(first.sessionId, 'ask')
     mocks.admitted.seed = { model: 'gpt-5.5' }
+
+    expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
+  })
+
+  // A slow or unresolved admission of this machine's own chat reports no starting mode.
+  it("compares with this machine's setting when its own host reported no default", async () => {
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.defaultBySession.set(first.sessionId, 'ask')
+    store.state.settings = { nativeChatPermissionMode: 'ask', activeRuntimeEnvironmentId: null }
+    expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
+
+    store.state.settings = { nativeChatPermissionMode: 'bypass', activeRuntimeEnvironmentId: null }
+    expect(pick('plus-pick-3').sessionId).toBe(second.sessionId)
+  })
+
+  it("never reads another runtime's setting as this machine's", async () => {
+    pick('plus-pick-1')
+    await publishIdle(first.sessionId)
+    mocks.defaultBySession.set(first.sessionId, 'ask')
+    store.state.settings = { nativeChatPermissionMode: 'bypass', activeRuntimeEnvironmentId: 'env' }
 
     expect(pick('plus-pick-2').sessionId).toBe(first.sessionId)
   })

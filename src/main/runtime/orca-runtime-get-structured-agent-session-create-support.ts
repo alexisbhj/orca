@@ -14,6 +14,10 @@ import { resolveHostStructuredAgentCreateSupport } from './structured-agent-laun
 import { structuredAgentRuntimeRegistration } from './structured-agent-runtime-registrations'
 import { resolveStructuredLaunchSeedOptions } from '../../shared/native-chat-session-option-defaults'
 import { withAgentChatPermissionSeed } from '../native-chat/agent-chat-permission-mode-setting'
+import {
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  isAgentChatPermissionMode
+} from '../../shared/agent-chat-permission-mode'
 import { hasPersistedStructuredAgentSessionStore as hasPersistedStructuredAgentSessionStoreOnDisk } from './structured-agent-session-runtime'
 import { ensureStructuredAgentSessionHostUnlessRefused } from './structured-agent-session-host-refusal'
 import { getProfileUserDataPath } from '../orca-profiles/profile-storage-paths'
@@ -32,6 +36,12 @@ import {
   type StructuredAgentId
 } from '../../shared/agent-session-provider-handle'
 import { agentSessionWireProviderHandle } from '../../shared/agent-session-provider-handle-encoding'
+
+/** The seed's mode is the host's new-chat default, read once for both. */
+function newChatPermissionDefault(options: Record<string, string> | undefined) {
+  const mode = options?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
+  return isAgentChatPermissionMode(mode) ? { permissionDefaultAtCreation: mode } : {}
+}
 
 export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaRuntimeWithGetWorktreePs {
   async getStructuredAgentSessionCreateSupport(
@@ -266,6 +276,7 @@ export class OrcaRuntimeWithGetStructuredAgentSessionCreateSupport extends OrcaR
           ? { variable: selectedAccountHome.variable, path: adoption.accountHomePath }
           : selectedAccountHome,
       ...(options ? { options } : {}),
+      ...newChatPermissionDefault(options),
       ...(input.resumeFrom && adoption
         ? {
             // `adopt` is what makes the reservation seed the handle chain. Presence of

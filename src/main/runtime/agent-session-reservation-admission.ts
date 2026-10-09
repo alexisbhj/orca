@@ -49,8 +49,12 @@ import type { AgentSessionStoreState } from './agent-session-store-state'
 import { agentSessionRecordIdentityFields } from './agent-session-record-founding'
 import { agentSessionAccountHomesEqual } from '../../shared/agent-session-account-home'
 import { reviseAgentSessionPermission } from './agent-session-permission-revisions'
+import {
+  isAgentSessionPermissionDefaultAtCreation,
+  type AgentSessionPermissionDefaultAtCreation
+} from '../../shared/agent-session-permission-default-at-creation'
 
-export type AgentSessionReserveRequest = {
+export type AgentSessionReserveRequest = AgentSessionPermissionDefaultAtCreation & {
   /** Host-resolved floating directory committed with the first owner reservation. */
   launchDirectory?: string
   sessionId: string
@@ -158,7 +162,10 @@ export function applyAgentSessionReservation(
   if (request.launchArgs && !isAgentSessionLaunchArgs(request.launchArgs)) {
     throw new Error('agent_session_launch_args_invalid')
   }
-  if (request.options && !isAgentSessionOptions(request.options)) {
+  if (
+    (request.options && !isAgentSessionOptions(request.options)) ||
+    !isAgentSessionPermissionDefaultAtCreation(request)
+  ) {
     throw new Error('agent_session_options_invalid')
   }
   const reservation: AgentSessionReservation = {
@@ -282,6 +289,9 @@ function createAgentSessionRecord(
 ): AgentSessionRecord {
   return {
     ...agentSessionRecordIdentityFields(request, request.now),
+    ...(request.permissionDefaultAtCreation
+      ? { permissionDefaultAtCreation: request.permissionDefaultAtCreation }
+      : {}),
     // Fence 1 below is this record's first, and the owner probe requires the head link to carry the
     // record's current fence — so an adopted link must be minted at that same fence.
     providerHandleChain: request.adoptedHandleLink ? [request.adoptedHandleLink] : [],

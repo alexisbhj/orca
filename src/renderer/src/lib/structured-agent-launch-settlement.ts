@@ -7,8 +7,10 @@ import {
   type StructuredAgentLaunchOptions
 } from '@/lib/structured-agent-session-launch'
 import type { StructuredPromptDeliveryResult } from '@/lib/structured-agent-session-launch-prompt'
-import { findIdleEmptyStructuredChat } from '@/lib/structured-agent-session-idle-empty-chat'
-import { AGENT_CHAT_PERMISSION_MODE_OPTION_ID } from '../../../shared/agent-chat-permission-mode'
+import {
+  findIdleEmptyStructuredChat,
+  newChatPermissionMode
+} from '@/lib/structured-agent-session-idle-empty-chat'
 
 export type StructuredAgentLaunchSettlement =
   | {
@@ -113,7 +115,7 @@ export function beginStructuredAgentLaunchSettlement(
           agent,
           options.executionHostId,
           options.targetGroupId,
-          options.hostSeedOptions?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
+          newChatPermissionMode(agent, options.executionHostId, options.hostSeedOptions)
         )
   if (idle) {
     return {

@@ -12,6 +12,7 @@ import type { AgentSessionStatusEvent } from '../../../../shared/agent-session-w
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
+import type { AgentChatPermissionMode } from '../../../../shared/agent-chat-permission-mode'
 import type * as RuntimeRpcClientModule from '../../runtime/runtime-rpc-client'
 import { getDefaultSettings } from '../../../../shared/constants'
 import { toRuntimeExecutionHostId } from '../../../../shared/execution-host'
@@ -214,43 +215,56 @@ async function newTab(agent: TuiAgent, executionHostId: ExecutionHostId): Promis
   return settled.sessionId
 }
 
-for (const client of ['desktop-local', 'desktop-remote', 'web'] as const) {
+const CLIENTS = ['desktop-local', 'desktop-remote', 'web'] as const
+
+/** One execution host, and a renderer reaching it as `client` does; returns the chat host's id. */
+async function openClient(
+  client: (typeof CLIENTS)[number],
+  agent: TuiAgent,
+  initial: AgentChatPermissionMode,
+  options: { withoutAuto?: boolean } = {}
+): Promise<ExecutionHostId> {
+  state.host = await fixture.openChatPermissionCreationHost(initial, options)
+  state.store = createTestStore()
+  setNativeChatComposerDraftStorageForTests(createMemoryNativeChatComposerDraftStorage())
+  await hydrateNativeChatComposerDrafts()
+  const environmentId = `${client}-${agent}-${initial}`
+  const target: RuntimeClientTarget =
+    client === 'desktop-local' ? { kind: 'local' } : { kind: 'environment', environmentId }
+  const local = { ...getDefaultSettings('/unused'), nativeChatPermissionMode: initial }
+  let settingsApi = { set: writeLocalSettings }
+  if (client === 'web') {
+    writeStoredRuntimeEnvironment(window.localStorage, environmentId)
+    const { createWebSettingsApi } = await import('../../web/preload-api/web-settings-api')
+    const web = createWebSettingsApi().settings
+    if (!web) {
+      throw new Error('No web settings API')
+    }
+    settingsApi = web
+    state.store.setState({ settings: await web.get() })
+  } else {
+    local.activeRuntimeEnvironmentId = client === 'desktop-remote' ? environmentId : null
+    state.store.setState({
+      settings: (await hydrateOwnerWorktreeVisibilityDefaults(local, {})).settings
+    })
+  }
+  Object.assign(window, {
+    api: { settings: settingsApi, tabs: { set: async () => {} }, ui: { set: async () => {} } }
+  })
+  const executionHostId =
+    client === 'desktop-local' ? 'local' : toRuntimeExecutionHostId(environmentId)
+  getStructuredAgentSessionStatusFeed(target).activate()
+  return executionHostId
+}
+
+for (const client of CLIENTS) {
   it.each([
     ['claude', 'ask'],
     ['claude', 'bypass'],
     ['codex', 'ask'],
     ['codex', 'bypass']
   ] as const)(`${client}: writes the control then creates %s from %s`, async (agent, initial) => {
-    state.host = await fixture.openChatPermissionCreationHost(initial)
-    state.store = createTestStore()
-    setNativeChatComposerDraftStorageForTests(createMemoryNativeChatComposerDraftStorage())
-    await hydrateNativeChatComposerDrafts()
-    const environmentId = `${client}-${agent}-${initial}`
-    const target: RuntimeClientTarget =
-      client === 'desktop-local' ? { kind: 'local' } : { kind: 'environment', environmentId }
-    const local = { ...getDefaultSettings('/unused'), nativeChatPermissionMode: initial }
-    let settingsApi = { set: writeLocalSettings }
-    if (client === 'web') {
-      writeStoredRuntimeEnvironment(window.localStorage, environmentId)
-      const { createWebSettingsApi } = await import('../../web/preload-api/web-settings-api')
-      const web = createWebSettingsApi().settings
-      if (!web) {
-        throw new Error('No web settings API')
-      }
-      settingsApi = web
-      state.store.setState({ settings: await web.get() })
-    } else {
-      local.activeRuntimeEnvironmentId = client === 'desktop-remote' ? environmentId : null
-      state.store.setState({
-        settings: (await hydrateOwnerWorktreeVisibilityDefaults(local, {})).settings
-      })
-    }
-    Object.assign(window, {
-      api: { settings: settingsApi, tabs: { set: async () => {} }, ui: { set: async () => {} } }
-    })
-    const executionHostId =
-      client === 'desktop-local' ? 'local' : toRuntimeExecutionHostId(environmentId)
-    getStructuredAgentSessionStatusFeed(target).activate()
+    const executionHostId = await openClient(client, agent, initial)
     const existing = await newTab(agent, executionHostId)
     expect(await host().savedMode(existing)).toBe(initial)
     expect(await newTab(agent, executionHostId)).toBe(existing)
@@ -273,5 +287,39 @@ for (const client of ['desktop-local', 'desktop-remote', 'web'] as const) {
     expect(await host().savedMode(sessionId)).toBe(requested)
     expect(await host().savedMode(existing)).toBe(initial)
     expect(await newTab(agent, executionHostId)).toBe(sessionId)
+  })
+}
+
+/** Lets the host's republished summaries reach this renderer's status feed. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+for (const client of CLIENTS) {
+  // The chat keeps Auto as the default it was created under even after its start narrows it.
+  it.each(['claude', 'codex'] as const)(
+    `${client}: reuses an empty %s chat whose Auto default narrowed to Ask`,
+    async (agent) => {
+      const executionHostId = await openClient(client, agent, 'auto', { withoutAuto: true })
+      const first = await newTab(agent, executionHostId)
+      await vi.waitFor(async () => expect(await host().savedMode(first)).toBe('ask'))
+      await settle()
+      expect(host().starts()).toBe(1)
+
+      expect(await newTab(agent, executionHostId)).toBe(first)
+      await settle()
+      expect(host().starts()).toBe(1)
+    }
+  )
+
+  it(`${client}: reuses an empty Codex chat created under Accept edits, which it runs as Ask`, async () => {
+    const executionHostId = await openClient(client, 'codex', 'accept-edits')
+    const first = await newTab('codex', executionHostId)
+    expect(await host().savedMode(first)).toBe('ask')
+    await settle()
+
+    expect(await newTab('codex', executionHostId)).toBe(first)
+    await settle()
+    expect(host().starts()).toBe(1)
   })
 }

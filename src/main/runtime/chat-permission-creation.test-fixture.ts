@@ -19,7 +19,8 @@ import {
   stopStructuredAgentSessionRuntime
 } from './structured-agent-session-runtime'
 import { fakeClaude } from '../claude/claude-structured-session-test-support'
-import { fakeCodex } from '../codex/codex-structured-session-adapter-fixture'
+import { fakeCodex, THREAD_ID } from '../codex/codex-structured-session-adapter-fixture'
+import { CodexAppServerRequestError } from '../codex/codex-app-server-connection'
 import { recordingStructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger-test-support'
 import { openAgentSessionRecordStoreOnce } from './agent-session-record-store-slot'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
@@ -30,8 +31,35 @@ function field(value: unknown, key: string): unknown {
     : undefined
 }
 
+/** Providers that cannot run Auto: a Claude model without auto support, and a Codex too old for
+ *  `approvalsReviewer`. Each narrows a chat's Auto to Ask when it starts. */
+function providersWithoutAuto() {
+  const models = [{ value: 'default', displayName: 'Default', supportsAutoMode: false }]
+  return {
+    claude: fakeClaude({
+      initProof: 'none',
+      replayUuid: null,
+      initModels: models,
+      routes: { list_models: () => models }
+    }),
+    codex: fakeCodex({
+      'thread/start': (params) => {
+        if (params && 'approvalsReviewer' in params) {
+          throw new CodexAppServerRequestError(
+            'thread/start',
+            -32602,
+            'unknown parameter approvalsReviewer'
+          )
+        }
+        return { thread: { id: THREAD_ID }, model: 'gpt-live', approvalsReviewer: 'user' }
+      }
+    })
+  }
+}
+
 export async function openChatPermissionCreationHost(
-  initial: AgentChatPermissionMode
+  initial: AgentChatPermissionMode,
+  options: { withoutAuto?: boolean } = {}
 ): Promise<ChatPermissionCreationHost> {
   const root = await mkdtemp(join(tmpdir(), 'orca-chat-default-creation-'))
   const state = getDefaultPersistedState(root)
@@ -63,8 +91,9 @@ export async function openChatPermissionCreationHost(
     }),
     resolveRuntimeFileTarget: async () => ({ worktree: { id: 'workspace-1', path: root } })
   })
-  const claude = fakeClaude({ initProof: 'none', replayUuid: null })
-  const codex = fakeCodex()
+  const { claude, codex } = options.withoutAuto
+    ? providersWithoutAuto()
+    : { claude: fakeClaude({ initProof: 'none', replayUuid: null }), codex: fakeCodex() }
   vi.spyOn(runtime, 'ensureStructuredAgentSessionHost').mockImplementation(async () => {
     await ensureStructuredAgentSessionHost({
       stateDirectory: root,
@@ -88,6 +117,7 @@ export async function openChatPermissionCreationHost(
   let sequence = 0
   return {
     settings: () => store.getSettings(),
+    starts: () => claude.connections.length + codex.connections.length,
     inventory: async () => [await runtime.listMobileSessionTabs('id:workspace-1')],
     subscribeStatus: async (emit) => {
       await runtime.ensureStructuredAgentSessionHost()

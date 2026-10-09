@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import type { AgentSessionExecutionLocation } from '../../../shared/agent-session-record'
 import type { AgentSessionStatusEvent } from '../../../shared/agent-session-wire'
+import type { AgentChatPermissionMode } from '../../../shared/agent-chat-permission-mode'
 import { codexProviderHandle } from '../../../shared/agent-session-provider-handle-encoding'
 import { createTrackedJournalOpener } from '../agent-session-journal/journal-host-database-test-support'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
@@ -35,7 +36,10 @@ afterEach(async () => {
 })
 
 /** A Codex chat whose record options are whatever `options` holds when the feed reads it. */
-async function feedWithOptions(options: { current: Record<string, string> }) {
+async function feedWithOptions(
+  options: { current: Record<string, string> },
+  createdUnder?: AgentChatPermissionMode
+) {
   await store.reserveOwner({
     sessionId: SESSION,
     location: LOCATION,
@@ -68,7 +72,13 @@ async function feedWithOptions(options: { current: Record<string, string> }) {
     sessions: new Map([[SESSION, { journal, params: { location: LOCATION, provider: 'codex' } }]]),
     getRecord: (sessionId) => {
       const record = store.getRecord(sessionId)
-      return record && { ...record, options: options.current }
+      return (
+        record && {
+          ...record,
+          options: options.current,
+          ...(createdUnder ? { permissionDefaultAtCreation: createdUnder } : {})
+        }
+      )
     },
     now: () => NOW
   })
@@ -88,22 +98,37 @@ function lastSummary(events: readonly AgentSessionStatusEvent[]) {
   throw new Error('no status publication')
 }
 
-it("publishes an empty chat's saved permission mode and republishes a change", async () => {
+it('publishes the default a chat was created under, whatever its mode becomes', async () => {
+  const options = { current: { permissionMode: 'auto' } }
+  const { feed, events } = await feedWithOptions(options, 'auto')
+  expect(lastSummary(events)).toMatchObject({ status: null, permissionDefaultAtCreation: 'auto' })
+
+  // Narrowed by a provider without reviewer support, then picked by the user.
+  options.current = { permissionMode: 'ask' }
+  feed.publish(SESSION)
+  options.current = { permissionMode: 'bypass' }
+  feed.publish(SESSION)
+
+  expect(lastSummary(events)).toMatchObject({ permissionDefaultAtCreation: 'auto' })
+})
+
+// Records from before the creation default was kept fall back to their saved mode.
+it("publishes an older record's saved mode and republishes a change", async () => {
   const options = { current: { permissionMode: 'ask' } }
   const { feed, events } = await feedWithOptions(options)
-  expect(lastSummary(events)).toMatchObject({ status: null, permissionMode: 'ask' })
+  expect(lastSummary(events)).toMatchObject({ status: null, permissionDefaultAtCreation: 'ask' })
 
   options.current = { permissionMode: 'bypass' }
   feed.publish(SESSION)
 
   expect(events.at(-1)).toMatchObject({
     type: 'status',
-    session: { sessionId: SESSION, status: null, permissionMode: 'bypass' }
+    session: { sessionId: SESSION, status: null, permissionDefaultAtCreation: 'bypass' }
   })
 })
 
 it('publishes the mode an older Codex record saved as its reviewer', async () => {
   const { events } = await feedWithOptions({ current: { approvalsReviewer: 'auto_review' } })
 
-  expect(lastSummary(events)).toMatchObject({ permissionMode: 'auto' })
+  expect(lastSummary(events)).toMatchObject({ permissionDefaultAtCreation: 'auto' })
 })

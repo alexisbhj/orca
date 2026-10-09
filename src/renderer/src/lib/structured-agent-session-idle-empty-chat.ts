@@ -1,5 +1,11 @@
 import type { TuiAgent } from '../../../shared/tui-agent'
-import type { ExecutionHostId } from '../../../shared/execution-host'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../../../shared/execution-host'
+import {
+  AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
+  agentChatLaunchPermissionMode,
+  agentChatPermissionModes
+} from '../../../shared/agent-chat-permission-mode'
+import { getActiveRuntimeTarget } from '@/runtime/runtime-client-target'
 import type { Tab } from '../../../shared/tab-types'
 import { useAppStore } from '@/store'
 import {
@@ -31,8 +37,30 @@ function hostOffersEmptyChat(
   return (
     feed.getSessionObservation(tab.entityId) === 'live' &&
     summary?.status === null &&
-    (permissionMode === undefined || summary.permissionMode === permissionMode)
+    (permissionMode === undefined || summary.permissionDefaultAtCreation === permissionMode)
   )
+}
+
+/** The mode a new chat would start in: what its host reported, else, for this machine's own chats
+ *  (a slow or unresolved admission reports nothing), this machine's setting. */
+export function newChatPermissionMode(
+  agent: TuiAgent,
+  executionHostId: ExecutionHostId | undefined,
+  hostSeedOptions: Readonly<Record<string, string>> | undefined
+): string | undefined {
+  const reported = hostSeedOptions?.[AGENT_CHAT_PERMISSION_MODE_OPTION_ID]
+  const settings = useAppStore.getState().settings
+  // Settings hold the active runtime's default; only a local active runtime makes them this host's.
+  if (
+    reported !== undefined ||
+    executionHostId !== LOCAL_EXECUTION_HOST_ID ||
+    !settings ||
+    getActiveRuntimeTarget(settings).kind !== 'local' ||
+    !agentChatPermissionModes(agent)
+  ) {
+    return reported
+  }
+  return agentChatLaunchPermissionMode(agent, null, settings.nativeChatPermissionMode)
 }
 
 /** A launch draft its composer has not taken in yet (a chat opened in the background). */
