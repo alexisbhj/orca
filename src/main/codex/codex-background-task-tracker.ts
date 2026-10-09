@@ -30,14 +30,17 @@ export function codexChildWorkSink(
   }
 }
 
+/** What a probe learned: `unknown` when the app-server gave no answer, so the next chance asks again. */
+export type CodexTerminalStopSupport = 'supported' | 'unsupported' | 'unknown'
+
 /** Projects the same child execution facts the durable roster consumes. */
 export class CodexBackgroundTaskTracker {
   private publishedFingerprint = '[]'
   private publishedState: AgentSessionBackgroundTaskState | null = null
   private readonly commands: CodexBackgroundCommandTracker
   private readonly childWork: CodexChildWorkEvidence
-  /** Whether this app-server can terminate a background command, learned once per app-server. */
-  private terminalStops: 'unknown' | 'probing' | 'supported' | 'unsupported' = 'unknown'
+  /** Whether this app-server can terminate a background command, settled by its first answer. */
+  private terminalStops: CodexTerminalStopSupport | 'probing' = 'unknown'
 
   constructor(
     private readonly primaryThreadId: string,
@@ -57,8 +60,8 @@ export class CodexBackgroundTaskTracker {
     return this.terminalStops === 'supported'
   }
 
-  /** True once, when a running command first has a process a stop could name: the caller probes
-   *  the app-server then, and settles the answer here. */
+  /** True when a running command has a process a stop could name and the app-server has not
+   *  answered yet: the caller probes then, and settles the answer here. */
   beginTerminalStopProbe(): boolean {
     if (this.terminalStops !== 'unknown' || !this.commands.holdsProcess) {
       return false
@@ -69,12 +72,12 @@ export class CodexBackgroundTaskTracker {
 
   /** On yes, restates every running command so its record says it can be stopped; callers publish
    *  the child work after. */
-  settleTerminalStopProbe(supported: boolean): void {
+  settleTerminalStopProbe(support: CodexTerminalStopSupport): void {
     if (this.terminalStops !== 'probing') {
       return
     }
-    this.terminalStops = supported ? 'supported' : 'unsupported'
-    if (supported) {
+    this.terminalStops = support
+    if (support === 'supported') {
       this.childWork.restateCommands(this.commands.liveCommands())
     }
   }

@@ -7,6 +7,7 @@ import type {
   AgentJournalSubmission
 } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionCancelResult } from '../../../shared/agent-session-wire'
+import { refuseUnclassified } from '../../../shared/agent-session-wire-refusals'
 import { latestJournalDispatchObservation } from '../agent-session-journal/journal-dispatch-observation'
 import type { AgentSessionCancelOutcome } from './structured-agent-session-adapter'
 import {
@@ -237,6 +238,16 @@ async function cancelAndNote(
   } catch (error) {
     if (input.prompt) {
       throw error
+    }
+    // A background Stop writes no row, so its failure goes back to the client that pressed it.
+    if (input.scope) {
+      return {
+        ok: false,
+        refusal: refuseUnclassified(
+          'agent_session_operation_invalid',
+          `background task stop failed: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
     }
     interruptFailed = true
     // The adapter's error is Orca's; the row says only that the stop is unconfirmed.

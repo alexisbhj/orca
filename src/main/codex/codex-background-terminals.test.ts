@@ -5,7 +5,10 @@ import {
   CodexAppServerRequestError,
   type CodexAppServerConnection
 } from './codex-app-server-connection'
-import { CodexAppServerTimeoutError } from './codex-app-server-session'
+import {
+  CodexAppServerTimeoutError,
+  CodexAppServerUnsupportedError
+} from './codex-app-server-session'
 import {
   probeCodexBackgroundTerminals,
   terminateCodexBackgroundTerminals
@@ -210,6 +213,42 @@ describe('Codex background-command Stop', () => {
     ).toHaveLength(1)
   })
 
+  it('asks again after a probe that timed out, instead of hiding Stop for good', async () => {
+    let probes = 0
+    const codex = codexWith({
+      'thread/backgroundTerminals/list': () => {
+        probes += 1
+        if (probes === 1) {
+          throw new CodexAppServerTimeoutError('codex app-server timed out')
+        }
+        return { data: [], nextCursor: null }
+      }
+    })
+    await codex.adapter.acquire({ identity, fence: 7, spawnToken: 'spawn-1' })
+    codex.notify('turn/started', {
+      threadId: THREAD_ID,
+      turn: { id: TURN_ID, status: 'inProgress' }
+    })
+    codex.notify('item/started', {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      item: commandItem('inProgress')
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(probes).toBe(1)
+    expect(codex.adapter.backgroundTaskStops('session-1')?.supportsTaskStop).toBe(false)
+
+    codex.notify('turn/completed', {
+      threadId: THREAD_ID,
+      turn: { id: TURN_ID, status: 'completed' }
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(probes).toBe(2)
+    expect(codex.adapter.backgroundTaskStops('session-1')?.supportsTaskStop).toBe(true)
+    expect(lastCommandStoppable(codex.evidence)).toBe(true)
+  })
+
   it('stops nothing for a stale fence', async () => {
     const codex = codexWith({
       'thread/backgroundTerminals/list': () => ({ data: [], nextCursor: null })
@@ -225,19 +264,37 @@ describe('Codex background-command Stop', () => {
 })
 
 describe('probeCodexBackgroundTerminals', () => {
-  it('reads a listing as support and any refusal as none', async () => {
-    const listing = fakeRpc({ 'thread/backgroundTerminals/list': () => ({ data: [] }) })
-    await expect(probeCodexBackgroundTerminals(listing.rpc, THREAD_ID, 5_000)).resolves.toBe(true)
-    const older = fakeRpc({
-      'thread/backgroundTerminals/list': () => {
-        throw unknownVariant('thread/backgroundTerminals/list')
-      }
-    })
-    await expect(probeCodexBackgroundTerminals(older.rpc, THREAD_ID, 5_000)).resolves.toBe(false)
-    const malformed = fakeRpc({ 'thread/backgroundTerminals/list': () => ({}) })
-    await expect(probeCodexBackgroundTerminals(malformed.rpc, THREAD_ID, 5_000)).resolves.toBe(
-      false
+  const probe = (error: Error | null, reply: unknown = { data: [] }) =>
+    probeCodexBackgroundTerminals(
+      fakeRpc({
+        'thread/backgroundTerminals/list': () => {
+          if (error) {
+            throw error
+          }
+          return reply
+        }
+      }).rpc,
+      THREAD_ID,
+      5_000
     )
+
+  it('reads a listing as support and a refused method as none', async () => {
+    await expect(probe(null)).resolves.toBe('supported')
+    await expect(probe(unknownVariant('thread/backgroundTerminals/list'))).resolves.toBe(
+      'unsupported'
+    )
+    await expect(
+      probe(new CodexAppServerUnsupportedError('codex app-server does not support it'))
+    ).resolves.toBe('unsupported')
+    await expect(probe(null, {})).resolves.toBe('unsupported')
+  })
+
+  it('leaves the answer open when the app-server did not answer', async () => {
+    await expect(probe(new CodexAppServerTimeoutError('codex app-server timed out'))).resolves.toBe(
+      'unknown'
+    )
+    await expect(probe(new Error('codex app-server connection closed'))).resolves.toBe('unknown')
+    await expect(probe(threadNotFound('thread/backgroundTerminals/list'))).resolves.toBe('unknown')
   })
 })
 
@@ -311,6 +368,35 @@ describe('terminateCodexBackgroundTerminals', () => {
         always
       )
     ).resolves.toEqual({ stopped: 1 })
+  })
+
+  it('never counts a dropped connection as stopped', async () => {
+    const closed = new Error('codex app-server connection closed')
+    const onTerminate = fakeRpc({
+      'thread/backgroundTerminals/terminate': () => {
+        throw closed
+      }
+    })
+    await expect(
+      terminateCodexBackgroundTerminals(
+        onTerminate.rpc,
+        [{ threadId: THREAD_ID, processId: PROCESS_ID }],
+        always
+      )
+    ).rejects.toBe(closed)
+    const onConfirm = fakeRpc({
+      'thread/backgroundTerminals/terminate': () => ({ terminated: true }),
+      'thread/backgroundTerminals/list': () => {
+        throw closed
+      }
+    })
+    await expect(
+      terminateCodexBackgroundTerminals(
+        onConfirm.rpc,
+        [{ threadId: THREAD_ID, processId: PROCESS_ID }],
+        always
+      )
+    ).rejects.toBe(closed)
   })
 
   it('stops asking an app-server that timed out', async () => {

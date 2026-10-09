@@ -267,6 +267,44 @@ describe('performCancel', () => {
     expect(cancelTurn).not.toHaveBeenCalled()
     expect(journal.snapshot().items).toEqual([])
   })
+
+  it('refuses a background Stop the agent could not carry out, so the person hears it failed', async () => {
+    root = await mkdtemp(join(tmpdir(), 'orca-background-task-failed-cancel-'))
+    const journal = await journals.open({ identity: IDENTITY, stateDirectory: root })
+    const cancelTurn = vi.fn(async () => ({ cancelled: true }))
+    const stopBackgroundTasks = vi.fn(async () => {
+      throw new Error('codex background terminal 71831 still runs after its stop')
+    })
+    const ctx: AgentSessionTurnContext = {
+      logger: createStructuredAgentSessionLogger(),
+      sessionId: 'session-1',
+      journal,
+      fence: 1,
+      agents: NO_STRUCTURED_AGENTS,
+      agent: 'codex',
+      adapter: { cancelTurn, stopBackgroundTasks } as unknown as StructuredAgentSessionAdapter,
+      persistOptions: async () => undefined,
+      resolvedBy: 'client-1',
+      publish: vi.fn(),
+      now: () => 1
+    }
+
+    const result = await performCancel(ctx, {
+      clientOperationId: 'cancel-background-task-failed',
+      turnId: 'background-tasks',
+      scope: 'background-tasks',
+      taskId: 'task-1',
+      childWork: () => [liveTask('task-1')]
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: { code: 'agent_session_operation_invalid' }
+    })
+    expect(result.ok ? undefined : result.refusal.details).toBeUndefined()
+    expect(cancelTurn).not.toHaveBeenCalled()
+    expect(journal.snapshot().items).toEqual([])
+  })
 })
 
 /** A live child record the strip would offer a stop, named by the provider as `providerId`. */

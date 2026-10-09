@@ -5,7 +5,11 @@
 
 import type { CodexAppServerConnection } from './codex-app-server-connection'
 import { isCodexAppServerRequestError } from './codex-app-server-request-error'
-import { CodexAppServerTimeoutError } from './codex-app-server-session'
+import {
+  CodexAppServerTimeoutError,
+  isCodexAppServerUnsupportedError
+} from './codex-app-server-session'
+import type { CodexTerminalStopSupport } from './codex-background-task-tracker'
 import { readRecord } from './codex-item-field-readers'
 import {
   requireLiveCodexSession,
@@ -30,14 +34,23 @@ function boundedTimeout(timeoutMs: number | undefined): number {
   )
 }
 
-/** Whether this app-server lists background terminals, and so can stop them. Any refusal, timeout
- *  or malformed answer is no: an older Codex answers an unknown method or variant, and a Stop that
- *  cannot be proven is not offered. */
+/** An older Codex refuses the method by name: unknown variant, or method not found. */
+function refusesMethod(error: unknown): boolean {
+  return (
+    isCodexAppServerUnsupportedError(error) ||
+    (isCodexAppServerRequestError(error) &&
+      error.code === -32600 &&
+      error.message.includes('unknown variant'))
+  )
+}
+
+/** Whether this app-server lists background terminals, and so can stop them. Only a refusal or
+ *  a malformed answer is no; a timeout or dropped request proves nothing either way. */
 export async function probeCodexBackgroundTerminals(
   rpc: CodexTerminalRpc,
   threadId: string,
   timeoutMs: number | undefined
-): Promise<boolean> {
+): Promise<CodexTerminalStopSupport> {
   try {
     const reply = readRecord(
       await rpc.request(
@@ -46,9 +59,9 @@ export async function probeCodexBackgroundTerminals(
         { timeoutMs: boundedTimeout(timeoutMs) }
       )
     )
-    return Array.isArray(reply.data)
-  } catch {
-    return false
+    return Array.isArray(reply.data) ? 'supported' : 'unsupported'
+  } catch (error) {
+    return refusesMethod(error) ? 'unsupported' : 'unknown'
   }
 }
 
@@ -165,8 +178,8 @@ export function codexBackgroundTaskStops(
   return stops === undefined ? undefined : { supportsTaskStop: stops, supportsStopAll: stops }
 }
 
-/** Probes the session's app-server once, off the frame path, when a running command first has a
- *  process a stop could name; a yes restates the running commands as stoppable. */
+/** Probes the session's app-server off the frame path when a running command has a process a stop
+ *  could name, until it answers; a yes restates the running commands as stoppable. */
 export function startCodexTerminalStopProbe(
   sessions: ReadonlyMap<string, CodexSession>,
   sessionId: string,
@@ -180,12 +193,12 @@ export function startCodexTerminalStopProbe(
     session.connection,
     session.threadId,
     deps.requestTimeoutMs
-  ).then((supported) => {
+  ).then((support) => {
     if (sessions.get(sessionId) !== session || session.ended) {
       return
     }
     try {
-      session.backgroundTasks.settleTerminalStopProbe(supported)
+      session.backgroundTasks.settleTerminalStopProbe(support)
       session.backgroundTasks.publishChildWork()
     } catch (error) {
       deps.logger?.warn('Codex background-terminal stops could not be published', {
