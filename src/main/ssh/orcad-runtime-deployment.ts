@@ -26,6 +26,7 @@ import { readOrcadActivationRecord } from './orcad-activation-record-store'
 import { resolveOrcadRemoteContext } from './orcad-remote-context'
 import { deployOrcad } from './orcad-remote-deploy'
 import { refuseOrcadHostDowngrade } from './orcad-host-version-admission'
+import { ORCAD_ACTIVATION_POLICY_REFUSED_CODE } from './orcad-installed-activation'
 import { pruneManagedOrcadVersions } from './orcad-managed-version-gc'
 import { tunneledOrcadPairingCode } from './orcad-tunneled-pairing'
 import { hasRegisteredDirectSshAuthority } from './ssh-target-registry'
@@ -131,10 +132,12 @@ export async function createManagedOrcadEnvironment(
         appVersion,
         // Why: a host another desktop stopped may hold state its newer build migrated, and this
         // path has no linked record to check first, so only the fenced read can refuse it.
-        admitRecord: (record, candidateVersion) => {
-          const refusal = refuseOrcadHostDowngrade(record, candidateVersion, appVersion)
-          return refusal ? `A newer Orca last ran this host's server (${refusal}).` : null
-        }
+        // An explicit force runs this version anyway, as `environment update --force` does.
+        admitRecord: (record, candidateVersion) =>
+          !args.force && refuseOrcadHostDowngrade(record, candidateVersion, appVersion)
+            ? `Orca ${record.activeAppVersion} last ran this host's server, newer than this ` +
+              `Orca (${appVersion}). Update Orca to start it.`
+            : null
       })
       if (deployResult.outcome === 'installed-not-activated') {
         return {
@@ -142,7 +145,9 @@ export async function createManagedOrcadEnvironment(
           candidateVersion: deployResult.fullVersion,
           code: deployResult.code,
           reason: deployResult.reason,
-          forceable: isForceableOrcadDeferral(deployResult.code)
+          forceable:
+            isForceableOrcadDeferral(deployResult.code) ||
+            deployResult.code === ORCAD_ACTIVATION_POLICY_REFUSED_CODE
         }
       }
       const readiness = await probeManagedOrcadReadiness(

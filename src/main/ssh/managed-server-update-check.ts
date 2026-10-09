@@ -93,7 +93,6 @@ function skipped(
     case 'current':
     case 'no-template':
     case 'migrating':
-    case 'stopped-version-unknown':
       return { note: undefined, reason: 'connected', recorded: false }
   }
 }
