@@ -51,6 +51,7 @@ type StatusFeedSession = {
   child?: Pick<StructuredAgentSessionProviderChild, 'phase' | 'generation' | 'fence'> | null
   /** What the current-work projection reads of the last child this host saw end. */
   lastEndedChild?: Pick<StructuredAgentSessionEndedChild, 'fence' | 'rootGone'>
+  operationalRevision?: number
   restartResume?: AgentSessionStatusSummary['restartResume']
 }
 
@@ -215,9 +216,7 @@ export class StructuredAgentSessionStatusFeed {
   ): StructuredAgentSessionJournalProjection | null {
     const session = this.deps.sessions.get(sessionId)
     const source = journal ?? session?.journal
-    return source
-      ? this.projections.read(source, this.deps.getRecord(sessionId), session?.lastEndedChild)
-      : null
+    return source ? this.projections.read(source, this.deps.getRecord(sessionId), session) : null
   }
 
   /** Re-projects one session after its journal changed; equal projections are not re-sent. */
@@ -228,7 +227,7 @@ export class StructuredAgentSessionStatusFeed {
     }
     const source = journal ?? session.journal
     const record = this.deps.getRecord(sessionId)
-    const projection = this.projections.read(source, record, session.lastEndedChild)
+    const projection = this.projections.read(source, record, session)
     this.retireSettledChildrenOnNewTurn(sessionId, session, projection.acceptedSendKey)
     const summary = structuredAgentSessionStatusSummary({
       sessionId,

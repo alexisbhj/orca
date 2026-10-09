@@ -12,10 +12,7 @@ import {
 } from './structured-agent-session-child-exit'
 import { recordingStructuredAgentSessionLogger } from './structured-agent-session-logger-test-support'
 import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
-import {
-  exitJournalDouble,
-  NO_STORE_RECEIPTS
-} from './structured-agent-session-settlement-double.test-fixture'
+import { exitJournalDouble } from './structured-agent-session-settlement-double.test-fixture'
 
 const SESSION = 'session-1'
 const GENERATION = 'generation-1'
@@ -60,8 +57,7 @@ function contextFor(session: StructuredAgentSessionChildExitSession) {
       transitionHandoff: async (
         _sessionId: string,
         transition: (current: AgentSessionRecord) => AgentSessionRecord
-      ) => (record = transition(record)),
-      conversationReceipts: NO_STORE_RECEIPTS
+      ) => (record = transition(record))
     },
     sessions: new Map([[SESSION, session]]),
     flushLifecycle: async () => ({ ok: true }),

@@ -83,7 +83,7 @@ export function deliverToSubscriber(
         ...shared
       })
       subscriber.cursor = page.liveCursor ?? page.window.nextCursor
-      subscriber.workLiveFence = work?.liveFence
+      subscriber.workView = work?.viewKey()
       return
     }
     const page = result.page
@@ -108,6 +108,7 @@ export function deliverToSubscriber(
         ...(page.actionablePromptIds !== undefined
           ? { actionablePromptIds: page.actionablePromptIds }
           : {}),
+        ...(page.working !== undefined ? { working: page.working } : {}),
         ...shared
       },
       // On a multi-page catch-up the draft list rides only the final page, or a
@@ -115,7 +116,7 @@ export function deliverToSubscriber(
       { withholdQueued: page.hasNewer }
     )
     subscriber.cursor = page.window.nextCursor
-    subscriber.workLiveFence = work?.liveFence
+    subscriber.workView = work?.viewKey()
     if (!page.hasNewer || !port.isActive(subscriber)) {
       return
     }
@@ -136,9 +137,10 @@ function emitCaughtUp(
     port.hooks.readCommands !== undefined &&
     (port.hooks.readCommands(subscriber.sessionId) ?? null) !== subscriber.commands
   const queuedChanged = subscriberQueuedMessagesChanged(port.hooks, subscriber)
-  // A generation that ended (or began) with no row changes what is current: its frame says so.
+  // A generation that ended (or began) with no row, or an exit this host saw with no lease write,
+  // changes what is current: the caught-up frame restates the view.
   const { work } = current
-  const workChanged = work !== undefined && work.liveFence !== subscriber.workLiveFence
+  const workChanged = work !== undefined && work.viewKey() !== subscriber.workView
   if (
     emitCheckpoint ||
     shared.activity !== undefined ||
@@ -155,7 +157,7 @@ function emitCaughtUp(
       ...shared
     })
     if (workChanged) {
-      subscriber.workLiveFence = work.liveFence
+      subscriber.workView = work.viewKey()
     }
   }
 }

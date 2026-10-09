@@ -1,16 +1,18 @@
-// The one settlement of what ended generations left unfinished, run only at the host's ownership
-// events: an observed exit (after its release), an acquisition (before its reservation), and
-// startup. Opening a chat never runs it.
+// The one settlement of what ended generations left unfinished. An observed exit runs it first,
+// with what it saw; the chat's reconciliation worker runs it after every generation end and at
+// startup (`structured-agent-session-reconciliation-worker.ts`). Opening a chat never runs it.
 //
-// Re-derived each time from the journal and the lease: every turn, call, prompt, reasoning row,
-// subagent roster and background task an ended generation wrote and never ended (below the lease's
-// fence, or at it once released), and every send handed to one and never answered. Such a
-// generation can no longer write, since every release moves the fence. Its turns end `interrupted` only when the lease's death evidence
-// names it, else `unverifiable`. Rows land at the lease's current fence, in ONE transaction with the
-// lease's `leftoverSettledAt` receipt, so a second run plans nothing. Best effort at every trigger:
-// a failure is the caller's to log, and its rows hold nothing (holds count only current-fence work).
+// Re-derived each time from the journal, the lease and this host's sight of an exit: every turn,
+// call, prompt, reasoning row, subagent roster entry and background task whose execution belongs
+// to a generation that is not live (`structuredAgentSessionLiveFence`), and every send handed to
+// one and never answered. Its turns end `interrupted` only when death evidence names that
+// generation, else `unverifiable`, and a later proof revises an earlier `unverifiable`. Rows land at
+// the lease's current fence in ONE transaction; a run with nothing left plans no row and writes
+// nothing. A failure is the caller's to retry: its rows hold nothing, since the projection counts
+// only the live generation's work.
 
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { AgentSessionDeathEvidence } from '../../../shared/agent-session-record'
 import {
   planStructuredAgentSessionDeadGeneration,
   type StructuredAgentSessionDeadGenerationInput
@@ -22,27 +24,36 @@ import {
 import type { DeadGenerationJournal } from './structured-agent-session-unfinished-work'
 import { STALE_SESSION_ROW_PREFIX } from '../../../shared/agent-session-stop-row-identity'
 import { structuredAgentSessionFailureWordsContext } from './structured-agent-session-send-preparation'
-import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
+import {
+  structuredAgentSessionLiveFence,
+  type StructuredAgentSessionWorkEvidence
+} from './structured-agent-session-current-work'
 
-export type StructuredAgentSessionLeftoverStore = Pick<AgentSessionRecordStore, 'getRecord'> & {
-  conversationReceipts: Pick<AgentSessionRecordStore['conversationReceipts'], 'leftoverSettled'>
-}
+export type StructuredAgentSessionLeftoverStore = Pick<AgentSessionRecordStore, 'getRecord'>
+
+/** An observed exit's settlement: what that child's generation left, settled as the exit says. */
+export type StructuredAgentSessionExitSettlement = Omit<
+  StructuredAgentSessionDeadGenerationInput,
+  'journal' | 'sessionId' | 'fence'
+> & { ownerFence: number }
 
 export type StructuredAgentSessionLeftoverSettlementInput = {
   store: StructuredAgentSessionLeftoverStore
   sessionId: string
   journal: DeadGenerationJournal & StaleStructuredAgentSessionStateJournal
-  now: () => number
-  /** An observed exit: what that child's generation left is settled as the exit says. */
-  exit?: Omit<StructuredAgentSessionDeadGenerationInput, 'journal' | 'sessionId' | 'fence'> & {
-    ownerFence: number
-  }
-  /** An acquisition about to reserve over an owner a probe proved gone: that owner's generation
-   *  ends with the reservation, so its work is settled with the rest. */
-  ownerProvenGone?: true
+  exit?: StructuredAgentSessionExitSettlement
+  /** This host's sight of a child's root exit, which ends its generation even when the release
+   *  write failed (`StructuredAgentSessionHostSession.lastEndedChild`). */
+  ended?: StructuredAgentSessionWorkEvidence['ended']
+  /** Proof a generation end carried that the lease no longer holds (a reservation that replaced a
+   *  proven-dead owner clears it, and a later release writes its own): only what that generation
+   *  and earlier ones left is settled, judged by it. Absent: the lease's own evidence judges. */
+  proof?: AgentSessionDeathEvidence & { ownerFence: number }
 }
 
-export type StructuredAgentSessionLeftoverSettlement = { ok: true } | { ok: false; error: unknown }
+export type StructuredAgentSessionLeftoverSettlement =
+  | { ok: true; planned: number }
+  | { ok: false; error: unknown }
 
 export async function settleStructuredAgentSessionLeftovers(
   input: StructuredAgentSessionLeftoverSettlementInput
@@ -50,28 +61,32 @@ export async function settleStructuredAgentSessionLeftovers(
   try {
     const record = input.store.getRecord(input.sessionId)
     if (!record) {
-      return { ok: true }
+      return { ok: true, planned: 0 }
     }
-    const { lease } = record
-    const fence = lease.runtimeFence
-    const { exit, journal, sessionId } = input
-    // A released fence was never a child's (a reservation moves it first), so all of it is ended;
-    // what an older build left at it is settled with the rest.
-    const ended = input.ownerProvenGone || lease.claimStatus === 'released'
-    const below = exit ? exit.ownerFence : ended ? fence + 1 : fence
+    const fence = record.lease.runtimeFence
+    const { journal, sessionId } = input
+    // Everything below the live generation is ended; with none live, all of it is.
+    const liveFence = structuredAgentSessionLiveFence({
+      record,
+      ...(input.ended ? { ended: input.ended } : {})
+    })
+    // An exit's own account holds only until a later generation is live: its rows and sends at
+    // this fence would be that generation's. The general rule settles what the exit left instead.
+    const exit = liveFence === null && !input.proof ? input.exit : undefined
+    const { proof } = input
+    const below = proof
+      ? Math.min(proof.ownerFence + 1, liveFence ?? fence + 1)
+      : exit
+        ? exit.ownerFence
+        : (liveFence ?? fence + 1)
     const failureTextContext = structuredAgentSessionFailureWordsContext(record)
+    let planned = 0
     await journal.appendPlannedLifecycleBatch({
       settlementId: exit
         ? `dead-generation:${exit.settlementId}`
-        : `${STALE_SESSION_ROW_PREFIX}${sessionId}:${fence}:seq-${journal.cursor().sequence}`,
+        : `${STALE_SESSION_ROW_PREFIX}${sessionId}:${fence}:${proof ? `proof-${proof.ownerFence}:` : ''}seq-${journal.cursor().sequence}`,
       fence,
       recovered: true,
-      // Only a released lease is owed anything: a reservation leaves the mark as it was.
-      ...(lease.claimStatus === 'released'
-        ? {
-            receipt: input.store.conversationReceipts.leftoverSettled(sessionId, fence, input.now())
-          }
-        : {}),
       plan: () => {
         const exited = exit
           ? planStructuredAgentSessionDeadGeneration(
@@ -86,40 +101,23 @@ export async function settleStructuredAgentSessionLeftovers(
           fence,
           acquisitionGeneration: null,
           // Read with the rows: the evidence the release before this settlement wrote.
-          deathEvidence: input.store.getRecord(sessionId)?.lease.deathEvidence ?? null,
+          deathEvidence: proof ?? input.store.getRecord(sessionId)?.lease.deathEvidence ?? null,
           failureTextContext,
-          below
+          below,
+          // With an exit's account, nothing is live: every entry of what is settled is ended.
+          ...(exit ? {} : { entriesBelow: below })
         })
-        return {
-          mutations: [...exited.mutations, ...stale.mutations],
-          dispatches: [
-            ...exited.dispatches,
-            ...stale.dispatches.filter((entry) => !settledByExit.has(entry.clientMessageId))
-          ]
-        }
+        const mutations = [...exited.mutations, ...stale.mutations]
+        const dispatches = [
+          ...exited.dispatches,
+          ...stale.dispatches.filter((entry) => !settledByExit.has(entry.clientMessageId))
+        ]
+        planned = mutations.length + dispatches.length
+        return { mutations, dispatches }
       }
     })
-    return { ok: true }
+    return { ok: true, planned }
   } catch (error) {
     return { ok: false, error }
   }
-}
-
-/** The settlement at a trigger that must go on whatever happens: a failure is logged under the
- *  trigger's scope, and the leftovers stay owed for the next trigger. */
-export async function settleStructuredAgentSessionLeftoversOrLog(
-  input: StructuredAgentSessionLeftoverSettlementInput & {
-    logger: StructuredAgentSessionLogger
-    scope: string
-  }
-): Promise<boolean> {
-  const settled = await settleStructuredAgentSessionLeftovers(input)
-  if (!settled.ok) {
-    input.logger.warn("settling a gone agent's leftover work did not finish", {
-      scope: input.scope,
-      sessionId: input.sessionId,
-      error: settled.error
-    })
-  }
-  return settled.ok
 }

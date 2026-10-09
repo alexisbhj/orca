@@ -2,7 +2,7 @@
 // messages to a provider child. Bundled because they share one invariant — a conversation open
 // with a message queued has a delivery loop — and the open is where a loop for leftovers wakes.
 
-import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
+import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-host-current-work'
 import { holdClosedStructuredAgentSessionSends } from './structured-agent-session-host-lifetime'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import {

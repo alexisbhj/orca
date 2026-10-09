@@ -225,8 +225,12 @@ export async function foundRestTestChat(rig: RestTestRig): Promise<void> {
 }
 
 /** Runs one sweep pass now, for a test that set `idleSweep.intervalMs` out of reach. */
-export function sweepOnce(host: StructuredAgentSessionHost): Promise<void> {
-  return host.collaboratorsForTests().lifetime.idleSweep.tick()
+export async function sweepOnce(host: StructuredAgentSessionHost): Promise<void> {
+  const { lifetime, reconciliation, serialize } = host.collaboratorsForTests()
+  await lifetime.idleSweep.tick()
+  // A close the sweep left to the chat's reconciliation worker lands once that retires.
+  await reconciliation.idle(SESSION)
+  await serialize(SESSION, async () => {})
 }
 
 /** Waits long enough for several sweep ticks to have run. */

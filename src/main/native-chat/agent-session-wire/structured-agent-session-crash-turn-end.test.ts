@@ -102,8 +102,7 @@ function crashedClaudeRecord(): AgentSessionRecord {
       claimKeyId: 'key-1',
       claimStatus: 'live',
       unreconciled: false,
-      deathEvidence: null,
-      leftoverSettledAt: null
+      deathEvidence: null
     }
   }
 }
@@ -204,6 +203,7 @@ describe('a turn a crash cut short mid-tool', () => {
     openHost({ probeOwner: async () => ({ outcome: 'pid-absent' }) })
 
     await host.restoreReadableSessions()
+    await reconciled()
 
     expect(store.getRecord(SESSION)?.lease.deathEvidence).toMatchObject({
       kind: 'pid-absent',
@@ -226,6 +226,7 @@ describe('a turn a crash cut short mid-tool', () => {
     openHost({ probeOwner: async () => ({ outcome: 'pid-absent' }) })
 
     await host.restoreReadableSessions()
+    await reconciled()
 
     const { items } = await host.journalSnapshot(SESSION)
     // As a reader's transcript shows it: the stored row is the explanation, so none is derived.
@@ -262,6 +263,7 @@ describe('a turn a crash cut short mid-tool', () => {
     openHost({ probeOwner, stopOwnerProcess })
 
     await host.restoreReadableSessions()
+    await reconciled()
 
     expect(stopOwnerProcess).toHaveBeenCalledOnce()
     expect(store.getRecord(SESSION)?.lease.deathEvidence).toMatchObject({
@@ -296,15 +298,22 @@ function attach(fence: number) {
   )
 }
 
-/** Runs whatever this session's serialize already has queued. */
-function drainSession(): Promise<void> {
-  return host.collaboratorsForTests().serialize(SESSION, async () => {})
+/** Runs whatever this session's serialize already has queued, then the chat's reconciliation. */
+async function drainSession(): Promise<void> {
+  await host.collaboratorsForTests().serialize(SESSION, async () => {})
+  await reconciled()
 }
 
-/** Startup: the reconcile, then the settlement it begins. */
+/** Once the chat's reconciliation worker settled what a generation's end left. */
+function reconciled(): Promise<void> {
+  return host.collaboratorsForTests().reconciliation.idle(SESSION)
+}
+
+/** Startup: the reconcile, then the scan it begins. */
 async function startUp(): Promise<void> {
   await host.reconcileRestartLeases()
   await host.startupSettled()
+  await reconciled()
 }
 
 // On desktop the chat on screen at relaunch opens before the startup reconcile has probed its owner.
@@ -505,25 +514,30 @@ describe('a turn a read reached before the reconcile proved its owner dead', () 
     ])
   })
 
-  it('stays as it was when the startup settlement cannot be written, and the next trigger settles it', async () => {
+  it('stays as it was when the startup settlement cannot be written, and the worker retries it', async () => {
     const log = recordingStructuredAgentSessionLogger()
     openHost({ probeOwner: async () => ({ outcome: 'pid-absent' }), logger: log.logger })
     await host.history({ sessionId: SESSION, direction: 'tail' })
     const { journal } = host.collaboratorsForTests().sessions.get(SESSION)!
-    vi.spyOn(journal, 'appendPlannedLifecycleBatch').mockRejectedValueOnce(new Error('disk full'))
+    const full = vi
+      .spyOn(journal, 'appendPlannedLifecycleBatch')
+      .mockRejectedValue(new Error('disk full'))
 
     await startUp()
 
-    expect(log.scopes()).toEqual(['startup-settlement'])
+    expect(new Set(log.scopes())).toEqual(new Set(['reconciliation']))
     expect(await settledTurn()).toEqual(RUNNING_TURN)
-    expect(store.getRecord(SESSION)?.lease.leftoverSettledAt).toBeNull()
-    // The proof is durable on the record and the mark still owes it: the restore's startup share
-    // converges, as would the next acquisition.
-    await host.restoreReadableSessions()
-    expect(await settledTurn()).toMatchObject({
-      state: 'interrupted',
-      completedAt: LAST_RENEWED_AT
-    })
+    full.mockRestore()
+    // Nothing stored says it is owed: the worker re-derives it after its backoff, from the proof
+    // the record holds.
+    await vi.waitFor(
+      async () =>
+        expect(await settledTurn()).toMatchObject({
+          state: 'interrupted',
+          completedAt: LAST_RENEWED_AT
+        }),
+      { timeout: 10_000 }
+    )
   })
 })
 
@@ -587,8 +601,9 @@ const PROVEN_TURN = {
   completedAt: LAST_RENEWED_AT
 }
 
-// The relaunch proved the fence-13 owner gone, and startup settled the turn by that proof before any
-// start; what the record holds after a start reserving fence 15 fails is about the start's own child.
+// The relaunch proved the fence-13 owner gone, and the chat's worker settles the turn by that proof,
+// held across the starts that clear it from the record; what the record holds after a start
+// reserving fence 15 fails is about the start's own child.
 describe('a turn a newer start could not settle before it failed', () => {
   it('is not judged by the death of the child it left for recovery', async () => {
     const { attach, advance } = await hostWithFailingFirstStart(
@@ -609,6 +624,8 @@ describe('a turn a newer start could not settle before it failed', () => {
       lastProvenAliveAt: RELAUNCHED_AT
     })
     await expect(attach(16)).resolves.toMatchObject({ ok: true })
+    await host.startupSettled()
+    await reconciled()
 
     expect(await settledTurn()).toEqual(PROVEN_TURN)
   })
@@ -624,6 +641,8 @@ describe('a turn a newer start could not settle before it failed', () => {
     })
     advance(60_000)
     await expect(attach(16)).resolves.toMatchObject({ ok: true })
+    await host.startupSettled()
+    await reconciled()
 
     // Never ended at the failed start, an hour after the crash, with the start's reason.
     expect(await settledTurn()).toEqual(PROVEN_TURN)

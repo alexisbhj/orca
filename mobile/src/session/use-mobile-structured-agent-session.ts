@@ -7,7 +7,8 @@ import { isStructuredAgentSessionMainAgentWorking } from '../../../src/shared/st
 import { isFinalAgentSessionReadRefusal } from '../../../src/shared/structured-agent-session-read-refusal'
 import {
   isStructuredAgentSessionThinking,
-  runningStructuredAgentSessionTurnId
+  runningStructuredAgentSessionTurnId,
+  structuredAgentSessionHostSaysWorking
 } from '../../../src/shared/structured-agent-session-live-turn'
 import { selectStructuredAgentTurnActivity } from '../../../src/shared/native-chat-turn-activity'
 import {
@@ -159,7 +160,10 @@ export function useMobileStructuredAgentSession(args: {
   const activityText =
     selectStructuredAgentTurnActivity(state.items, turnId, state.activity)?.text ?? null
   const thinking = isStructuredAgentSessionThinking(state)
-  const isWorking = isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence)
+  // The host's answer counts only the agent running now; an older host gives none.
+  const isWorking = structuredAgentSessionHostSaysWorking(state.working, () =>
+    isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence)
+  )
   const backgroundTasks = useMobileStructuredBackgroundTasks({
     sessionKey,
     state,
@@ -231,7 +235,7 @@ export function useMobileStructuredAgentSession(args: {
     queuePause,
     submissions: state.submissions,
     pendingPrompt: approvalPrompt !== null || questionPrompt !== null,
-    agentWorking: isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence),
+    agentWorking: isWorking,
     mutate,
     appendComposerText,
     onSendError,

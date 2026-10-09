@@ -88,8 +88,7 @@ function ownerRecord(): AgentSessionRecord {
       claimKeyId: 'fixture-key',
       claimStatus: 'live',
       unreconciled: false,
-      deathEvidence: null,
-      leftoverSettledAt: null
+      deathEvidence: null
     }
   }
 }

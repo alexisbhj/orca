@@ -130,6 +130,10 @@ beforeEach(async () => {
   startHost()
   expect(await host.attach(CALLER, hostTestAttachParams(null))).toMatchObject({ ok: true })
   await host.close(SESSION, 'evict')
+  // The stop's release wakes the chat's worker, which opens the chat and closes it again; the
+  // tests below write its journal directly, so it must be shut first.
+  await host.collaboratorsForTests().reconciliation.idle(SESSION)
+  await vi.waitFor(() => expect(host.hasSession(SESSION)).toBe(false))
 })
 
 afterEach(async () => {
@@ -359,10 +363,16 @@ describe('settling an earlier child before the next one takes its message', () =
       { fence: releasedFence, turnScope: AGENT_JOURNAL_THREAD_SCOPE }
     )
     await journal.close()
+    // The process died between that release and its settlement: the next startup settles it, in
+    // the background, from the evidence the release kept.
+    await restartHost()
+    await host.reconcileRestartLeases()
+    await host.startupSettled()
+    await host.collaboratorsForTests().reconciliation.idle(SESSION)
     const id = await accept('for the next child')
 
     await eventually(async () => expect((await submission(id))?.dispatchState).toBe('accepted'))
-    // The exit was observed, so its receipt ends the turn, and the chat says why it stopped.
+    // The exit was observed, so its evidence ends the turn, and the chat says why it stopped.
     const items = conversation()!.journal.snapshot().items
     expect(items.map((item) => readAgentJournalTurn(item.body)).filter(Boolean)).toContainEqual(
       expect.objectContaining({

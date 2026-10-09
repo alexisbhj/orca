@@ -39,7 +39,7 @@ function question(itemId: string, sequence: number): AgentJournalRenderItem {
     observedAt: sequence,
     body: {
       kind: 'question',
-      title: 'Which one?',
+      question: 'Which one?',
       options: [{ id: 'a', label: 'A' }],
       resolution: PENDING
     }

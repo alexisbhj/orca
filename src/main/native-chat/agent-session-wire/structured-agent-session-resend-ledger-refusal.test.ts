@@ -76,6 +76,9 @@ describe('an expired send id', () => {
   it('is answered expired while its chat is closed, not as a chat this host lacks', async () => {
     await attach()
     await host.close(SESSION, 'evict')
+    // The stop's release wakes the chat's worker, which opens it, finds nothing owed, and closes it.
+    await host.collaboratorsForTests().reconciliation.idle(SESSION)
+    await vi.waitFor(() => expect(host.hasSession(SESSION)).toBe(false))
 
     await expect(host.send(CALLER, expiredParams('long gone'))).resolves.toMatchObject(EXPIRED)
     expect(host.hasSession(SESSION)).toBe(false)

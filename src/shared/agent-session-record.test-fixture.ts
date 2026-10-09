@@ -34,7 +34,6 @@ export function agentSessionLeaseFixture(
     claimStatus: 'live',
     unreconciled: false,
     deathEvidence: null,
-    leftoverSettledAt: null,
     ...overrides
   }
 }

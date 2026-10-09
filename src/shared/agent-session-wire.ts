@@ -153,6 +153,11 @@ export type AgentSessionHistoryPage = {
    *  listed, since nothing can take its answer. Absent from an older host, whose clients read every
    *  pending prompt they hold as waiting. */
   actionablePromptIds?: string[]
+  /** Rides with `latestTurn`: whether the agent running now is working, by the host's projection of
+   *  current work — its running turn, or a send it owes, eligible or handed over and unanswered.
+   *  What an agent that has ended left counts for nothing. Absent from an older host, whose
+   *  clients derive it from the rows they hold. */
+  working?: boolean
 }
 
 export type AgentSessionHistoryResult =
@@ -214,6 +219,8 @@ export type AgentSessionSubscribeEvent =
       latestTurn?: AgentSessionLatestTurn | null
       /** Rides with `latestTurn` (`AgentSessionHistoryPage.actionablePromptIds`). */
       actionablePromptIds?: string[]
+      /** Rides with `latestTurn` (`AgentSessionHistoryPage.working`). */
+      working?: boolean
     } & AgentSessionFrameFields)
   | ({
       type: 'reset'

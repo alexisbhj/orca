@@ -24,14 +24,9 @@ export type PersistedAgentSessionRuntimeKind =
 export type PersistedAgentSessionHandoffStage = AgentSessionHandoffStage | LegacyHandoffStage
 
 /** A lease as it may appear on disk. */
-export type PersistedAgentSessionLease = Omit<
-  AgentSessionLease,
-  'runtimeKind' | 'handoffStage' | 'leftoverSettledAt'
-> & {
+export type PersistedAgentSessionLease = Omit<AgentSessionLease, 'runtimeKind' | 'handoffStage'> & {
   runtimeKind: PersistedAgentSessionRuntimeKind
   handoffStage: PersistedAgentSessionHandoffStage | null
-  /** Absent on a lease an older build wrote: read as owed, so startup settles it once. */
-  leftoverSettledAt?: number | null
 }
 
 /** A record as a row stores it. Decode through `decodePersistedAgentSessionRecord`. */
@@ -76,13 +71,11 @@ export function normalizeLegacyHandoffLease(lease: PersistedAgentSessionLease): 
   const { runtimeKind, handoffStage } = lease
   // Why: every one of these awaited proof about an owner, which is what `recovering` resolves.
   const stage = isLegacyHandoffStage(handoffStage) ? 'recovering' : handoffStage
-  const leftoverSettledAt = lease.leftoverSettledAt ?? null
   if (runtimeKind === 'native') {
-    return { ...lease, runtimeKind, handoffStage: stage, leftoverSettledAt }
+    return { ...lease, runtimeKind, handoffStage: stage }
   }
   return {
     ...lease,
-    leftoverSettledAt,
     runtimeKind: 'native',
     handoffStage: stage,
     // Why: a recorded terminal is the user's foreground agent. `conflicted` is the claim every

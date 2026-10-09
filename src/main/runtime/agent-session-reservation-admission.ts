@@ -300,9 +300,7 @@ function createAgentSessionRecord(
       claimKeyId: reservation.claimKeyId,
       claimStatus: 'reserved',
       unreconciled: false,
-      deathEvidence: null,
-      // A new record: no earlier generation left anything.
-      leftoverSettledAt: reservation.now
+      deathEvidence: null
     }
   }
 }

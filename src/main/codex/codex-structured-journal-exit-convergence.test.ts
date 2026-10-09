@@ -23,7 +23,6 @@ import {
 } from '../native-chat/agent-session-wire/structured-agent-session-child-exit'
 import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { StructuredAgentSessionCurrentWork } from '../native-chat/agent-session-wire/structured-agent-session-current-work'
-import { NO_STORE_RECEIPTS } from '../native-chat/agent-session-wire/structured-agent-session-settlement-double.test-fixture'
 import { createCodexJournalTranslator } from './codex-structured-journal-translation'
 import { handleCodexSessionExit } from './codex-structured-session-close'
 import type { CodexSession, CodexStructuredSessionEvent } from './codex-structured-session-state'
@@ -229,8 +228,7 @@ it('settles a refused Codex exit through the host in one commit, then permits a 
         transitionHandoff: async (
           _sessionId: string,
           transition: (current: AgentSessionRecord) => AgentSessionRecord
-        ) => (record = transition(record)),
-        conversationReceipts: NO_STORE_RECEIPTS
+        ) => (record = transition(record))
       },
       sessions: new Map([[SESSION, hostSession]]),
       flushLifecycle: () => deferred.lifecycleBarrier(),

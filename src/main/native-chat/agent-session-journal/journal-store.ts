@@ -59,7 +59,7 @@ import {
   journalQueueReopenRowBuilder,
   journalStopEventRowBuilder
 } from './journal-stop-and-resume-rows'
-import type { AgentJournalEpochReason, JournalStopEvent } from './journal-row-schema'
+import type { AgentJournalEpochReason, JournalRow, JournalStopEvent } from './journal-row-schema'
 import type {
   JournalOperationReceipt,
   JournalRowTransactionHook,
@@ -86,7 +86,7 @@ export class AgentSessionJournal {
   private state: JournalReducerState
   private openedThrough: AgentJournalCursor = { epoch: '', sequence: 0 }
   private reopenUnmarked: AgentJournalCursor | null = null
-  private onCommitted: (() => void) | null = null
+  private onCommitted: ((rows?: readonly JournalRow[]) => void) | null = null
   private readonly queue: JournalWriteQueue
   private readonly rowWriter: JournalRowWriter
   private readonly epochController: JournalEpochController
@@ -126,7 +126,7 @@ export class AgentSessionJournal {
         for (const row of rows) {
           applyJournalRow(this.state, row)
         }
-        this.onCommitted?.()
+        this.onCommitted?.(rows)
       },
       notifyCommitted: () => this.onCommitted?.(),
       journal: () => this,
@@ -166,6 +166,9 @@ export class AgentSessionJournal {
     )
   }
 
+  /** Where this handle opened the journal (`wroteBeforeOpen`). */
+  openedAt = (): AgentJournalCursor => this.openedThrough
+
   /** Where the reopen's pause begins when this handle could not write its mark: where the mark
    *  would have gone. Null once a mark is written. Per handle, so the next open marks again. */
   reopenFloor(): AgentJournalCursor | null {
@@ -186,7 +189,7 @@ export class AgentSessionJournal {
 
   /** Told of every durable change, epoch replacements included, so a reader learns of a write
    *  without its writer saying so. One listener: a later call replaces it. It must not throw. */
-  observeCommits(listener: () => void): void {
+  observeCommits(listener: (rows?: readonly JournalRow[]) => void): void {
     this.onCommitted = listener
   }
 

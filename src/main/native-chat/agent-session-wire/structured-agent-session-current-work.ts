@@ -23,10 +23,6 @@ import type { AgentSessionLatestTurn } from '../../../shared/agent-session-wire'
 import type { StructuredAgentSessionWorkScope } from '../../../shared/structured-agent-session-main-agent-working'
 import { isUnansweredStructuredAgentSessionDispatch } from '../../../shared/structured-agent-session-unanswered-dispatch'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
-import type {
-  StructuredAgentSessionEndedChild,
-  StructuredAgentSessionHostSession
-} from './structured-agent-session-host-types'
 
 export type StructuredAgentSessionCurrentWorkJournal = Pick<
   AgentSessionJournal,
@@ -37,7 +33,9 @@ export type StructuredAgentSessionCurrentWorkJournal = Pick<
 export type StructuredAgentSessionWorkEvidence = {
   record: Pick<AgentSessionRecord, 'lease'> | null
   /** The last child this host saw end (`StructuredAgentSessionHostSession.lastEndedChild`). */
-  ended?: Pick<StructuredAgentSessionEndedChild, 'fence' | 'rootGone'>
+  ended?: { fence: number; rootGone?: boolean }
+  /** `StructuredAgentSessionHostSession.operationalRevision`. */
+  revision?: number
 }
 
 /** The live or reserved generation's fence, or null when no generation is live. With no record
@@ -81,8 +79,17 @@ export class StructuredAgentSessionCurrentWork {
   constructor(
     private readonly journal: StructuredAgentSessionCurrentWorkJournal,
     /** `structuredAgentSessionLiveFence`. */
-    readonly liveFence: number | null
+    readonly liveFence: number | null,
+    /** Moves with every generation end this host saw, lease write or not: a reader that caches
+     *  what it derived from this answer keys it here and on the journal's cursor. */
+    readonly revision = 0
   ) {}
+
+  /** What a reader that published this answer compares to learn it may have changed with no row:
+   *  the live generation and the revision of what this host saw end. */
+  viewKey(): string {
+    return `${this.liveFence}:${this.revision}`
+  }
 
   /** Whether the live generation's execution produced this item. */
   isCurrentItem(itemId: string): boolean {
@@ -168,31 +175,11 @@ export function structuredAgentSessionCurrentWork(
   journal: StructuredAgentSessionCurrentWorkJournal,
   evidence: StructuredAgentSessionWorkEvidence
 ): StructuredAgentSessionCurrentWork {
-  return new StructuredAgentSessionCurrentWork(journal, structuredAgentSessionLiveFence(evidence))
-}
-
-/** The host's sessions and lease store, as the projection reads them. */
-export type StructuredAgentSessionCurrentWorkHost = {
-  store: { getRecord: (sessionId: string) => AgentSessionRecord | null }
-  sessions: {
-    get(
-      sessionId: string
-    ): Pick<StructuredAgentSessionHostSession, 'journal' | 'lastEndedChild'> | undefined
-  }
-}
-
-/** A held chat's current work; null when this host holds no conversation for it. */
-export function hostStructuredAgentSessionCurrentWork(
-  host: StructuredAgentSessionCurrentWorkHost,
-  sessionId: string
-): StructuredAgentSessionCurrentWork | null {
-  const session = host.sessions.get(sessionId)
-  return session
-    ? structuredAgentSessionCurrentWork(session.journal, {
-        record: host.store.getRecord(sessionId),
-        ...(session.lastEndedChild ? { ended: session.lastEndedChild } : {})
-      })
-    : null
+  return new StructuredAgentSessionCurrentWork(
+    journal,
+    structuredAgentSessionLiveFence(evidence),
+    evidence.revision
+  )
 }
 
 /** An operation context's current work: the host projection it was built with, or, for one built

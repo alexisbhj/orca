@@ -1,6 +1,6 @@
-// A turn an exited agent left running, whose settlement write failed, is settled at the next
-// ownership event: the next send's acquisition, or the next startup. A reader opening the chat in
-// between writes nothing, and the turn holds nothing: it is an ended generation's.
+// A turn an exited agent left running, whose settlement write failed, is settled by the chat's
+// reconciliation worker once storage takes it, or by the next startup. A reader opening the chat
+// in between writes nothing, and the turn holds nothing: it is an ended generation's.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AGENT_JOURNAL_THREAD_SCOPE } from '../../../shared/agent-session-journal-types'
@@ -11,9 +11,7 @@ import {
   createRestTestRig,
   foundRestTestChat,
   IDLE_MS,
-  REST_TEST_CALLER,
   REST_TEST_SESSION as SESSION,
-  restTestSend,
   REST_TEST_THREAD,
   sweepOnce,
   type RestTestRig
@@ -85,30 +83,37 @@ describe('a turn its gone agent left running', () => {
     expect(rig.adapter.acquire).toHaveBeenCalledOnce()
   })
 
-  it('stays as it was through an idle-closed reopen, and the next send settles it first', async () => {
-    await exitWithUnwrittenSettlement()
+  it('is settled by its chat’s worker once storage takes the write, with no send; a reader writes nothing meanwhile', async () => {
+    // The exit's own write and the worker's first attempt both fail; the backoff's retry lands.
+    await exitWithUnwrittenSettlement(2)
+    const { reconciliation } = rig.host.collaboratorsForTests()
+    await reconciliation.idle(SESSION)
+    expect(reconciliation.owes(SESSION)).toBe(true)
     expect(await workingTurnState()).toBe('running')
-    rig.clock.now += IDLE_MS + 1
-    await sweepOnce(rig.host)
-    expect(rig.host.collaboratorsForTests().sessions.has(SESSION)).toBe(false)
+    const cursor = rig.host.collaboratorsForTests().sessions.get(SESSION)!.journal.cursor()
 
     const reader = collectSubscriber()
     await rig.host.subscribe({ id: 'reader', sessionId: SESSION, emit: reader.emit })
-    expect(await workingTurnState()).toBe('running')
+    expect(rig.host.collaboratorsForTests().sessions.get(SESSION)!.journal.cursor()).toEqual(cursor)
 
-    const fence = rig.store.getRecord(SESSION)!.lease.runtimeFence
-    expect(await rig.host.send(REST_TEST_CALLER, restTestSend('next', fence))).toMatchObject({
-      ok: true
+    await vi.waitFor(async () => expect(await workingTurnState()).toBe('interrupted'), {
+      timeout: 5_000
     })
-    await vi.waitFor(async () => expect(await workingTurnState()).toBe('interrupted'))
     // The death evidence is Orca's log text: the row says only that the provider stopped.
     expect(JSON.stringify(reader.events)).toContain(
       'Codex stopped while this response was in progress. You can continue in this conversation.'
     )
+    expect(rig.adapter.acquire).toHaveBeenCalledOnce()
+    // Nothing owed once it landed: the idle sweep closes the chat as it would any other.
+    await reconciliation.idle(SESSION)
+    rig.clock.now += IDLE_MS + 1
+    await sweepOnce(rig.host)
+    expect(rig.host.collaboratorsForTests().sessions.has(SESSION)).toBe(false)
   })
 
   it('is settled by the startup after a restart, even when a read reaches the chat first', async () => {
-    await exitWithUnwrittenSettlement()
+    // Storage refuses it for the rest of this process.
+    await exitWithUnwrittenSettlement(100)
     await rig.restart()
     setStructuredAgentSessionHost(rig.host)
 

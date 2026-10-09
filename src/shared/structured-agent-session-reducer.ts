@@ -28,6 +28,7 @@ import { readAgentJournalTurn } from './agent-session-turn-record'
 import { queuePublicationField } from './structured-agent-session-queue-publication-field'
 import {
   actionablePromptIdsAfterStructuredAgentSessionBatch,
+  hostWorkingAfterStructuredAgentSessionBatch,
   latestTurnAfterStructuredAgentSessionBatch,
   restatesStructuredAgentSessionHostWork
 } from './structured-agent-session-live-turn'
@@ -82,6 +83,9 @@ export type StructuredAgentSessionState = {
   /** The prompts the host says still wait on the person (`AgentSessionHistoryPage`); absent from
    *  an older host, whose every pending prompt in `items` is read as waiting. */
   actionablePromptIds?: string[]
+  /** Whether the host says the session's own agent is working (`AgentSessionHistoryPage.working`);
+   *  absent from an older host, whose answer is derived from `items` and `submissions`. */
+  working?: boolean
   /** Bumped per live batch that leaves a turn row's newest revision outside the window
    *  (dropped or trimmed), so a whole-journal answer derived from turn rows is asked for again. */
   unloadedTurnRevisions?: number
@@ -140,6 +144,7 @@ function replacePage(
     ...(page.actionablePromptIds !== undefined
       ? { actionablePromptIds: page.actionablePromptIds }
       : {}),
+    ...(page.working !== undefined ? { working: page.working } : {}),
     ...(backgroundTasks !== undefined
       ? { backgroundTasks }
       : page.backgroundTasks !== undefined
@@ -325,6 +330,7 @@ export function reduceStructuredAgentSession(
       state.actionablePromptIds,
       event
     ),
+    working: hostWorkingAfterStructuredAgentSessionBatch(state.working, event),
     ...queuePublicationField(event, state),
     backgroundTasks,
     ...(activity !== undefined ? { activity } : {}),

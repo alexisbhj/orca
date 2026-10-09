@@ -13,6 +13,7 @@ import { agentSessionJournalProviderHandle } from '../../../shared/agent-session
 import { journalRowSchemaVersion } from '../../../shared/agent-session-journal-types'
 import { agentJournalLinkageFields } from '../../../shared/agent-session-journal-producer'
 import { agentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
+import { journalItemOwnerFence, journalObservedBody } from './journal-item-provenance'
 import type { JournalReducerState } from './journal-reducer'
 import type {
   JournalDispatchRow,
@@ -189,7 +190,15 @@ export function journalLifecycleBatchRowBuilder(
       const revision = nextJournalItemRevision(current, itemId, runningRevisions)
       return journalLifecycleMutationRow(
         mutation.kind === 'item'
-          ? { ...mutation, body: turnEndAfterStop(current, resolved, mutation.body) }
+          ? {
+              ...mutation,
+              body: journalObservedBody(
+                current,
+                resolved,
+                turnEndAfterStop(current, resolved, mutation.body),
+                mutation.ownerFence
+              )
+            }
           : mutation,
         itemId,
         revision,
@@ -229,21 +238,6 @@ export function journalRowBase(
   return { v: journalRowSchemaVersion(bodies), epoch, seq, fence, ts }
 }
 
-/** The provenance a row states: the writer's own claim when it has one — a provider's observation,
- *  or history carried into a new epoch — else host bookkeeping's, which keeps the item's, and for
- *  an item it creates is the fence it writes at. Every item row states it. */
-export function journalItemOwnerFence(
-  state: Pick<JournalReducerState, 'itemFences' | 'items'>,
-  resolvedItemId: string,
-  write: { fence: number; ownerFence?: number }
-): number {
-  if (write.ownerFence !== undefined) {
-    return write.ownerFence
-  }
-  const kept = state.items.has(resolvedItemId) ? state.itemFences.get(resolvedItemId) : undefined
-  return kept ?? write.fence
-}
-
 export function buildJournalItemRow(
   input: JournalItemAddress & {
     state: JournalReducerState
@@ -264,7 +258,12 @@ export function buildJournalItemRow(
   // A tombstoned row keeps its revision in `tombstones`, and the reducer drops
   // any item at or below it — so a re-add has to outrank the tombstone too.
   const revision = nextJournalItemRevision(input.state, itemId, input.revisions)
-  const body = turnEndAfterStop(input.state, resolved, input.body)
+  const body = journalObservedBody(
+    input.state,
+    resolved,
+    turnEndAfterStop(input.state, resolved, input.body),
+    input.ownerFence
+  )
   return {
     kind: 'item',
     itemId,

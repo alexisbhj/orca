@@ -44,9 +44,9 @@ export type Subscriber = {
   queuePublication?: QueuePublication
   /** Fingerprint of the background-task roster last SENT. */
   backgroundTasks?: string
-  /** The live generation the last frame's current-work fields were read under; a change with no
-   *  row still owes this subscriber a frame. */
-  workLiveFence?: number | null
+  /** The current-work view the last frame's fields were read under
+   *  (`StructuredAgentSessionCurrentWork.viewKey`); a change with no row still owes a frame. */
+  workView?: string
 }
 
 export type AgentSessionSubscribersHooks = {
@@ -115,7 +115,7 @@ export class AgentSessionSubscribers {
     } else {
       const work = this.hooks.readCurrentWork?.(input.sessionId, input.journal)
       const page = readAgentSessionHydrationPage(input.journal, input.fence, work)
-      subscriber.workLiveFence = work?.liveFence
+      subscriber.workView = work?.viewKey()
       this.emit(subscriber, {
         type: 'snapshot',
         sessionId: input.sessionId,
@@ -180,7 +180,7 @@ export class AgentSessionSubscribers {
     const page = readAgentSessionHydrationPage(journal, fence, work)
     const hostNow = this.now()
     for (const subscriber of this.subscribers(sessionId)) {
-      subscriber.workLiveFence = work?.liveFence
+      subscriber.workView = work?.viewKey()
       this.emit(subscriber, {
         type: 'snapshot',
         sessionId,

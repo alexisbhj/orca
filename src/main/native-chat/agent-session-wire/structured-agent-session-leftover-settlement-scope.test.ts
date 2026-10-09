@@ -5,10 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
-import {
-  HOST_TEST_NOW as NOW,
-  HOST_TEST_SESSION as SESSION
-} from './structured-agent-session-host-test-data'
+import { HOST_TEST_SESSION as SESSION } from './structured-agent-session-host-test-data'
 import {
   createQueuedMessageTestRig,
   QUEUED_RIG_CALLER as CALLER,
@@ -59,8 +56,9 @@ describe('reading a chat', () => {
     // Answered, so no send left pending keeps the conversation open.
     await current.settleAccepted(await current.workingSend(), 'work')
     await leaveUnfinishedWork(current, { prompt: true })
+    // The storage fault stays: the worker keeps retrying in the background, and every attempt
+    // rolls back, so any write the readers made would be the only one logged.
     const { database } = await exitWhileSettlementFails(current)
-    database.db.exec('DROP TRIGGER reject_recovered')
     await current.host.close(SESSION, 'evict')
     expect(current.host.collaboratorsForTests().sessions.has(SESSION)).toBe(false)
     const writes = logEveryWrite(database.db)
@@ -76,8 +74,8 @@ describe('reading a chat', () => {
     unsubscribe()
 
     expect(writes()).toEqual([])
-    // Still owed, and still as the dead generation left it: only an ownership event settles it.
-    expect(current.store.getRecord(SESSION)?.lease.leftoverSettledAt).toBeNull()
+    // Still owed, and still as the dead generation left it: only the chat's worker settles it.
+    expect(current.host.collaboratorsForTests().reconciliation.owes(SESSION)).toBe(true)
     expect(turnState(current)).toBe('running')
     expect(holds(current)).toEqual({ working: false, queueHeld: false })
   })
@@ -113,8 +111,7 @@ describe('a release nothing proved', () => {
 
     expect(current.store.getRecord(SESSION)?.lease).toMatchObject({
       claimStatus: 'released',
-      deathEvidence: null,
-      leftoverSettledAt: NOW
+      deathEvidence: null
     })
     expect(turnState(current)).toBe('unverifiable')
     expect(currentJournal(current).itemBody(agentJournalItemKey(APPROVAL))).toMatchObject({

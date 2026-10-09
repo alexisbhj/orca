@@ -28,6 +28,13 @@ import {
   retireAgentSessionClaimKey
 } from './agent-session-claim-key-retention'
 import type { AgentSessionOwnerProbe } from '../../shared/agent-session-lease-adjudication'
+import {
+  agentSessionGenerationEnds,
+  agentSessionLeasesBefore,
+  reservationSupersessionEvidence,
+  type AgentSessionGenerationEnd,
+  type AgentSessionGenerationEndOptions
+} from './agent-session-generation-end'
 import type { AgentSessionProviderHandleLink } from '../../shared/agent-session-provider-handle'
 import {
   agentSessionScopeKey,
@@ -85,7 +92,7 @@ export const AGENT_SESSION_LEASE_TTL_MS = 30_000,
   AGENT_SESSION_LEASE_RENEW_INTERVAL_MS = 10_000
 
 export class AgentSessionRecordStore {
-  private readonly deathEvidenceListeners = new Set<(sessionId: string) => void>()
+  private readonly generationEndListeners = new Set<(ended: AgentSessionGenerationEnd) => void>()
   private readonly firstRecordListeners = new Set<() => void>()
   readonly conversationReceipts: ReturnType<typeof createAgentSessionConversationReceipts>
 
@@ -194,8 +201,9 @@ export class AgentSessionRecordStore {
     isAgentSessionClaimKeyVerifiable(this.state, keyId, now)
 
   async reserveOwner(request: AgentSessionReserveRequest): Promise<AgentSessionReserveResult> {
-    return this.transact((draft) =>
-      commitAgentSessionReservation(draft, request, AGENT_SESSION_LEASE_TTL_MS)
+    return this.transact(
+      (draft) => commitAgentSessionReservation(draft, request, AGENT_SESSION_LEASE_TTL_MS),
+      { supersessionEvidence: reservationSupersessionEvidence(request.probe, request.now) }
     )
   }
 
@@ -339,11 +347,12 @@ export class AgentSessionRecordStore {
     })
   }
 
-  /** Told, once committed, of each session a transaction wrote a proof of death for — whichever
-   *  transition wrote it, since every one lands here. Must not throw. */
-  onDeathEvidence(listener: (sessionId: string) => void): () => void {
-    this.deathEvidenceListeners.add(listener)
-    return () => this.deathEvidenceListeners.delete(listener)
+  /** Told once, after commit, of each generation a transaction revoked or superseded, whichever
+   *  transition wrote it, since every lease write lands here (`agentSessionGenerationEnds`). Must not
+   *  throw. */
+  onGenerationEnded(listener: (ended: AgentSessionGenerationEnd) => void): () => void {
+    this.generationEndListeners.add(listener)
+    return () => this.generationEndListeners.delete(listener)
   }
 
   /** Told, once committed, when the store records its first chat. Must not throw. */
@@ -356,26 +365,19 @@ export class AgentSessionRecordStore {
    *  once its rows have committed. */
   private transact = async <T>(
     apply: (draft: AgentSessionStoreState) => T,
-    options?: { inMemoryWhenReadOnly?: boolean }
+    options?: { inMemoryWhenReadOnly?: boolean } & AgentSessionGenerationEndOptions
   ): Promise<T> => {
-    let proven: string[] = []
+    let ended: AgentSessionGenerationEnd[] = []
     let heldBefore = true
     const result = await this.transactions.transact((draft) => {
       heldBefore = this.holdsRecords()
-      if (this.deathEvidenceListeners.size === 0) {
-        return apply(draft)
-      }
-      const before = new Map(
-        [...draft.records].map(([id, record]) => [id, record.lease.deathEvidence])
-      )
+      const before = agentSessionLeasesBefore(draft.records)
       const applied = apply(draft)
-      proven = [...draft.records]
-        .filter(([id, { lease }]) => lease.deathEvidence && lease.deathEvidence !== before.get(id))
-        .map(([id]) => id)
+      ended = agentSessionGenerationEnds(before, draft.records, options?.supersessionEvidence)
       return applied
     }, options)
-    for (const sessionId of proven) {
-      this.deathEvidenceListeners.forEach((listener) => listener(sessionId))
+    for (const end of ended) {
+      this.generationEndListeners.forEach((listener) => listener(end))
     }
     if (!heldBefore && this.holdsRecords()) {
       this.firstRecordListeners.forEach((listener) => listener())

@@ -85,8 +85,7 @@ export class JournalRowWriter {
     return this.deps.serialize(() => this.writeRows(plan, receipt))
   }
 
-  /** `enqueueRows`' write, for a caller already running at its own turn in the queue. A receipt
-   *  commits even when the plan is empty: what it records is already true of the rows. */
+  /** `enqueueRows`' write, for a caller already running at its own turn in the queue. */
   writeRows(
     plan: () => readonly ((seq: number, ts: number) => JournalRow)[],
     receipt?: JournalOperationReceipt
@@ -95,7 +94,7 @@ export class JournalRowWriter {
     const first = this.deps.nextSequence()
     const ts = this.deps.now()
     const rows = plan().map((build, index) => build(first + index, ts))
-    if (rows.length === 0 && !receipt) {
+    if (rows.length === 0) {
       return rows
     }
     for (const row of rows) {
@@ -103,9 +102,7 @@ export class JournalRowWriter {
     }
     try {
       this.deps.database().transaction((db) => {
-        if (rows.length > 0) {
-          this.deps.founding?.inTransaction(db)
-        }
+        this.deps.founding?.inTransaction(db)
         for (const row of rows) {
           insertJournalRow(db, this.deps.sessionId, row)
           this.runBookkeeping(db, row)
@@ -116,11 +113,9 @@ export class JournalRowWriter {
       this.deps.rolledBack?.()
       throw error
     }
+    this.deps.founding?.settled()
     receipt?.committed()
-    if (rows.length > 0) {
-      this.deps.founding?.settled()
-      this.deps.commit(rows)
-    }
+    this.deps.commit(rows)
     return rows
   }
 

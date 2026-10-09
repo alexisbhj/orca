@@ -1,6 +1,5 @@
 // Doubles for unit tests that drive a settlement without a journal database: a planned batch is
-// planned at once and handed to an `appendLifecycleBatch` mock as the batch it would write, and a
-// store's leftover receipt commits nothing.
+// planned at once and handed to an `appendLifecycleBatch` mock as the batch it would write.
 
 import type {
   AgentJournalCursor,
@@ -12,7 +11,6 @@ import type {
   JournalLifecycleBatchInput,
   JournalPlannedLifecycleBatchInput
 } from '../agent-session-journal/journal-store-contracts'
-import type { JournalOperationReceipt } from '../agent-session-journal/journal-row-writer'
 
 const NO_CURSOR: AgentJournalCursor = { epoch: 'epoch-1', sequence: 0 }
 
@@ -24,7 +22,6 @@ export function plannedBatchThrough(
   return async (input) => {
     const { mutations, dispatches } = input.plan()
     if (mutations.length === 0 && dispatches.length === 0) {
-      input.receipt?.committed()
       return NO_CURSOR
     }
     const cursor = await append({
@@ -34,14 +31,8 @@ export function plannedBatchThrough(
       mutations,
       dispatches
     })
-    input.receipt?.committed()
     return cursor
   }
-}
-
-/** A store's receipts, for a store double: each commits nothing. */
-export const NO_STORE_RECEIPTS = {
-  leftoverSettled: (): JournalOperationReceipt => ({ write: () => {}, committed: () => {} })
 }
 
 /** An exited child's journal for a test without a database: the reads a settlement makes, with a

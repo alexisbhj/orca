@@ -22,7 +22,6 @@ import {
   pinnedAgentSessionLaunchEnv
 } from './structured-agent-session-launch-env'
 import { refuseAgentSessionMutation } from './structured-agent-session-mutation-admission'
-import { settleStructuredAgentSessionLeftoversBeforeReserve } from './structured-agent-session-acquisition-settlement'
 import type { StructuredAgentSessionAttachContext } from './structured-agent-session-attach-context'
 import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import {
@@ -147,9 +146,6 @@ async function runAttachUnderAbort(
   const probe = await withAgentSessionCreatePhase('probe_owner', recordPhase, () =>
     context.runtimeState.probeOwner(sessionId)
   )
-  // Before the reserve wipes the proof of how the last generation ended: best effort, so a
-  // settlement that cannot commit never stops this start.
-  await settleStructuredAgentSessionLeftoversBeforeReserve(context, sessionId, probe)
   const priorRecord = context.deps.store.getRecord(sessionId)
   const launchDirectory =
     !priorRecord && isFloatingWorkspaceId(params.location.workspaceId)

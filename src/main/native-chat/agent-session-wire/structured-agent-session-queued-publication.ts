@@ -19,10 +19,8 @@ import {
   nextStructuredQueuedMessage,
   type StructuredQueueGateInput
 } from './structured-agent-session-queued-messages'
-import {
-  structuredAgentSessionCurrentWork,
-  type StructuredAgentSessionCurrentWorkHost
-} from './structured-agent-session-current-work'
+import { structuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
+import type { StructuredAgentSessionCurrentWorkHost } from './structured-agent-session-host-current-work'
 
 export type QueuePublication = {
   queuedMessages: AgentSessionQueuedMessage[]

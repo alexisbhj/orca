@@ -150,6 +150,21 @@ function openHost(overrides: Partial<StructuredAgentSessionHostDeps> = {}): void
   })
 }
 
+/** Startup as the runtime runs it: the restart reconcile, every chat's share in the background,
+ *  and the boot sweep that opens each chat for its readers once that share closed it again. */
+async function startUp(): Promise<void> {
+  await host.reconcileRestartLeases()
+  await host.startupSettled()
+  await reconciled()
+  await vi.waitFor(() => expect(host.hasSession(SESSION)).toBe(false))
+  await host.restoreReadableSessions()
+}
+
+/** The chat's reconciliation worker has retired, or waits out a backoff. */
+function reconciled(): Promise<void> {
+  return host.collaboratorsForTests().reconciliation.idle(SESSION)
+}
+
 /** The host starting the agent with no message to deliver, as an operation that needs it does. */
 function startAgent(): Promise<unknown> {
   return host['serialize'](SESSION, () => host['mutationContext']().ensureAgent(SESSION))
@@ -339,7 +354,7 @@ describe('already-wedged profiles become usable on load', () => {
           : {})
       })
 
-      await host.restoreReadableSessions()
+      await startUp()
 
       expect(acquire).not.toHaveBeenCalled()
       expect(turnLifecycle('turn-1')).toEqual({
@@ -365,8 +380,12 @@ describe('already-wedged profiles become usable on load', () => {
       expect(published.map((summary) => summary.status)).not.toContain('working')
       // A crash is not something the user did: a proven one reads as an interruption and an
       // unprovable one as unconfirmed, so no reader files it as a cancellation the user knows about.
-      expect(published.map((summary) => summary.turnOutcome)).toEqual(
-        published.map(() => (verdict.state === 'interrupted' ? 'interruption' : 'unconfirmed'))
+      // The chat is published before its settlement lands, as not working with no outcome yet.
+      const outcome = verdict.state === 'interrupted' ? 'interruption' : 'unconfirmed'
+      const outcomes = published.map((summary) => summary.turnOutcome)
+      expect(outcomes.at(-1)).toBe(outcome)
+      expect(new Set(outcomes.filter((reported) => reported !== undefined))).toEqual(
+        new Set([outcome])
       )
     }
   )
@@ -384,6 +403,8 @@ describe('already-wedged profiles become usable on load', () => {
     const fence = stale.ok ? 13 : (stale.refusal.currentFence ?? 13)
     expect(stale.ok || stale.refusal.code === 'agent_session_checkpoint_stale').toBe(true)
     expect(stale.ok || (await host.attach(CALLER, hostTestAttachParams(fence))).ok).toBe(true)
+    // The reservation over the proven-dead owner ended its generation: the worker settles it.
+    await reconciled()
 
     expect(acquire).toHaveBeenCalledOnce()
     expect(activeStructuredAgentSessionTurnId(restoredJournal().snapshot().items)).toBe(null)
@@ -422,10 +443,12 @@ describe('already-wedged profiles become usable on load', () => {
     openHost()
 
     expect(await host.attach(CALLER, hostTestAttachParams(13))).toMatchObject({ ok: true })
+    // The reservation cleared the release's proof and handed it to the chat's worker.
+    await reconciled()
 
     expect(acquire).toHaveBeenCalledOnce()
     expect(activeStructuredAgentSessionTurnId(restoredJournal().snapshot().items)).toBe(null)
-    // The exit was observed, so its receipt is the turn's end.
+    // The exit was observed, so its proof is the turn's end.
     expect(turnLifecycle('turn-1')).toEqual({
       turnId: 'turn-1',
       state: 'interrupted',
@@ -446,7 +469,7 @@ describe('already-wedged profiles become usable on load', () => {
     ['a restart eviction', false],
     ['a proven eviction by recovery', true]
   ] as const)(
-    'settles the turn %s left at the next acquire when the read restore could not write it',
+    'settles the turn %s left once storage takes it, when its first settlement could not write it',
     async (_origin, ownerOutlivedRestart) => {
       await seedStore(
         wedgedRecord({ claimStatus: 'live', handoffStage: null, ownerProcess: DEAD_OWNER })
@@ -463,7 +486,7 @@ describe('already-wedged profiles become usable on load', () => {
             : { outcome: 'pid-absent' },
         stopOwnerProcess
       })
-      // The startup settlement fails, and nothing retries it before the next acquisition.
+      // The worker's settlement fails until storage takes it again; it backs off and retries.
       const failing = vi
         .spyOn(JournalLifecycleBatchAppender.prototype, 'appendPlanned')
         .mockRejectedValue(new Error('journal unavailable'))
@@ -477,11 +500,15 @@ describe('already-wedged profiles become usable on load', () => {
         deathEvidence: { kind: 'pid-absent' }
       })
 
+      // The next start waits on none of it.
       await startAgent()
 
       expect(acquire).toHaveBeenCalledOnce()
       expect(store.getRecord(SESSION)?.lease).toMatchObject({ claimStatus: 'live' })
       // A pid probe proved the owner gone, so the turn was cut short when it was last proven alive.
+      await vi.waitFor(() => expect(turnLifecycle('turn-1')?.state).toBe('interrupted'), {
+        timeout: 5_000
+      })
       expect(turnLifecycle('turn-1')).toEqual({
         turnId: 'turn-1',
         state: 'interrupted',
@@ -553,12 +580,13 @@ describe('already-wedged profiles become usable on load', () => {
     }
   )
 
-  it('marks a running turn left behind by a released lease unverifiable on a cold acquire', async () => {
+  it('marks a running turn left behind by a released lease unverifiable at startup, and a cold acquire starts', async () => {
     // No settlement latch: the record was released cleanly, but the journal still says a turn is
     // running. The child that wrote it is gone and nothing observed its exit.
     await seedStore(wedgedRecord({ claimStatus: 'released', handoffStage: null }))
     await seedRunningTurn()
     openHost()
+    await startUp()
 
     expect(await host.attach(CALLER, hostTestAttachParams(13))).toMatchObject({ ok: true })
 

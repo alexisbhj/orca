@@ -1,9 +1,12 @@
+// The chat's reconciliation worker, driven by every way a generation ends: what it settles, that
+// it settles in one commit, and that nothing a person does ever waits on it.
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { agentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
 import {
-  agentJournalItemKey,
-  agentJournalSubmissionKey
-} from '../../../shared/agent-session-journal-item-key'
-import type { AgentJournalItemIdentity } from '../../../shared/agent-session-journal-types'
+  AGENT_JOURNAL_THREAD_SCOPE,
+  type AgentJournalItemIdentity
+} from '../../../shared/agent-session-journal-types'
 import {
   agentSessionWriteNoticeEnglish,
   agentSessionWriteNoticeParts
@@ -14,8 +17,8 @@ import { projectStructuredAgentSessionStatusState } from '../../../shared/struct
 import { codexSubagentGroupIdentity } from '../../codex/codex-subagent-roster'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
 import {
-  HOST_TEST_NOW as NOW,
   HOST_TEST_SESSION as SESSION,
+  HOST_TEST_THREAD as THREAD,
   hostTestOperationId
 } from './structured-agent-session-host-test-data'
 import {
@@ -33,15 +36,17 @@ import {
   exitWhileSettlementFails,
   leaveUnfinishedWork,
   REASONING,
+  reconciled,
   recoveredRows,
+  REJECT_RECOVERED_ROWS,
   rowFence,
   ROSTER_GROUP,
   sendText,
+  startUp,
   TASK,
   TOOL,
-  TURN_KEY,
   turnState,
-  watchMarks
+  watchSettlementCommits
 } from './structured-agent-session-leftover-settlement.test-fixture'
 
 let rig: QueuedMessageTestRig | undefined
@@ -52,46 +57,32 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-function leftoverSettledAt(current: QueuedMessageTestRig): number | null | undefined {
-  return current.store.getRecord(SESSION)?.lease.leftoverSettledAt
-}
-
-function settlementWarnings(): string[] {
-  return vi
-    .mocked(console.warn)
-    .mock.calls.flatMap(([, fields]) =>
-      typeof fields === 'object' && fields !== null && 'scope' in fields
-        ? [String(fields.scope)]
-        : []
-    )
-}
-
-describe('the observed exit, then the next start', () => {
-  it('settles at the start in one commit at the released fence, with its mark, before the successor binds', async () => {
+describe('an observed exit whose settlement the database refused', () => {
+  it('is settled by the worker in one commit, while the next send starts and delivers', async () => {
     rig = await createQueuedMessageTestRig({ restartable: true })
     const current = rig
     const firstSend = await current.workingSend()
     await leaveUnfinishedWork(current, { everything: true })
     const { session, database, deadFence } = await exitWhileSettlementFails(current)
-    database.db.exec('DROP TRIGGER reject_recovered')
-    const marks = watchMarks(database.db)
 
-    const { clientOperationId, result } = sendText(current, 'continue after storage recovered')
-
+    // The fault holds: the send is accepted, starts its agent and is delivered all the same.
+    const { clientOperationId, result } = sendText(current, 'continue while storage fails')
     expect(await result).toMatchObject({ ok: true })
-    // An ordinary send: no card waits behind the dead generation's turn.
     expect(session.journal.queuedMessages.list()).toEqual([])
     expect(session.journal.submission(clientOperationId)).toBeDefined()
     await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
-    const settled = recoveredRows(database.db)
-    expect(settled.length).toBeGreaterThan(0)
-    // Every settlement row, at the released fence, was in the database when the mark was set.
-    expect(marks()).toEqual([{ fence: deadFence + 1, rows: settled.length }])
-    expect(settled.map(rowFence)).toEqual(settled.map(() => deadFence + 1))
-    // The successor reserved after it, at the next fence.
     expect(session.child?.fence).toBe(deadFence + 2)
-    expect(leftoverSettledAt(current)).toBe(NOW)
-    // The exit's proof named the dead generation: its turn was interrupted.
+    expect(turnState(current)).toBe('running')
+
+    const commits = watchSettlementCommits()
+    database.db.exec('DROP TRIGGER reject_recovered')
+    await reconciled(current)
+
+    // One transaction, at the lease's current fence (the successor's), judged by the exit's proof
+    // though the successor's reservation cleared it from the lease.
+    expect(commits()).toHaveLength(1)
+    const settled = recoveredRows(database.db)
+    expect(settled.map(rowFence)).toEqual(settled.map(() => deadFence + 2))
     expect(turnState(current)).toBe('interrupted')
     const body = (identity: AgentJournalItemIdentity) =>
       session.journal.itemBody(agentJournalItemKey(identity))
@@ -109,10 +100,9 @@ describe('the observed exit, then the next start', () => {
       ]
     })
     // Handed over and never answered: doubt, never "not delivered".
-    expect(session.journal.submission(firstSend)).toMatchObject({
-      dispatchState: 'unknown',
-      reason: 'provider_exited_before_acknowledgement'
-    })
+    expect(session.journal.submission(firstSend)).toMatchObject({ dispatchState: 'unknown' })
+    // The successor's send is its own, untouched.
+    expect(session.journal.submission(clientOperationId)?.dispatchState).not.toBe('unknown')
   })
 
   it('settles at the exit itself when nothing refuses it, once', async () => {
@@ -121,16 +111,18 @@ describe('the observed exit, then the next start', () => {
     await current.workingSend()
     await leaveUnfinishedWork(current, { prompt: true })
     const database = openTestJournalHostDatabase(current.root)
-    const marks = watchMarks(database.db)
+    const commits = watchSettlementCommits()
 
     await exitChild(current)
+    await reconciled(current)
 
-    const settled = recoveredRows(database.db)
     expect(turnState(current)).toBe('interrupted')
-    expect(marks()).toEqual([{ fence: 2, rows: settled.length }])
-    // The next start finds nothing left: its settlement writes no row.
+    expect(commits()).toHaveLength(1)
+    const settled = recoveredRows(database.db)
+    // The next start finds nothing left: the worker its end signals writes no row.
     expect((await sendText(current, 'next').result).ok).toBe(true)
     await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
+    await reconciled(current)
     expect(recoveredRows(database.db)).toEqual(settled)
   })
 })
@@ -177,43 +169,88 @@ describe('a settlement that cannot commit never gates the user', () => {
     await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
   })
 
-  it('starts, delivers and logs when the start’s own settlement fails; the next trigger settles once as unverifiable', async () => {
+  it('drains a card that waited on the dead generation, with no journal write', async () => {
     rig = await createQueuedMessageTestRig({ restartable: true })
     const current = rig
     await current.workingSend()
-    await leaveUnfinishedWork(current, { prompt: true })
-    const { session, database } = await exitWhileSettlementFails(current)
+    await leaveUnfinishedWork(current)
+    const queued = await current.send('after this turn', 'queue-if-active').result
+    expect(queued).toMatchObject({ ok: true, value: { queued: expect.anything() } })
+    expect(currentJournal(current).queuedMessages.list()).toHaveLength(1)
+    const database = openTestJournalHostDatabase(current.root)
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    database.db.exec(REJECT_RECOVERED_ROWS)
+    const child = current.host.collaboratorsForTests().sessions.get(SESSION)?.child
+    if (!child?.generation) {
+      throw new Error('expected the live child')
+    }
 
-    const { clientOperationId, result } = sendText(current, 'meets the storage fault')
-
-    expect(await result).toMatchObject({ ok: true })
-    expect(session.journal.submission(clientOperationId)).toBeDefined()
-    await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
-    expect(settlementWarnings()).toContain('acquisition-settlement')
-    // Nothing partial committed; the reservation left the mark as it was.
-    expect(recoveredRows(database.db)).toEqual([])
-    expect(leftoverSettledAt(current)).toBeNull()
-    expect(turnState(current)).toBe('running')
-    // The successor's turn is the one that counts.
-    expect(currentWork(current).activeTurnId()).toBeNull()
-
-    database.db.exec('DROP TRIGGER reject_recovered')
-    const marks = watchMarks(database.db)
-    await exitChild(current)
-
-    // The reservation wiped the proof that named it: less specific, never wrong.
-    expect(turnState(current)).toBe('unverifiable')
-    expect(session.journal.itemBody(agentJournalItemKey(APPROVAL))).toMatchObject({
-      resolution: { state: 'cancelled' }
+    await current.host.handleAdapterEvent({
+      type: 'ended',
+      sessionId: SESSION,
+      cause: 'unexpected-exit',
+      reason: 'observed exit',
+      fence: child.fence,
+      acquisitionGeneration: child.generation
     })
-    const revisions = recoveredRows(database.db).filter((row) => row.rowJson.includes(TURN_KEY))
-    expect(revisions).toHaveLength(1)
-    expect(marks()).toHaveLength(1)
+
+    // The end alone woke the drain: the card went out though nothing settled the turn.
+    await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
+    expect(recoveredRows(database.db)).toEqual([])
+    expect(turnState(current)).toBe('running')
+  })
+})
+
+describe('the worker’s retry', () => {
+  /** Lets every attempt a fired timer began run to its end, with no fake time passing. */
+  async function settleTurns(): Promise<void> {
+    for (let turn = 0; turn < 50; turn++) {
+      await new Promise((resolve) => setImmediate(resolve))
+    }
+  }
+
+  it('backs off from 1 s, coalesces the signals meanwhile, and settles once the fault clears', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      rig = await createQueuedMessageTestRig({ restartable: true })
+      const current = rig
+      await current.workingSend()
+      await leaveUnfinishedWork(current, { prompt: true })
+      const { database } = await exitWhileSettlementFails(current)
+      const reconciliation = current.host.collaboratorsForTests().reconciliation
+      const attempts = vi.spyOn(currentJournal(current), 'appendPlannedLifecycleBatch')
+      expect(reconciliation.owes(SESSION)).toBe(true)
+
+      // Signals during the backoff join the one worker; none runs an attempt of its own.
+      reconciliation.signal(SESSION)
+      reconciliation.signal(SESSION, { restate: true })
+      await settleTurns()
+      await vi.advanceTimersByTimeAsync(990)
+      await settleTurns()
+      expect(attempts).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(10)
+      await settleTurns()
+      expect(attempts).toHaveBeenCalledTimes(1)
+      expect(reconciliation.owes(SESSION)).toBe(true)
+      expect(turnState(current)).toBe('running')
+
+      database.db.exec('DROP TRIGGER reject_recovered')
+      // The second failure doubled the wait.
+      await vi.advanceTimersByTimeAsync(1_990)
+      await settleTurns()
+      expect(attempts).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(10)
+      await settleTurns()
+      expect(reconciliation.owes(SESSION)).toBe(false)
+      expect(turnState(current)).toBe('interrupted')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
 describe('a stale prompt', () => {
-  it('holds no send, ends cancelled once settled, and refuses a stale answer', async () => {
+  it('holds no send, refuses a stale answer in plain words, and ends cancelled once settled', async () => {
     rig = await createQueuedMessageTestRig({ restartable: true })
     const current = rig
     await current.workingSend()
@@ -261,7 +298,7 @@ describe('a stale prompt', () => {
     expect(current.answerPrompt).not.toHaveBeenCalled()
 
     database.db.exec('DROP TRIGGER reject_recovered')
-    await exitChild(current)
+    await reconciled(current)
 
     expect(session.journal.itemBody(prompt.itemId)).toMatchObject({
       resolution: { state: 'cancelled' }
@@ -271,87 +308,73 @@ describe('a stale prompt', () => {
   })
 })
 
+describe('a late write from an ended generation', () => {
+  it('is settled by the worker its commit wakes', async () => {
+    rig = await createQueuedMessageTestRig({ restartable: true })
+    const current = rig
+    // Answered, so the exit leaves nothing to settle and writes no row at the moved fence.
+    await current.settleAccepted(await current.workingSend(), 'work')
+    const deadFence = current.store.getRecord(SESSION)?.lease.runtimeFence ?? 0
+    await exitChild(current)
+    await reconciled(current)
+    const database = openTestJournalHostDatabase(current.root)
+    expect(recoveredRows(database.db)).toEqual([])
+    const lateCall: AgentJournalItemIdentity = {
+      provider: 'codex',
+      threadId: THREAD,
+      turnId: 'late',
+      ordinal: 1
+    }
+
+    // An operation the closed sink had already taken lands at the generation's own fence.
+    await currentJournal(current).appendItem(
+      lateCall,
+      { kind: 'tool-call', name: 'shell', input: { command: 'make' }, state: 'running' },
+      { fence: deadFence, ownerFence: deadFence, turnScope: AGENT_JOURNAL_THREAD_SCOPE }
+    )
+
+    await vi.waitFor(() =>
+      expect(currentJournal(current).itemBody(agentJournalItemKey(lateCall))).toMatchObject({
+        state: 'failed'
+      })
+    )
+    await reconciled(current)
+    expect(recoveredRows(database.db).map(rowFence)).toEqual([deadFence + 1])
+  })
+})
+
 describe('startup', () => {
-  it('settles a failed exit settlement once and sets the mark, starting nothing', async () => {
+  it('settles a failed exit settlement with no stored mark, starting nothing', async () => {
     rig = await createQueuedMessageTestRig({ restartable: true })
     const current = rig
     await current.workingSend()
     await leaveUnfinishedWork(current, { prompt: true })
     const { deadFence } = await exitWhileSettlementFails(current)
-    let owed: number | null | undefined
     // A new process loads the database and the record store back from disk, and starts up.
-    await current.crashReloadHostProcess(() => {
-      owed = leftoverSettledAt(current)
-    })
+    await current.crashReloadHostProcess()
+    await reconciled(current)
     const database = openTestJournalHostDatabase(current.root)
-    expect(owed).toBeNull()
+    // The worker opened the chat itself, so it closes it again: nothing else had it open.
+    await vi.waitFor(() =>
+      expect(current.host.collaboratorsForTests().sessions.has(SESSION)).toBe(false)
+    )
+    await current.host.journalSnapshot(SESSION)
 
     expect(turnState(current)).toBe('interrupted')
     expect(currentJournal(current).itemBody(agentJournalItemKey(APPROVAL))).toMatchObject({
       resolution: { state: 'cancelled' }
     })
-    expect(leftoverSettledAt(current)).toBe(NOW)
     const settled = recoveredRows(database.db)
     expect(settled.map(rowFence)).toEqual(settled.map(() => deadFence + 1))
     expect(current.starts).toHaveBeenCalledOnce()
     // A second pass finds nothing owed.
-    await current.host.reconcileRestartLeases()
-    await current.host.startupSettled()
+    await startUp(current)
     expect(recoveredRows(database.db)).toEqual(settled)
   })
 })
 
-describe('the mark is only an index', () => {
-  it('a wrong "settled" holds nothing: delivery goes on, and the next start settles and corrects it', async () => {
-    rig = await createQueuedMessageTestRig({ restartable: true })
-    const current = rig
-    await current.workingSend()
-    await leaveUnfinishedWork(current)
-    const { database } = await exitWhileSettlementFails(current)
-    database.db.exec('DROP TRIGGER reject_recovered')
-    await current.store.transitionHandoff(SESSION, (record) => ({
-      ...record,
-      lease: { ...record.lease, leftoverSettledAt: 1 }
-    }))
-    await current.crashReloadHostProcess()
-    // Startup believed it and skipped the chat; a reader's open writes nothing either.
-    await current.host.journalSnapshot(SESSION)
-    expect(turnState(current)).toBe('running')
-    const marks = watchMarks(openTestJournalHostDatabase(current.root).db)
-
-    expect((await sendText(current, 'after a wrong mark').result).ok).toBe(true)
-
-    await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
-    expect(turnState(current)).toBe('interrupted')
-    // The receipt replaced the wrong mark; a set mark is not re-set, so no row logs it.
-    expect(marks()).toEqual([])
-    expect(leftoverSettledAt(current)).toBe(NOW)
-  })
-
-  it('a wrong "owed" costs one journal open and a settlement that plans nothing', async () => {
-    rig = await createQueuedMessageTestRig({ restartable: true })
-    const current = rig
-    await current.workingSend()
-    await leaveUnfinishedWork(current)
-    await exitChild(current)
-    expect(turnState(current)).toBe('interrupted')
-    await current.store.transitionHandoff(SESSION, (record) => ({
-      ...record,
-      lease: { ...record.lease, leftoverSettledAt: null }
-    }))
-    const settled = recoveredRows(openTestJournalHostDatabase(current.root).db)
-
-    await current.crashReloadHostProcess()
-
-    expect(recoveredRows(openTestJournalHostDatabase(current.root).db)).toEqual(settled)
-    expect(leftoverSettledAt(current)).toBe(NOW)
-    expect((await sendText(current, 'after a wrong owed mark').result).ok).toBe(true)
-    await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
-  })
-})
-
 describe('a folder workspace', () => {
-  it('settles a folder chat’s dead generation the same way', async () => {
+  it('settles a folder chat’s dead generation the same way, and delivers', async () => {
     rig = await createQueuedMessageTestRig({
       restartable: true,
       location: {
@@ -365,17 +388,14 @@ describe('a folder workspace', () => {
     await current.workingSend()
     await leaveUnfinishedWork(current)
     const { session, database } = await exitWhileSettlementFails(current)
-    database.db.exec('DROP TRIGGER reject_recovered')
 
     const { clientOperationId, result } = sendText(current, 'continue in the folder')
 
     expect(await result).toMatchObject({ ok: true })
     expect(session.journal.submission(clientOperationId)).toBeDefined()
     await vi.waitFor(() => expect(current.dispatch).toHaveBeenCalledTimes(2))
+    database.db.exec('DROP TRIGGER reject_recovered')
+    await reconciled(current)
     expect(turnState(current)).toBe('interrupted')
-    expect(leftoverSettledAt(current)).toBe(NOW)
-    expect(
-      session.journal.item(agentJournalSubmissionKey(clientOperationId))?.sequence
-    ).toBeGreaterThan(recoveredRows(database.db).at(-1)?.seq ?? 0)
   })
 })

@@ -112,7 +112,10 @@ it.each(PROBES)(
   'settles a turn a dead generation left running when a send opens the chat and its start fails, when %s',
   async (_when, probe, settled) => {
     const { host, acquire } = await relaunchAfterCrashMidTurn(probe)
-    expect(host.hasSession(SESSION)).toBe(false)
+    // The startup's worker opens the chat in the background and closes it again once done.
+    await host.startupSettled()
+    await host.collaboratorsForTests().reconciliation.idle(SESSION)
+    await eventually(() => expect(host.hasSession(SESSION)).toBe(false))
 
     const body = hostTestMessage('sent to a chat nobody has open')
     const sendEnvelope = envelope('agentSession.send', { body })

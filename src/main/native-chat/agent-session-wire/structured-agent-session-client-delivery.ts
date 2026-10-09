@@ -189,10 +189,12 @@ export class StructuredAgentSessionClientDelivery {
 
   /** The current-work projection over this journal (`structuredAgentSessionCurrentWork`). */
   private currentWork(sessionId: string, journal: AgentSessionJournal) {
-    const ended = this.sessions.get(sessionId)?.lastEndedChild
+    const session = this.sessions.get(sessionId)
+    const ended = session?.lastEndedChild
     return structuredAgentSessionCurrentWork(journal, {
       record: this.deps().store.getRecord(sessionId),
-      ...(ended ? { ended } : {})
+      ...(ended ? { ended } : {}),
+      revision: session?.operationalRevision ?? 0
     })
   }
 

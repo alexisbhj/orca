@@ -33,31 +33,11 @@ export type AgentSessionReservation = {
   now: number
 }
 
-/** Every lease write. One that ends a generation (moves the fence and leaves no owner) marks what
- *  that generation left as owed; only the settlement's own receipt marks it settled. */
 export function withLease(
   record: AgentSessionRecord,
   lease: AgentSessionLease
 ): AgentSessionRecord {
-  const endsGeneration =
-    lease.claimStatus === 'released' && lease.runtimeFence !== record.lease.runtimeFence
-  return {
-    ...record,
-    lease: endsGeneration ? { ...lease, leftoverSettledAt: null } : lease,
-    updatedAt: lease.lastRenewedAt
-  }
-}
-
-/** The settlement's receipt: marks the leftovers settled only while the lease still has the fence
- *  the settlement was planned at, so a generation that ended meanwhile stays owed. */
-export function markAgentSessionLeftoverSettled(
-  record: AgentSessionRecord,
-  plannedFence: number,
-  now: number
-): AgentSessionRecord {
-  return record.lease.runtimeFence === plannedFence && record.lease.claimStatus === 'released'
-    ? { ...record, lease: { ...record.lease, leftoverSettledAt: now } }
-    : record
+  return { ...record, lease, updatedAt: lease.lastRenewedAt }
 }
 
 export function assertFence(lease: AgentSessionLease, fence: number): void {

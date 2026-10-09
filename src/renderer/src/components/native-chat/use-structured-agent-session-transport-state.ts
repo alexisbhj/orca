@@ -1,5 +1,8 @@
 import { useMemo } from 'react'
-import { runningStructuredAgentSessionTurnId } from '../../../../shared/structured-agent-session-live-turn'
+import {
+  runningStructuredAgentSessionTurnId,
+  structuredAgentSessionHostSaysWorking
+} from '../../../../shared/structured-agent-session-live-turn'
 import { isStructuredAgentSessionMainAgentWorking } from '../../../../shared/structured-agent-session-main-agent-working'
 import type { StructuredAgentSessionState } from '../../../../shared/structured-agent-session-reducer'
 import type { StructuredAgentSubagentRoster } from '../../../../shared/structured-agent-session-subagent-roster'
@@ -30,8 +33,12 @@ export function useStructuredAgentSessionTransportState(
   )
   // The host's whole-journal turn, never the loaded rows': a long turn's record is off the page.
   const turnId = runningStructuredAgentSessionTurnId({ items: journalItems, latestTurn })
-  // The rule the host projects every session list's Working from, so this chat cannot disagree.
-  const isWorking = isStructuredAgentSessionMainAgentWorking(turnId, current.submissions, fence)
+  // The host's own answer, which counts only the agent running now; an older host gives none, and
+  // the rule it projects every session list's Working from stands in, so this chat cannot disagree.
+  const hostWorking = enabled ? state.working : undefined
+  const isWorking = structuredAgentSessionHostSaysWorking(hostWorking, () =>
+    isStructuredAgentSessionMainAgentWorking(turnId, current.submissions, fence)
+  )
   const nextQueuedMessageId = (enabled ? state.nextQueuedMessageId : null) ?? null
   // The host names the card its queue sends next. That send lands in a later update than a turn's
   // end or a Resume, so until then the chat still reads as working and nothing flips in between.

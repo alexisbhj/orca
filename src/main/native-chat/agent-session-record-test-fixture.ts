@@ -36,8 +36,7 @@ export function agentSessionRecordFixture(
       claimKeyId: 'test-key',
       claimStatus: 'released',
       unreconciled: false,
-      deathEvidence: null,
-      leftoverSettledAt: null
+      deathEvidence: null
     },
     ...rest,
     location: {

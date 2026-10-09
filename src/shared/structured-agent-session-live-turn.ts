@@ -188,21 +188,46 @@ export function actionablePromptIdsAfterStructuredAgentSessionBatch(
     : previous
 }
 
-/** Whether a frame's turn and prompts, when it names them, are what the state already holds: a
- *  generation's end can change them with no row, so a frame that does is never a no-op. */
+/** The host's working answer once `event` applies, under `latestTurn`'s rule. */
+export function hostWorkingAfterStructuredAgentSessionBatch(
+  previous: boolean | undefined,
+  event: Extract<AgentSessionSubscribeEvent, { type: 'batch' }>
+): boolean | undefined {
+  const { items, removedItemIds, submissions } = event.batch
+  const carriesRows = items.length > 0 || removedItemIds.length > 0 || submissions.length > 0
+  return carriesRows || event.working !== undefined ? event.working : previous
+}
+
+/** Whether a frame's turn, prompts and working answer, when it names them, are what the state
+ *  already holds: a generation's end can change them with no row, so a frame that does is never a
+ *  no-op. */
 export function restatesStructuredAgentSessionHostWork(
   event: Pick<
     Extract<AgentSessionSubscribeEvent, { type: 'batch' }>,
-    'latestTurn' | 'actionablePromptIds'
+    'latestTurn' | 'actionablePromptIds' | 'working'
   >,
-  state: { latestTurn?: AgentSessionLatestTurn | null; actionablePromptIds?: string[] }
+  state: {
+    latestTurn?: AgentSessionLatestTurn | null
+    actionablePromptIds?: string[]
+    working?: boolean
+  }
 ): boolean {
   return (
     (event.latestTurn === undefined ||
       JSON.stringify(event.latestTurn) === JSON.stringify(state.latestTurn)) &&
     (event.actionablePromptIds === undefined ||
-      event.actionablePromptIds.join('\n') === state.actionablePromptIds?.join('\n'))
+      event.actionablePromptIds.join('\n') === state.actionablePromptIds?.join('\n')) &&
+    (event.working === undefined || event.working === state.working)
   )
+}
+
+/** Whether the session's own agent is working: the host's answer when it gave one, else what the
+ *  client derives from its rows (an older host). */
+export function structuredAgentSessionHostSaysWorking(
+  hostWorking: boolean | undefined,
+  derived: () => boolean
+): boolean {
+  return hostWorking ?? derived()
 }
 
 /** Whether a pending prompt waits on the person: the host names the ones that do, and a prompt an

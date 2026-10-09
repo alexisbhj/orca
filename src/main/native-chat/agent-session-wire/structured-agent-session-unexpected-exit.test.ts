@@ -16,7 +16,6 @@ import {
 import { recordingStructuredAgentSessionLogger } from './structured-agent-session-logger-test-support'
 import {
   exitJournalDouble,
-  NO_STORE_RECEIPTS,
   plannedBatchThrough
 } from './structured-agent-session-settlement-double.test-fixture'
 import type { JournalLifecycleBatchInput } from '../agent-session-journal/journal-store-contracts'
@@ -73,8 +72,7 @@ function mutableStore() {
       transitionHandoff: async (
         _sessionId: string,
         transition: (current: AgentSessionRecord) => AgentSessionRecord
-      ) => (record = transition(record)),
-      conversationReceipts: NO_STORE_RECEIPTS
+      ) => (record = transition(record))
     }
   }
 }
@@ -90,8 +88,7 @@ describe('provider-exit settlement', () => {
       transitionHandoff: async (
         _sessionId: string,
         transition: (current: AgentSessionRecord) => AgentSessionRecord
-      ) => (record = transition(record)),
-      conversationReceipts: NO_STORE_RECEIPTS
+      ) => (record = transition(record))
     }
     const appendLifecycleBatch = vi
       .fn()
@@ -196,8 +193,7 @@ describe('provider-exit settlement', () => {
           reservedSpawnToken: null
         }
       }),
-      transitionHandoff: async () => ({ lease: { runtimeFence: 8 } }),
-      conversationReceipts: NO_STORE_RECEIPTS
+      transitionHandoff: async () => ({ lease: { runtimeFence: 8 } })
     }
 
     await settleStructuredAgentSessionChildExit(
@@ -435,7 +431,11 @@ describe('provider-exit settlement', () => {
 
     expect(session.child).toBeNull()
     expect(generationEnded).toHaveBeenCalledTimes(1)
-    expect(generationEnded).toHaveBeenCalledWith(SESSION, { restate: true })
+    // The worker is handed the exit's own account, to write once the journal takes it.
+    expect(generationEnded).toHaveBeenCalledWith(SESSION, {
+      restate: true,
+      exit: expect.objectContaining({ ownerFence: 7, showUnexpectedExitOutcome: true })
+    })
     expect(log.scopes()).toEqual(['exit-lifecycle-barrier', 'exit-settlement'])
   })
 })

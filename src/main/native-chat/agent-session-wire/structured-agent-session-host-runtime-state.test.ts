@@ -53,8 +53,7 @@ function reservedRecord(): AgentSessionRecord {
       claimKeyId: 'key-1',
       claimStatus: 'reserved',
       unreconciled: false,
-      deathEvidence: null,
-      leftoverSettledAt: null
+      deathEvidence: null
     },
     createdAt: NOW,
     updatedAt: NOW

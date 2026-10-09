@@ -554,10 +554,11 @@ describe('where the host would refuse the send', () => {
     }
     // The clear's generation end wakes the drain, which would send the card; holding the session's
     // lane keeps it waiting while the test reads the gate (`release` lets the drain run).
+    // The gate exists before the task runs: the clear's end may have queued the chat's
+    // reconciliation pass ahead of it on the lane.
     let release = (): void => undefined
-    const held = rig.host
-      .collaboratorsForTests()
-      .serialize(HOST_TEST_SESSION, () => new Promise<void>((resolve) => (release = resolve)))
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const held = rig.host.collaboratorsForTests().serialize(HOST_TEST_SESSION, () => gate)
     const card = 'left-behind'
     await journal.queuedMessages.insert({
       messageId: card,

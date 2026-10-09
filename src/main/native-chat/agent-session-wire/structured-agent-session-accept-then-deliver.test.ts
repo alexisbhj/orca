@@ -50,7 +50,7 @@ import { codexProviderHandle } from '../../../shared/agent-session-provider-hand
 import { StructuredAgentArgumentsError } from '../structured-agent-arguments-error'
 import { USER_MESSAGE_SOURCE } from '../../../shared/agent-session-message-source'
 import { NO_STRUCTURED_AGENTS } from './structured-agent-session-adapter-router-test-support'
-import { startUpOwingLeftovers } from './structured-agent-session-leftover-settlement.test-fixture'
+import { startUpHost } from './structured-agent-session-leftover-settlement.test-fixture'
 
 const CALLER = { callerKey: 'client-1' }
 
@@ -558,7 +558,7 @@ describe('what an earlier host process left behind', () => {
     await writeAsEarlierProcess(async (journal, fence) => {
       await journal.appendSubmission({ ...earlierSubmission('queued', 'q', true), fence })
     })
-    await startUpOwingLeftovers(host, store)
+    await startUpHost(host)
 
     expect(await submission('queued')).toMatchObject({
       dispatchState: 'rejected',
@@ -584,7 +584,7 @@ describe('what an earlier host process left behind', () => {
     })
     await host.flushAllStreamedEvents()
     await startHost()
-    await startUpOwingLeftovers(host, store)
+    await startUpHost(host)
 
     expect(await submission('legacy')).toMatchObject({ dispatchState: 'unknown', recovered: true })
     expect(await submission('handed')).toMatchObject({ dispatchState: 'unknown', recovered: true })
@@ -685,7 +685,7 @@ describe('Stop withdraws what is queued', () => {
       })
       await journal.appendSubmission({ ...earlierSubmission('leftover', 'l', true), fence })
     })
-    await startUpOwingLeftovers(host, store)
+    await startUpHost(host)
 
     expect(await stop()).toMatchObject({ ok: true })
 

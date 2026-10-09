@@ -237,7 +237,8 @@ describe('an observed exit whose release write failed', () => {
     vi.spyOn(current.store, 'transitionHandoff').mockImplementation((sessionId, change) =>
       transition(sessionId, (record) => {
         const next = change(record)
-        if (refused === 0 && next.lease.claimStatus === 'released') {
+        // The exit's own release, and the chat worker's first repair of it.
+        if (refused < 2 && next.lease.claimStatus === 'released') {
           refused += 1
           throw new Error('disk full')
         }
@@ -258,8 +259,9 @@ describe('an observed exit whose release write failed', () => {
       acquisitionGeneration: child.generation
     })
     await current.host.collaboratorsForTests().serialize(SESSION, async () => {})
+    await current.host.collaboratorsForTests().reconciliation.idle(SESSION)
 
-    expect(refused).toBe(1)
+    expect(refused).toBe(2)
     // The release never landed: the lease still names the gone child.
     expect(current.store.getRecord(SESSION)?.lease).toMatchObject({
       claimStatus: 'live',

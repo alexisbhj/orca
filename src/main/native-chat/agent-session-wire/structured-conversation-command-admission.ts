@@ -88,7 +88,9 @@ export function conversationCommandBlocked(
     )
   }
   // The same liveness fold the strip's monitoring indicator reads: settled rows block nothing.
-  if (agentChildWorkLiveness(childWork) !== null) {
+  // Child records are the live generation's: its adapter ends them on every close, so with no
+  // generation live, any still running are an ended one's leftovers and hold nothing.
+  if (work.liveFence !== null && agentChildWorkLiveness(childWork) !== null) {
     return blocked(
       'backgroundTasksRunning',
       stripOffersStop(childWork ?? [], ctx.adapter.backgroundTaskStops?.(ctx.sessionId))

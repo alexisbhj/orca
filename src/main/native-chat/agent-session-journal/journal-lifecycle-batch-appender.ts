@@ -20,7 +20,6 @@ import type {
   JournalResolvedLifecycleBatchInput
 } from './journal-store-contracts'
 import type { JournalRow } from './journal-row-schema'
-import type { JournalOperationReceipt } from './journal-row-writer'
 import { journalQueuedRejectionRowBuilders } from './journal-pending-submission-recovery'
 
 export class JournalLifecycleBatchAppender {
@@ -29,8 +28,7 @@ export class JournalLifecycleBatchAppender {
       state: () => JournalReducerState
       cursor: () => AgentJournalCursor
       enqueueRows: (
-        plan: () => readonly ((seq: number, ts: number) => JournalRow)[],
-        receipt?: JournalOperationReceipt
+        plan: () => readonly ((seq: number, ts: number) => JournalRow)[]
       ) => Promise<JournalRow[]>
     }
   ) {}
@@ -77,7 +75,7 @@ export class JournalLifecycleBatchAppender {
           ...dispatches.map((dispatch) => journalDispatchRowBuilder(this.deps.state, dispatch)),
           ...this.planMutations(input, mutations)
         ]
-      }, input.receipt)
+      })
       .then((rows) => this.cursorAfter(rows))
   }
 

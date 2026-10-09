@@ -1,6 +1,7 @@
 import type { AgentSessionSubscribeEvent } from './agent-session-wire'
 import {
   actionablePromptIdsAfterStructuredAgentSessionBatch,
+  hostWorkingAfterStructuredAgentSessionBatch,
   latestTurnAfterStructuredAgentSessionBatch
 } from './structured-agent-session-live-turn'
 
@@ -36,6 +37,7 @@ function mergeBatch(
     left.actionablePromptIds,
     right
   )
+  const working = hostWorkingAfterStructuredAgentSessionBatch(left.working, right)
   return {
     type: 'batch',
     ...(right.commands !== undefined || left.commands !== undefined
@@ -63,7 +65,8 @@ function mergeBatch(
       ? { activity: right.activity !== undefined ? right.activity : (left.activity ?? null) }
       : {}),
     ...(latestTurn !== undefined ? { latestTurn } : {}),
-    ...(actionablePromptIds !== undefined ? { actionablePromptIds } : {})
+    ...(actionablePromptIds !== undefined ? { actionablePromptIds } : {}),
+    ...(working !== undefined ? { working } : {})
   }
 }
 

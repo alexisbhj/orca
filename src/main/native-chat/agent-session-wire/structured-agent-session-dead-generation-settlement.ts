@@ -19,7 +19,6 @@ import {
   runningCallEnd,
   terminalAgentJournalBody
 } from '../agent-session-journal/journal-terminal-settlement'
-import type { JournalOperationReceipt } from '../agent-session-journal/journal-row-writer'
 import type { ResolveDispatchInput } from '../agent-session-journal/journal-store-contracts'
 import { lostLiveWorkJournalBody } from '../agent-session-journal/journal-subagent-liveness'
 import {
@@ -76,8 +75,6 @@ export type StructuredAgentSessionDeadGenerationInput = {
   exit?: StructuredAgentSessionWatchedExit
   /** A person's Stop ended a starting child before what it was handed could run: each is rejected so. */
   unrunRejection?: SubmissionRejectionFact
-  /** Committed in the same transaction as the rows, even when nothing is left to settle. */
-  receipt?: JournalOperationReceipt
 }
 
 /** The exited child's own settlement, planned at the batch's own turn in the write queue. */
@@ -86,7 +83,6 @@ export async function settleStructuredAgentSessionDeadGeneration(
 ): Promise<StructuredAgentSessionDeadGenerationSettlement> {
   try {
     if (
-      !input.receipt &&
       !input.showUnexpectedExitOutcome &&
       !hasUnfinishedStructuredAgentSessionWork(input.journal, input.exit)
     ) {
@@ -96,7 +92,6 @@ export async function settleStructuredAgentSessionDeadGeneration(
       settlementId: `dead-generation:${input.settlementId}`,
       fence: input.fence,
       recovered: true,
-      ...(input.receipt ? { receipt: input.receipt } : {}),
       plan: () => planStructuredAgentSessionDeadGeneration(input)
     })
     return { ok: true }

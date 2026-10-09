@@ -43,7 +43,7 @@ import type { StructuredAgentSessionCurrentWork } from './structured-agent-sessi
  *  Absent, a page states the raw record and no prompt ids, as an older host did. */
 export type AgentSessionPublishedWork = Pick<
   StructuredAgentSessionCurrentWork,
-  'publishedLatestTurn' | 'actionablePromptIds'
+  'publishedLatestTurn' | 'actionablePromptIds' | 'working'
 >
 
 export { AGENT_SESSION_HISTORY_MAX_PAGE_BYTES } from './agent-session-history-page-bounds'
@@ -164,10 +164,11 @@ export function readAgentSessionHydrationPage(
 export function agentSessionPublishedWorkFields(
   journal: AgentSessionJournal,
   work: AgentSessionPublishedWork
-): Pick<AgentSessionHistoryPage, 'latestTurn' | 'actionablePromptIds'> {
+): Pick<AgentSessionHistoryPage, 'latestTurn' | 'actionablePromptIds' | 'working'> {
   return {
     latestTurn: work.publishedLatestTurn(snapshotLatestTurn(journal.snapshot())),
-    actionablePromptIds: work.actionablePromptIds()
+    actionablePromptIds: work.actionablePromptIds(),
+    working: work.working()
   }
 }
 
@@ -346,7 +347,8 @@ function buildPage(input: {
     ...(input.work
       ? {
           latestTurn: input.work.publishedLatestTurn(snapshotLatestTurn(input.snapshot)),
-          actionablePromptIds: input.work.actionablePromptIds()
+          actionablePromptIds: input.work.actionablePromptIds(),
+          working: input.work.working()
         }
       : { latestTurn: snapshotLatestTurn(input.snapshot) })
   }

@@ -22,7 +22,7 @@ import {
 import type { StructuredAgentSessionSinkBarrier } from './structured-agent-session-event-sink'
 import {
   settleStructuredAgentSessionLeftovers,
-  type StructuredAgentSessionLeftoverSettlementInput,
+  type StructuredAgentSessionExitSettlement,
   type StructuredAgentSessionLeftoverStore
 } from './structured-agent-session-leftover-settlement'
 import type { StaleStructuredAgentSessionStateJournal } from './structured-agent-session-stale-state-settlement'
@@ -53,11 +53,12 @@ export type StructuredAgentSessionChildExitSession = Pick<
   'child' | 'lastEndedChild'
 > & { journal: DeadGenerationJournal & StaleStructuredAgentSessionStateJournal }
 
-/** `StructuredAgentSessionClientDelivery.publishGenerationEnded`: the one edge every way a
- *  generation ends goes through. */
+/** The chat's reconciliation worker's signal (`StructuredAgentSessionReconciliation.signal`): the
+ *  one edge every way a generation ends goes through. `exit`: the exit's own settlement, owed when
+ *  it did not land. */
 export type StructuredAgentSessionGenerationEnded = (
   sessionId: string,
-  options?: { restate?: boolean }
+  options?: { restate?: boolean; exit?: StructuredAgentSessionExitSettlement }
 ) => void
 
 export type StructuredAgentSessionChildExitContext<
@@ -67,9 +68,9 @@ export type StructuredAgentSessionChildExitContext<
   sessions: Map<string, TSession>
   flushLifecycle: (sessionId: string) => Promise<StructuredAgentSessionSinkBarrier>
   publishStatus?: (sessionId: string) => void
-  /** A generation ended: every reader re-derives current work and the queued-card drain is
-   *  scheduled, with no journal write needed (`publishGenerationEnded`). `restate`: each chat
-   *  re-baselines at the moved fence. */
+  /** A generation ended: every reader re-derives current work, the queued-card drain is
+   *  scheduled with no journal write needed, and the chat's reconciliation worker settles what is
+   *  owed. `restate`: each chat re-baselines at the moved fence. */
   generationEnded: StructuredAgentSessionGenerationEnded
   /** The delivery loop hands over whatever is queued once the child is off the record. */
   wakeDelivery?: (sessionId: string) => void
@@ -183,7 +184,7 @@ export async function endExitedStructuredAgentSessionChildUnderSerialize<
     context.wakeDelivery?.(sessionId)
     return
   }
-  let settlement: StructuredAgentSessionLeftoverSettlementInput['exit'] | null = null
+  let settlement: StructuredAgentSessionExitSettlement | null = null
   try {
     // The exited child's own writes land first: its dead generation is settled from all of them.
     try {
@@ -239,9 +240,10 @@ export async function endExitedStructuredAgentSessionChildUnderSerialize<
     }
   } finally {
     // The root's exit was observed, so the owner is released first, writing the proof and ending
-    // the generation; then what it left is settled at the new fence, with the mark that says so.
-    // A settlement that cannot commit stays owed: the next acquisition or startup settles it.
+    // the generation; then what it left is settled at the new fence. A release or a settlement
+    // that cannot commit stays owed: the chat's reconciliation worker retries it.
     let released = false
+    let owed: StructuredAgentSessionExitSettlement | null = null
     try {
       await releaseStoredStructuredAgentSessionOwnerAfterExit({
         store: context.store,
@@ -260,10 +262,12 @@ export async function endExitedStructuredAgentSessionChildUnderSerialize<
         store: context.store,
         sessionId,
         journal: session.journal,
-        now: context.now,
-        exit: settlement
+        exit: settlement,
+        // Ended whether or not the release landed: the host saw the root go.
+        ended: { fence: child.fence, rootGone: true }
       })
       if (!settled.ok) {
+        owed = settlement
         logExitFailure(context, sessionId, 'exit-settlement', settled.error)
       }
     }
@@ -282,7 +286,10 @@ export async function endExitedStructuredAgentSessionChildUnderSerialize<
     // reader holds, as a client resends a message when its fence moves, and discards a reply (the
     // Stop's own) issued at the fence before. Either way every reader learns the generation ended
     // and the queued-card drain runs, whether or not the release or the settlement was written.
-    context.generationEnded(sessionId, { restate: released && !expected })
+    context.generationEnded(sessionId, {
+      restate: released && !expected,
+      ...(owed ? { exit: owed } : {})
+    })
     context.wakeDelivery?.(sessionId)
   }
 }

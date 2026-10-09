@@ -18,12 +18,11 @@ import {
   openTestJournalHostDatabase
 } from '../agent-session-journal/journal-host-database-test-support'
 import type Database from '../../sqlite/sync-database'
-import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import { JournalRowWriter } from '../agent-session-journal/journal-row-writer'
+import type { JournalRow } from '../agent-session-journal/journal-row-schema'
 import type { StructuredAgentSessionHost } from './structured-agent-session-host'
-import {
-  hostStructuredAgentSessionCurrentWork,
-  type StructuredAgentSessionCurrentWork
-} from './structured-agent-session-current-work'
+import type { StructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
+import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-host-current-work'
 import {
   HOST_TEST_SESSION as SESSION,
   HOST_TEST_THREAD as THREAD,
@@ -129,7 +128,8 @@ export async function leaveUnfinishedWork(
 }
 
 /** The child dies on its own while the database refuses every settlement row: the exit releases
- *  its lease (proof written, fence moved, leftovers owed) and its work stays saved as running. */
+ *  its lease (proof written, fence moved) and its work stays saved as running. The chat's
+ *  reconciliation worker is left backing off. */
 export async function exitWhileSettlementFails(current: QueuedMessageTestRig) {
   const context = current.host.collaboratorsForTests()
   const session = context.sessions.get(SESSION)
@@ -154,8 +154,7 @@ export async function exitWhileSettlementFails(current: QueuedMessageTestRig) {
   expect(current.store.getRecord(SESSION)?.lease).toMatchObject({
     claimStatus: 'released',
     runtimeFence: child.fence + 1,
-    deathEvidence: { kind: 'exit-observed', ownerFence: child.fence },
-    leftoverSettledAt: null
+    deathEvidence: { kind: 'exit-observed', ownerFence: child.fence }
   })
   expect(liveTestJournalRows(database.db, SESSION)).toEqual(before)
   return { session, database, deadFence: child.fence }
@@ -238,25 +237,24 @@ export function rowFence(row: { rowJson: string }): number {
     : Number.NaN
 }
 
-/** Each time the lease's mark is set: the fence it was set at, and how many settlement rows the
- *  database held at that moment, inside the transaction that set it. */
-export function watchMarks(db: Database.Database): () => { fence: number; rows: number }[] {
-  db.exec(`
-    CREATE TEMP TABLE mark_log (fence INTEGER, rows INTEGER);
-    CREATE TEMP TRIGGER note_mark AFTER UPDATE ON agent_session_records
-    WHEN json_extract(NEW.record_json, '$.lease.leftoverSettledAt') IS NOT NULL
-      AND json_extract(OLD.record_json, '$.lease.leftoverSettledAt') IS NULL
-    BEGIN
-      INSERT INTO mark_log
-      SELECT json_extract(NEW.record_json, '$.lease.runtimeFence'), COUNT(*) FROM journal_rows
-      WHERE session_id = NEW.session_id AND json_extract(row_json, '$.recovered') = 1;
-    END;
-  `)
+/** Each journal transaction that wrote settlement rows, by the rows it wrote: one entry per
+ *  commit. */
+export function watchSettlementCommits(): () => JournalRow[][] {
+  const writes = vi.spyOn(JournalRowWriter.prototype, 'writeRows')
   return () =>
-    db
-      .prepare('SELECT fence, rows FROM mark_log')
-      .all()
-      .map((row) => ({ fence: Number(row.fence), rows: Number(row.rows) }))
+    writes.mock.results.flatMap((result) =>
+      result.type === 'return' && result.value.some((row) => row.recovered === true)
+        ? [result.value]
+        : []
+    )
+}
+
+/** Once the chat's reconciliation worker has nothing owed: it retired. */
+export function reconciled(current: QueuedMessageTestRig, timeout = 10_000): Promise<void> {
+  return vi.waitFor(
+    () => expect(current.host.collaboratorsForTests().reconciliation.owes(SESSION)).toBe(false),
+    { timeout }
+  )
 }
 
 /** Logs every INSERT, UPDATE and DELETE on every table of the file, from this connection on. */
@@ -279,16 +277,26 @@ export function logEveryWrite(db: Database.Database): () => string[] {
       .map((row) => String(row.entry))
 }
 
-/** Startup as the runtime runs it, after an earlier process whose last generation ended with
- *  nothing settling it, as a crash leaves it. */
-export async function startUpOwingLeftovers(
-  host: Pick<StructuredAgentSessionHost, 'reconcileRestartLeases' | 'startupSettled'>,
-  store: Pick<AgentSessionRecordStore, 'transitionHandoff'>
+/** Startup as the runtime runs it, on any host: the restart reconcile, then the scan of every chat
+ *  it begins, with no stored mark of what is owed, until the chat's worker is idle. */
+export async function startUpHost(
+  host: Pick<
+    StructuredAgentSessionHost,
+    'reconcileRestartLeases' | 'startupSettled' | 'collaboratorsForTests'
+  >
 ): Promise<void> {
-  await store.transitionHandoff(SESSION, (record) => ({
-    ...record,
-    lease: { ...record.lease, leftoverSettledAt: null }
-  }))
   await host.reconcileRestartLeases()
   await host.startupSettled()
+  await host.collaboratorsForTests().reconciliation.idle(SESSION)
+}
+
+/** Startup as the runtime runs it: the restart reconcile, then the scan of every chat it begins,
+ *  until the chat's worker has nothing owed. */
+export async function startUp(
+  current: QueuedMessageTestRig,
+  host: Pick<StructuredAgentSessionHost, 'reconcileRestartLeases' | 'startupSettled'> = current.host
+): Promise<void> {
+  await host.reconcileRestartLeases()
+  await host.startupSettled()
+  await reconciled(current)
 }

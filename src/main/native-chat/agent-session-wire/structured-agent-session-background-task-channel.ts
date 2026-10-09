@@ -7,7 +7,7 @@ import type { AgentChildWorkView } from '../../../shared/agent-status-child-work
 import { structuredChildWorkLegacyTasks } from '../../../shared/structured-agent-session-child-work-legacy'
 import { structuredRunningChildWork } from '../../../shared/agent-child-work-listing'
 import { readStructuredAgentSessionHistoryResult } from './structured-agent-session-history-result'
-import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
+import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-host-current-work'
 import {
   structuredQueueSendGate,
   tryReadQueuePublication
