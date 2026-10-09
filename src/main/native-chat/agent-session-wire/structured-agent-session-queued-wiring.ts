@@ -42,6 +42,8 @@ export function wireStructuredAgentSessionQueuedMessages(
     logger: deferredStructuredAgentSessionLogger(() => context().deps.logger),
     readChildWork: (sessionId) => context().readChildWork(sessionId),
     backgroundTaskStops: (sessionId) => context().deps.adapter.backgroundTaskStops?.(sessionId),
+    stoppedTaskEndingOwed: (sessionId) =>
+      context().deps.adapter.stoppedTaskEndingOwed?.(sessionId) === true,
     runClear: (sessionId, card) => {
       const { store, adapter } = context().deps
       return runQueuedConversationClear(

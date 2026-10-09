@@ -116,14 +116,15 @@ export function structuredQueueHold(input: {
   return null
 }
 
-/** What the gate reads beyond the journal. `childWork` and `backgroundTaskStops` are read only when
- *  a /clear card is next. */
+/** What the gate reads beyond the journal. `childWork`, `backgroundTaskStops` and
+ *  `stoppedTaskEndingOwed` are read only when a /clear card is next. */
 export type StructuredQueueGateInput = {
   journal: AgentSessionJournal
   record: AgentSessionRecord | null
   fence: number
   childWork: () => readonly AgentChildWorkView[] | undefined
   backgroundTaskStops: () => AgentSessionBackgroundTaskStops | undefined
+  stoppedTaskEndingOwed: () => boolean
 }
 
 /** The card the queue is on once no hold stops it, and what that card still waits for: a /clear
@@ -151,10 +152,18 @@ export function structuredQueueHead(
 
 function queuedCardWait(
   card: Pick<QueuedMessageRow, 'body'>,
-  input: Pick<StructuredQueueGateInput, 'record' | 'childWork' | 'backgroundTaskStops'>
+  input: Pick<
+    StructuredQueueGateInput,
+    'record' | 'childWork' | 'backgroundTaskStops' | 'stoppedTaskEndingOwed'
+  >
 ): AgentSessionQueueWait['reason'] | null {
   return isQueuedClearCard(card)
-    ? queuedClearWait(input.record, input.childWork(), input.backgroundTaskStops())
+    ? queuedClearWait(
+        input.record,
+        input.childWork(),
+        input.backgroundTaskStops(),
+        input.stoppedTaskEndingOwed()
+      )
     : null
 }
 
@@ -217,7 +226,7 @@ export async function maybeQueueStructuredAgentSessionSend(
   context: {
     deps: {
       store: { getRecord: (sessionId: string) => AgentSessionRecord | null }
-      adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops'>
+      adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops' | 'stoppedTaskEndingOwed'>
     }
     readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
   },
@@ -257,6 +266,8 @@ export async function maybeQueueStructuredAgentSessionSend(
       fence: ctx.fence,
       childWork: () => context.readChildWork(ctx.sessionId),
       backgroundTaskStops: () => context.deps.adapter.backgroundTaskStops?.(ctx.sessionId),
+      stoppedTaskEndingOwed: () =>
+        context.deps.adapter.stoppedTaskEndingOwed?.(ctx.sessionId) === true,
       body: params.body
     })
   ) {

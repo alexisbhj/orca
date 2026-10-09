@@ -29,6 +29,7 @@ export type QueuedMessageDrainDeps = {
   logger: StructuredAgentSessionLogger
   readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
   backgroundTaskStops: (sessionId: string) => AgentSessionBackgroundTaskStops | undefined
+  stoppedTaskEndingOwed: (sessionId: string) => boolean
   /** Runs a /clear card itself, inside the step's serialize (`runQueuedConversationClear`). */
   runClear: (sessionId: string, card: QueuedMessageRow) => Promise<unknown>
 }
@@ -69,7 +70,8 @@ export class StructuredAgentSessionQueuedMessageDrain {
           record: this.deps.getRecord(sessionId),
           fence: this.deps.conversationFence(sessionId),
           childWork: () => this.deps.readChildWork(sessionId),
-          backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId)
+          backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId),
+          stoppedTaskEndingOwed: () => this.deps.stoppedTaskEndingOwed(sessionId)
         })
       ) {
         return
@@ -121,7 +123,8 @@ export class StructuredAgentSessionQueuedMessageDrain {
       record,
       fence,
       childWork: () => this.deps.readChildWork(sessionId),
-      backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId)
+      backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId),
+      stoppedTaskEndingOwed: () => this.deps.stoppedTaskEndingOwed(sessionId)
     })
     if (this.disposed || !next) {
       return

@@ -17,6 +17,7 @@ import {
   hostTestOperationId
 } from './structured-agent-session-host-test-data'
 import { QUEUED_CLEAR_CALLER_KEY } from './structured-conversation-clear'
+import { openRigTurnFor } from './structured-agent-session-queued-rig-turn.test-fixture'
 
 let rig: QueuedMessageTestRig
 
@@ -236,6 +237,21 @@ const SETTLED_TASK: AgentChildWorkView = {
   outcome: 'succeeded'
 }
 
+/** A Stop the provider acknowledged ahead of the task's own ending, which it then delivers. */
+function stoppedTaskEnding() {
+  let owed = false
+  Object.assign(rig.host.deps.adapter, { stoppedTaskEndingOwed: () => owed })
+  return {
+    acknowledge(tasks: { set: (next: AgentChildWorkView[]) => void }) {
+      owed = true
+      tasks.set([{ ...BACKGROUND_TASK, state: 'done', membership: 'settled', outcome: 'cancelled' }])
+    },
+    endingLands() {
+      owed = false
+    }
+  }
+}
+
 describe('a /clear card the queue cannot run yet', () => {
   it('typed while idle with background tasks running, waits as a card too, then runs', async () => {
     const tasks = await withBackgroundTasks()
@@ -323,6 +339,48 @@ describe('a /clear card the queue cannot run yet', () => {
     rig.host.publishChildWorkEvidence(SESSION, [])
     await eventually(async () => expect(await rig.handoff(after)).toBeDefined())
     expect(await dividers()).toBe(1)
+  })
+
+  it("after the strip's Stop, waits for the stopped task's own ending, not the acknowledgement", async () => {
+    const tasks = await withBackgroundTasks()
+    const stopped = stoppedTaskEnding()
+    const clearId = await queuedClear()
+    // Claude answers the Stop before the task's own "stopped" lands; the record already reads settled.
+    stopped.acknowledge(tasks)
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await settleMs()
+    expect(await dividers()).toBe(0)
+    expect(rig.closeSession).not.toHaveBeenCalled()
+    const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
+    expect(page.ok && page.page.nextQueuedMessageWait).toEqual({
+      messageId: clearId,
+      reason: 'background-tasks'
+    })
+    stopped.endingLands()
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await eventually(async () => expect(await dividers()).toBe(1))
+  })
+
+  it('after the stopped task ends, waits out the turn the agent answers it in', async () => {
+    const tasks = await withBackgroundTasks()
+    const stopped = stoppedTaskEnding()
+    await queuedClear()
+    stopped.acknowledge(tasks)
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await settleMs()
+    // The task's own ending opens the agent's turn answering it.
+    stopped.endingLands()
+    await openRigTurnFor(rig, 'task-ended')
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await settleMs()
+    expect(await dividers()).toBe(0)
+    expect(rig.closeSession).not.toHaveBeenCalled()
+    await openRigTurnFor(rig, 'task-ended', 'completed')
+    await eventually(async () => expect(await dividers()).toBe(1))
+    const turns = (await rig.host.journalSnapshot(SESSION)).items.flatMap((item) =>
+      item.body.kind === 'turn' && item.body.turnId === 'turn-of-task-ended' ? [item.body.state] : []
+    )
+    expect(turns).toEqual(['completed'])
   })
 
   it('a failed commit returns it with why once; nothing behind it runs; Send retries', async () => {

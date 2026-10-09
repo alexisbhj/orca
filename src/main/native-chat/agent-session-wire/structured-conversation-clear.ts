@@ -102,21 +102,25 @@ export async function clearConversationUnderSerialize(
 
 /**
  * What a /clear card at the head of the queue waits for before it may run: a handoff, which ends on
- * its own, or background tasks the strip offers a Stop for, so the person can end the wait. Work
- * nothing here can stop is no wait: the clear is refused, as at rest. The drain runs it once the
- * wait ends (it wakes on child work and on a handoff ending). The queue's one gate reads it for the
- * drain, publication and admission.
+ * its own, or background tasks the strip offers a Stop for, so the person can end the wait. A task
+ * the person stopped still counts until its own ending lands: the provider acknowledges the Stop
+ * first, and that ending opens the agent's turn answering it, which the clear then waits behind.
+ * Work nothing here can stop is no wait: the clear is refused, as at rest. The drain runs it once
+ * the wait ends (it wakes on child work and on a handoff ending). The queue's one gate reads it for
+ * the drain, publication and admission.
  */
 export function queuedClearWait(
   record: Pick<AgentSessionRecord, 'lease'> | null,
   childWork: readonly AgentChildWorkView[] | undefined,
-  stops: AgentSessionBackgroundTaskStops | undefined
+  stops: AgentSessionBackgroundTaskStops | undefined,
+  stoppedTaskEndingOwed: boolean
 ): AgentSessionQueueWait['reason'] | null {
   if (record?.lease.handoffStage || record?.lease.handoffOperationId) {
     return 'handoff'
   }
-  return agentChildWorkLiveness(childWork) !== null &&
-    agentChildWorkStripOffersStop(childWork ?? [], stops)
+  return stoppedTaskEndingOwed ||
+    (agentChildWorkLiveness(childWork) !== null &&
+      agentChildWorkStripOffersStop(childWork ?? [], stops))
     ? 'background-tasks'
     : null
 }
@@ -163,7 +167,8 @@ export async function runQueuedConversationClear(
       queuedClearWait(
         context.deps.store.getRecord(ctx.sessionId),
         context.readChildWork(ctx.sessionId),
-        ctx.adapter.backgroundTaskStops?.(ctx.sessionId)
+        ctx.adapter.backgroundTaskStops?.(ctx.sessionId),
+        ctx.adapter.stoppedTaskEndingOwed?.(ctx.sessionId) === true
       ) !== null
     ) {
       return { kind: 'waiting', refusal: cleared.refusal }

@@ -43,13 +43,14 @@ export function structuredQueueSendGate(
   store: Pick<AgentSessionRecordStore, 'getRecord'>,
   sessionId: string,
   readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined,
-  adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops'>
+  adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops' | 'stoppedTaskEndingOwed'>
 ): QueueSendGate {
   return () => ({
     record: store.getRecord(sessionId),
     fence: structuredAgentSessionConversationFence(store, sessionId),
     childWork: () => readChildWork(sessionId),
-    backgroundTaskStops: () => adapter.backgroundTaskStops?.(sessionId)
+    backgroundTaskStops: () => adapter.backgroundTaskStops?.(sessionId),
+    stoppedTaskEndingOwed: () => adapter.stoppedTaskEndingOwed?.(sessionId) === true
   })
 }
 

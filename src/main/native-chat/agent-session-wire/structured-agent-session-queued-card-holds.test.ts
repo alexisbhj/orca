@@ -574,7 +574,8 @@ describe('where the host would refuse the send', () => {
       record: unblocked,
       fence,
       childWork: () => undefined,
-      backgroundTaskStops: () => undefined
+      backgroundTaskStops: () => undefined,
+      stoppedTaskEndingOwed: () => false
     }))
     expect(next.nextQueuedMessageId).toBe(card)
   })
@@ -595,7 +596,8 @@ describe('where the host would refuse the send', () => {
         record: gateRecord,
         fence,
         childWork: () => undefined,
-        backgroundTaskStops: () => undefined
+        backgroundTaskStops: () => undefined,
+        stoppedTaskEndingOwed: () => false
       })).nextQueuedMessageId
     expect(next({ ...unblocked, rewind })).toBeNull()
     expect(next({ ...unblocked, rewind: { ...rewind, phase: 'provider-succeeded' } })).toBeNull()

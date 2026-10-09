@@ -22,7 +22,7 @@ export type ConversationCommandAdmissionContext = {
     snapshot(): Pick<ReturnType<AgentSessionJournal['snapshot']>, 'items'>
     submissions: AgentSessionJournal['submissions']
   }
-  adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops'>
+  adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops' | 'stoppedTaskEndingOwed'>
 }
 
 function blocked(
