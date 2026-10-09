@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   hostTestState,
   adapter,
@@ -80,12 +80,10 @@ describe('prompt delivery after host recovery', () => {
       notificationSeq: delivered.notificationSeq
     }
     unsubscribe()
-    // The dismissal record is written asynchronously; restart once it is durable.
-    await vi.waitFor(() =>
-      expect(
-        new MobileNotificationDismissalStore(h.root).liveDeliveries(identity.notificationId)
-      ).toHaveLength(1)
-    )
+    await original.flushPersistence()
+    expect(
+      new MobileNotificationDismissalStore(h.root).liveDeliveries(identity.notificationId)
+    ).toHaveLength(1)
     const restarted = new RuntimeMobileNotificationController()
     restarted.configureDismissalStore(h.root)
     const events: MobileNotificationEvent[] = []
@@ -115,17 +113,17 @@ describe('prompt delivery after host recovery', () => {
       expect(events.filter((event) => event.type === 'dismiss')).toEqual([
         expect.objectContaining({ dismissedDelivery: identity })
       ])
-      await vi.waitFor(() =>
-        expect(
-          new MobileNotificationDismissalStore(h.root).liveDeliveries(identity.notificationId)
-        ).toEqual([])
-      )
+      await restarted.flushPersistence()
+      expect(
+        new MobileNotificationDismissalStore(h.root).liveDeliveries(identity.notificationId)
+      ).toEqual([])
       expect(restarted.reconcileDismissedPushes([identity])).toEqual([identity])
       await host.restoreReadableSessions()
       expect(events.filter((event) => event.type === 'dismiss')).toHaveLength(1)
     } finally {
       stop()
       await host.flushAllStreamedEvents()
+      await restarted.flushPersistence()
     }
   })
 })
