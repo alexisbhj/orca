@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Package the server separately from its compatibility launcher.
+// Package the Node 24 server separately from its older-Node compatibility launcher.
 import { fork, spawnSync } from 'node:child_process'
 import { build } from 'esbuild'
 import {
   buildOrcadEntry,
+  buildOrcadCli,
   buildOrcadLauncher,
   externalNativeAddons,
   ORCAD_EXTERNAL_MODULES,
@@ -18,6 +19,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync
 } from 'node:fs'
@@ -31,6 +33,8 @@ import { materializeWatcherPackage } from './orcad-watcher-package.mjs'
 import { stageOrcadWindowsProcessTree } from './orcad-windows-process-tree.mjs'
 import {
   ORCAD_EMOJI_SHORTCODE_DATASET,
+  ORCAD_CLI_ENTRY_FILENAME,
+  ORCAD_CLI_PACKAGE_FILENAME,
   ORCAD_LAUNCHER_FILENAME,
   ORCAD_SERVER_ENTRY_FILENAME,
   ORCAD_NODE_PTY_DIR,
@@ -103,7 +107,7 @@ async function stageParcelWatcher(target) {
     },
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node24',
     format: 'cjs',
     outfile: join(OUT_DIR, ORCAD_PARCEL_WATCHER_ENTRY),
     external: ['./watcher.node'],
@@ -194,7 +198,7 @@ function buildForkedChild(entryPoint, outfile) {
     entryPoints: [entryPoint],
     bundle: true,
     platform: 'node',
-    target: 'node18',
+    target: 'node24',
     format: 'cjs',
     outfile,
     external: ORCAD_EXTERNAL_MODULES,
@@ -216,6 +220,12 @@ const childResults = await Promise.all(
 )
 
 const result = await buildOrcadEntry(SERVER_OUT_FILE)
+const cliResult = await buildOrcadCli(join(OUT_DIR, ORCAD_CLI_ENTRY_FILENAME))
+const { version: cliVersion } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
+writeFileSync(
+  join(OUT_DIR, ORCAD_CLI_PACKAGE_FILENAME),
+  `${JSON.stringify({ type: 'commonjs', private: true, version: cliVersion })}\n`
+)
 const launcherResult = await buildOrcadLauncher(OUT_FILE)
 
 const output = Object.values(result.metafile.outputs).find(
@@ -244,6 +254,7 @@ function collectImporters(metafiles, matches) {
 const metafiles = [
   launcherResult.metafile,
   result.metafile,
+  cliResult.metafile,
   ...childResults.map((child) => child.metafile)
 ]
 const electronImporters = collectImporters(

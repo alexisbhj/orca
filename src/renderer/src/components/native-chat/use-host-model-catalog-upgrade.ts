@@ -34,8 +34,9 @@ import {
  * on the built-in list meanwhile, naming no model, and a pick made then stays
  * an intent the session checks.
  * Reports why the host's latest answer says no chat can start (kept until the
- * next answer replaces it; a failed read is unknown). Only while it says so,
- * the window gaining focus or a turn starting or ending reads again: the host
+ * next answer replaces it; a failed read is unknown). The chat's agent starting
+ * or stopping reads again; only while a reason is said, the window gaining
+ * focus or a turn starting or ending does too: the host
  * pushes no change, the fix (signing in, installing) happens elsewhere, and a
  * started chat makes the host re-check.
  */
@@ -56,6 +57,8 @@ export function useHostModelCatalogUpgrade(args: {
   /** A new chat that named no model has reported what it runs: the host may now name that as the
    *  configured default, so the next chat's first frame reads it again. */
   reportedUnpickedModel?: boolean
+  /** The host runs the chat's agent: a reason its start gave ends with it. */
+  providerRunning?: boolean
   activeOptionRecordRef: MutableRefObject<NativeChatSessionOptionRecord>
   updateOptionState: (
     update: (current: StructuredAgentSessionOptionState) => StructuredAgentSessionOptionState
@@ -84,6 +87,9 @@ export function useHostModelCatalogUpgrade(args: {
   const said = unavailable !== null
   const turnWhileSaid = said ? (args.turnId ?? null) : null
   const reportedUnpickedModel = args.reportedUnpickedModel === true
+  // A reason the agent's own start gave ends with that agent: its start or stop reads again,
+  // dropping an answer read before it.
+  const running = args.providerRunning === true
   useEffect(() => {
     if (!said) {
       return
@@ -172,6 +178,7 @@ export function useHostModelCatalogUpgrade(args: {
     optionCatalog,
     reportedUnpickedModel,
     rereads,
+    running,
     sessionId,
     turnWhileSaid,
     target,
