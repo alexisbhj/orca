@@ -10,6 +10,9 @@ describe('provider explanations a person can read', () => {
     'Reconnecting... 2/5',
     'Set ANTHROPIC_API_KEY, then try again.',
     'GPT4 is not available on this plan.',
+    'Set AWS_S3_BUCKET, then try again.',
+    'Export R2_ACCESS_KEY first.',
+    'Model GPT_4O is not available.',
     'Uses {{agent}} $t(key) <b>&</b>'
   ])('keeps readable words: %s', (text) => {
     expect(isProviderDiagnosticPersonText(text)).toBe(true)

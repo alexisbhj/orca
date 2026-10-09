@@ -4,8 +4,8 @@ const TECHNICAL_TEXT = [
   /^\s*[a-zA-Z][a-zA-Z0-9]*_[a-zA-Z0-9_]+\s*$/,
   /\b(?:[A-Za-z]*Error|Exception)\s*:/,
   /\bE[A-Z][A-Z0-9]{2,}\b/,
-  // Upper-case snake codes with a digit (ERR_42); digit-free setting names (ANTHROPIC_API_KEY) stay.
-  /\b(?=[A-Z0-9_]*\d)[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/,
+  // Upper-case snake codes ending in a number (ERR_42); setting names and model ids (AWS_S3_BUCKET, GPT_4O) stay.
+  /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_\d+\b/,
   /\b(?:HTTP\/\d|(?:HTTP|RPC|JSON-RPC)\s+(?:[-+]?\d+|error|response))/i,
   /(?:^|\n)\s*(?:at\s+\S+|Caused by:|Traceback\s*\()/,
   /[[{]\s*"[^"\n]+"\s*:/,
