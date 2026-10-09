@@ -236,6 +236,23 @@ export function routeViewOf(
   }
 }
 
+type RouteViewFacts = {
+  readonly pageRoutes: readonly string[]
+  readonly routeGrants: readonly string[]
+  readonly ownsHostArea: boolean
+}
+
+/** Whether two views serve the same routes with the same grants and the same host-area answer. */
+export function sameRouteView(a: RouteViewFacts, b: RouteViewFacts): boolean {
+  const same = (x: readonly string[], y: readonly string[]) =>
+    x.length === y.length && x.every((item, index) => item === y[index])
+  return (
+    a.ownsHostArea === b.ownsHostArea &&
+    same(a.pageRoutes, b.pageRoutes) &&
+    same(a.routeGrants, b.routeGrants)
+  )
+}
+
 /** The `/h/<host>` route a pathname sits under, or null outside a host. */
 function hostAreaRoot(pathname: string): string | null {
   const [empty, h, host] = pathname.split('/')

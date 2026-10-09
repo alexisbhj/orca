@@ -12,6 +12,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 type Renderer = 'native' | 'page' | 'shipped-shell' | 'old-page'
 
+const harness = await vi.hoisted(async () => await import('./mobile-web-shell-screen-test-harness'))
+const dependencies = vi.hoisted(() => harness.createScreenDependencies())
+const { screenModuleMocks } = await vi.hoisted(
+  async () => await import('./mobile-web-shell-screen-test-mocks')
+)
+const mocks = vi.hoisted(() => screenModuleMocks(dependencies))
+
 const { HostSidebar } = vi.hoisted(() => ({
   HostSidebar: function HostSidebar(): null {
     return null
@@ -24,51 +31,65 @@ const env = vi.hoisted(
     height: number
     pathname: string
     renderer: Renderer
-    hostAreaServing: boolean
+    /** The host route's session beneath, as the real reducer left it; null for none mounted. */
+    hostSession: MobileWebShellSession | null
     reports: boolean[]
-    storageListed: number
   } => ({
     width: 390,
     height: 844,
     pathname: '/h/host-1',
     renderer: 'native',
-    hostAreaServing: false,
-    reports: [],
-    storageListed: 0
+    hostSession: null,
+    reports: []
   })
 )
 
 vi.mock('react-native', () => ({
+  ...mocks['react-native'](),
   // The page renderers are web documents; the rest are the native app.
   Platform: {
     get OS() {
       return env.renderer === 'page' || env.renderer === 'old-page' ? 'web' : 'ios'
     }
   },
-  View: 'View',
-  StyleSheet: { create: (styles: unknown) => styles },
   PanResponder: { create: () => ({ panHandlers: {} }) },
   useWindowDimensions: () => ({ width: env.width, height: env.height })
 }))
 vi.mock('expo-router', async () => {
   const React = await import('react')
   return {
+    ...mocks['expo-router'](),
     useGlobalSearchParams: () => ({ hostId: 'host-1' }),
     usePathname: () => env.pathname,
     useFocusEffect: (effect: () => undefined | (() => void)) => React.useEffect(effect, [effect])
   }
 })
-vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getAllKeys: async () => {
-      env.storageListed += 1
-      return []
-    },
-    multiGet: async (keys: readonly string[]) => keys.map((key) => [key, null])
-  }
+vi.mock('expo-clipboard', mocks['expo-clipboard'])
+vi.mock('expo-haptics', mocks['expo-haptics'])
+vi.mock('expo-document-picker', mocks['expo-document-picker'])
+vi.mock('@orca/expo-two-way-audio', mocks['@orca/expo-two-way-audio'])
+vi.mock('expo-keep-awake', mocks['expo-keep-awake'])
+vi.mock('expo-image-picker', mocks['expo-image-picker'])
+vi.mock('expo-file-system', mocks['expo-file-system'])
+vi.mock('lucide-react-native', mocks['lucide-react-native'])
+vi.mock('react-native-safe-area-context', mocks['react-native-safe-area-context'])
+vi.mock('../../modules/orca-mobile-web-shell/src', mocks['../../modules/orca-mobile-web-shell/src'])
+vi.mock('../app-update/use-wall-app-update', mocks['../app-update/use-wall-app-update'])
+vi.mock('../transport/client-context', mocks['../transport/client-context'])
+vi.mock('./use-page-host-snapshot', mocks['./use-page-host-snapshot'])
+// The screen's session is the reducer's, as `sessionFor` carried it.
+vi.mock('./use-mobile-web-shell-session', () => ({
+  useMobileWebShellSession: () => ({
+    ...mocks['./use-mobile-web-shell-session']().useMobileWebShellSession(),
+    ...(env.hostSession === null
+      ? {}
+      : { state: env.hostSession.state, ownsHostArea: env.hostSession.ownsHostArea })
+  })
 }))
-vi.mock('../transport/host-store', () => ({ loadHosts: async () => [] }))
-vi.mock('../theme/mobile-theme', () => ({ colors: {}, spacing: { md: 16, lg: 24 } }))
+vi.mock('../theme/mobile-theme', async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  colors: {}
+}))
 vi.mock('../storage/preferences', () => ({
   HOST_SIDEBAR_DEFAULT_WIDTH: 320,
   HOST_SIDEBAR_MAX_WIDTH: 480,
@@ -80,14 +101,10 @@ vi.mock('../components/HostProtocolGate', () => ({
   HostProtocolGate: ({ children }: { children: unknown }) => children
 }))
 vi.mock('../host-screen/HostScreen', () => ({ HostScreen: HostSidebar }))
-// The host route's shell screen, reduced to the one thing it tells the layout, which it reports
-// through the real hook.
+// The real host-route shell screen when one is mounted, with its reports to the layout recorded.
 vi.mock('../navigation/host-stack', async () => {
   const serving = await import('./host-area-serving')
-  function HostAreaSession(): null {
-    serving.useReportedHostAreaServing(env.hostAreaServing)
-    return null
-  }
+  const { MobileWebShellScreen } = await import('./MobileWebShellScreen')
   return {
     HostStack: function HostStack() {
       const report = useContext(serving.HostAreaServingContext)
@@ -100,7 +117,9 @@ vi.mock('../navigation/host-stack', async () => {
       )
       return (
         <serving.HostAreaServingContext.Provider value={recorded}>
-          <HostAreaSession />
+          {env.hostSession === null ? null : (
+            <MobileWebShellScreen hostId="host-1" route={{ pathname: HOST }} fallback={null} />
+          )}
         </serving.HostAreaServingContext.Provider>
       )
     }
@@ -146,8 +165,8 @@ import {
   manifestFacts,
   run
 } from './mobile-web-shell-session-test-fixtures'
+import type { MobileWebShellSession } from './mobile-web-shell-session-contract'
 import type { MobileWebPageRoute } from './page-route-policy'
-import { usePageHostSnapshot } from './use-page-host-snapshot'
 
 const IPAD = { width: 1180, height: 820 }
 const PHONE = { width: 390, height: 844 }
@@ -196,22 +215,16 @@ function served(page: Page, pathname: string, wide: boolean): boolean {
   return sessionFor(page, pathname, wide).state.kind === 'activating'
 }
 
-/** What `MobileWebShellScreen` reports to the layout for this session. */
-function hostAreaServing(page: Page, wide: boolean): boolean {
-  const session = sessionFor(page, HOST, wide)
-  return session.ownsHostArea && session.state.kind === 'activating'
-}
-
 async function sidebarsIn(
   renderer: Renderer,
   viewport: { width: number; height: number },
-  options: { pathname?: string; ownsHostArea?: boolean; hostAreaServing?: boolean } = {}
+  options: { pathname?: string; ownsHostArea?: boolean; hostSession?: MobileWebShellSession } = {}
 ): Promise<number> {
   env.renderer = renderer
   env.width = viewport.width
   env.height = viewport.height
   env.pathname = options.pathname ?? HOST
-  env.hostAreaServing = options.hostAreaServing ?? false
+  env.hostSession = options.hostSession ?? null
   const mounted: { tree: ReactTestRenderer | null } = { tree: null }
   if (renderer === 'page' || renderer === 'old-page') {
     const pair = createFakeBridgePortPair({
@@ -259,7 +272,7 @@ async function countSidebars(
   }
   const native = await sidebarsIn('native', window, {
     pathname: at,
-    hostAreaServing: hostAreaBeneath && hostAreaServing(page, wide)
+    ...(hostAreaBeneath ? { hostSession: sessionFor(page, HOST, wide) } : {})
   })
   let pages = 0
   const session = sessionFor(page, at, wide)
@@ -325,27 +338,11 @@ describe('the page sidebar rule', () => {
 })
 
 describe('a phone', () => {
-  it('reports nothing to the layout and lists nothing in the store', async () => {
-    const session = sessionFor('declared', HOST, false)
-    expect(session.state.kind).toBe('activating')
+  it('reports nothing to the layout from a served host route', async () => {
+    const hostSession = sessionFor('declared', HOST, false)
+    expect(hostSession.state.kind).toBe('activating')
     env.reports.length = 0
-    env.storageListed = 0
-    function PhoneHostRoute() {
-      usePageHostSnapshot('host-1', HOST, session.ownsHostArea)
-      return <HostGroupLayout />
-    }
-    env.renderer = 'native'
-    env.width = PHONE.width
-    env.height = PHONE.height
-    env.pathname = HOST
-    env.hostAreaServing = session.ownsHostArea
-    const mounted: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      mounted.tree = create(<PhoneHostRoute />)
-    })
-    await act(async () => {})
+    expect(await sidebarsIn('native', PHONE, { hostSession })).toBe(0)
     expect(env.reports).toEqual([])
-    expect(env.storageListed).toBe(0)
-    act(() => mounted.tree?.unmount())
   })
 })

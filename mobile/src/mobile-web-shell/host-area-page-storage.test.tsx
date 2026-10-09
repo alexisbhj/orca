@@ -12,17 +12,27 @@ import { act, create } from 'react-test-renderer'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const store = vi.hoisted(() => new Map<string, string>())
+// Writes wait here until a case lands them, as a native store's queue holds them.
+const queued = vi.hoisted((): (() => void)[] => [])
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
     multiGet: async (keys: readonly string[]) => keys.map((key) => [key, store.get(key) ?? null]),
     getItem: async (key: string) => store.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      store.set(key, value)
-    },
-    removeItem: async (key: string) => {
-      store.delete(key)
-    }
+    setItem: (key: string, value: string) =>
+      new Promise<void>((resolve) =>
+        queued.push(() => {
+          store.set(key, value)
+          resolve()
+        })
+      ),
+    removeItem: (key: string) =>
+      new Promise<void>((resolve) =>
+        queued.push(() => {
+          store.delete(key)
+          resolve()
+        })
+      )
   }
 }))
 vi.mock('../transport/host-store', () => ({
@@ -34,11 +44,19 @@ import { createFakeBridgePortPair } from './bridge/bridge-port-pair-test-harness
 import { storageReadParamsSchema, storageReadResultSchema } from './bridge/bridge-native-verbs'
 import pageAsyncStorage, { publishPageStorage } from './bridge/page-async-storage'
 import { MOBILE_WEB_SHELL_GRANTS } from './page-route-policy'
+import { hydrateMirroredStorage } from '../storage/mirrored-storage-keys'
 
 const CHAT_TABS = 'orca:nativeChatTabs:host-a:wt-1'
 const LIVE_INPUT = 'orca:terminalLiveInputDisabled:host-a:wt-1'
 const NEVER_STORED = 'orca:nativeChatTabs:host-a:wt-2'
 const OTHER_HOST = 'orca:nativeChatTabs:host-b:wt-1'
+const FRESH = 'orca:terminalLiveInputDisabled:host-a:wt-2'
+
+function persisted(): void {
+  for (const land of queued.splice(0)) {
+    land()
+  }
+}
 
 async function snapshotFor(routePathname: string, hostArea: boolean) {
   const held: { view: PageHostSnapshotView | null } = { view: null }
@@ -64,6 +82,8 @@ async function hostAreaPage() {
     ownsHostArea: true,
     routeGrants: MOBILE_WEB_SHELL_GRANTS,
     storage: view.readStorage().storage,
+    // Applied as the screen's `onStorageWrite` applies it.
+    onStorageWrite: view.writeStorage,
     serveNativeVerb: async (verb, params) =>
       verb === 'native.storage.read'
         ? { value: await view.readWorkspaceKey(storageReadParamsSchema.parse(params).key) }
@@ -92,21 +112,17 @@ async function hostAreaPage() {
     await pair.flush()
     return read
   }
-  // The shell applies each write the page posts, as the screen's `onStorageWrite` does.
-  const applyWrites = async () => {
-    await pair.flush()
-    for (const { key, value } of pair.storageWrites.splice(0)) {
-      view.writeStorage(key, value)
-    }
-  }
-  return { view, pair, settled, applyWrites }
+  return { view, pair, settled }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  queued.length = 0
   store.clear()
   store.set(CHAT_TABS, '["tab-1"]')
   store.set(LIVE_INPUT, '["handle-1"]')
   store.set(OTHER_HOST, '["tab-9"]')
+  // The mirror is the module's, so each case starts it from this store.
+  await hydrateMirroredStorage([CHAT_TABS, LIVE_INPUT, NEVER_STORED, FRESH, OTHER_HOST])
 })
 
 describe('the per-workspace keys of a host-area page', () => {
@@ -124,36 +140,40 @@ describe('the per-workspace keys of a host-area page', () => {
   })
 
   it("writes both through the bridge to this host's store, a never-stored key included", async () => {
-    const { settled, applyWrites } = await hostAreaPage()
-    const fresh = 'orca:terminalLiveInputDisabled:host-a:wt-2'
-    for (const key of [CHAT_TABS, NEVER_STORED, fresh]) {
+    const { pair, settled } = await hostAreaPage()
+    for (const key of [CHAT_TABS, NEVER_STORED, FRESH]) {
       await pageAsyncStorage.setItem(key, '["x"]')
     }
-    await applyWrites()
-    for (const key of [CHAT_TABS, NEVER_STORED, fresh]) {
+    await pair.flush()
+    persisted()
+    for (const key of [CHAT_TABS, NEVER_STORED, FRESH]) {
       expect(store.get(key), key).toBe('["x"]')
       expect(await settled(pageAsyncStorage.getItem(key)), key).toBe('["x"]')
     }
   })
 
-  it('reads back its own write before the shell has applied it, a removal included', async () => {
-    const { applyWrites } = await hostAreaPage()
+  it('reads back its own write before the store has landed it, a removal included', async () => {
+    const { settled } = await hostAreaPage()
     await pageAsyncStorage.setItem(NEVER_STORED, '["new"]')
     await pageAsyncStorage.removeItem(CHAT_TABS)
-    // The shell has not applied either yet: its store still holds the old values.
+    const read = Promise.all([
+      pageAsyncStorage.getItem(NEVER_STORED),
+      pageAsyncStorage.getItem(CHAT_TABS)
+    ])
+    expect(await settled(read)).toEqual(['["new"]', null])
+    // The reads beat the store, which has not landed either write.
     expect(store.get(CHAT_TABS)).toBe('["tab-1"]')
-    expect(await pageAsyncStorage.getItem(NEVER_STORED)).toBe('["new"]')
-    expect(await pageAsyncStorage.getItem(CHAT_TABS)).toBeNull()
-    await applyWrites()
+    persisted()
     expect(store.get(NEVER_STORED)).toBe('["new"]')
     expect(store.has(CHAT_TABS)).toBe(false)
   })
 
   it("refuses another host's key, to read or to write", async () => {
-    const { view, pair, settled, applyWrites } = await hostAreaPage()
+    const { view, pair, settled } = await hostAreaPage()
     await pageAsyncStorage.setItem(OTHER_HOST, '["x"]')
+    await pair.flush()
+    persisted()
     expect(pair.storageWrites).toEqual([])
-    await applyWrites()
     expect(store.get(OTHER_HOST)).toBe('["tab-9"]')
     await expect(view.readWorkspaceKey(OTHER_HOST)).rejects.toThrow()
     // Refused over the bridge as an error, never as an unset key the page might overwrite.
@@ -168,6 +188,7 @@ describe('the per-workspace keys of a host-area page', () => {
     const phoneList = await snapshotFor('/h/host-a', false)
     await expect(phoneList.readWorkspaceKey(CHAT_TABS)).rejects.toThrow()
     phoneList.writeStorage(CHAT_TABS, '["no"]')
+    persisted()
     expect(store.get(CHAT_TABS)).toBe('["tab-1"]')
     const pair = createFakeBridgePortPair({ route: { pathname: '/h/host-a' } })
     await pair.flush()

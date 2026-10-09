@@ -24,15 +24,18 @@ import {
   gateVerdict,
   NATIVE_ROUTE
 } from './mobile-web-shell-gates'
-import { routeViewOf } from './page-route-policy'
+import { routeViewOf, sameRouteView } from './page-route-policy'
 import { CLEAR_PAGE_DOCUMENT_STATE, pageDocumentStatePatch } from './page-document-state'
 import { openByOwnRoutes, openCached, rendersRoute } from './mobile-web-shell-cached-generation'
 import { step } from './mobile-web-shell-session-step'
 
-export function createMobileWebShellSession(routePathname: string): MobileWebShellSession {
+export function createMobileWebShellSession(
+  routePathname: string,
+  wide = false
+): MobileWebShellSession {
   return {
     routePathname,
-    wide: false,
+    wide,
     pageRoutes: [],
     pageRouteGrants: [],
     routeGrants: [],
@@ -272,16 +275,14 @@ function decideDownloadFailed(
 
 /** A layout-class change keeps the session when its view does not move, and restarts it otherwise. */
 function onLayoutChanged(session: MobileWebShellSession, wide: boolean): MobileWebShellStep {
-  const { pageRoutes, pageRouteGrants, routeGrants, ownsHostArea } = session
-  const held = JSON.stringify({ pageRoutes, pageRouteGrants, routeGrants, ownsHostArea })
-  if (JSON.stringify(routeViewOf(session.routes, session.routePathname, wide)) === held) {
+  const view = routeViewOf(session.routes, session.routePathname, wide)
+  // Without gates no manifest has been read, so there is no view to restart.
+  if (session.gates === null || sameRouteView(view, session)) {
     return step(session, { wide })
   }
   // Still counting flows, so nothing the old session has in flight lands on this one.
-  const fresh = { ...createMobileWebShellSession(session.routePathname), wide, flow: session.flow }
-  return session.gates === null
-    ? step(fresh, { flow: fresh.flow + 1 })
-    : startFlow(fresh, session.gates)
+  const fresh = { ...createMobileWebShellSession(session.routePathname, wide), flow: session.flow }
+  return startFlow(fresh, session.gates)
 }
 
 /**

@@ -107,6 +107,8 @@ export type BridgePortPairOptions<TRpc extends RpcClient> = {
   keyboardInset?: number
   /** Stands for the wide host-area session, the one shell mount that tells the page it owns it. */
   ownsHostArea?: boolean
+  /** Applies each storage write the host takes, as the screen does; recorded either way. */
+  onStorageWrite?: (key: string, value: string | null) => void
 }
 
 type Lane = {
@@ -255,7 +257,10 @@ export function createBridgePortPair<TRpc extends RpcClient>(
       storage: options.storage ?? {},
       storageOversize: options.storageOversize ?? []
     }),
-    onStorageWrite: (key, value) => storageWrites.push({ key, value }),
+    onStorageWrite: (key, value) => {
+      storageWrites.push({ key, value })
+      options.onStorageWrite?.(key, value)
+    },
     onPageFault: (error) => pageFaults.push(error),
     onPageReady: () => {
       pageReadies += 1
