@@ -166,10 +166,26 @@ test('an unavailable browser on a responding managed host does not report a serv
       'The remote browser is unavailable. Check its setup on the server.'
     )
     await expect(notice).not.toContainText('Cannot reach the remote server.')
-    await notice.getByRole('button', { name: 'Reconnect', exact: true }).click()
-    await expect(notice).toContainText(
-      'The remote browser is unavailable. Check its setup on the server.'
-    )
+    // Why: the managed host can mirror a terminal it seeds for this workspace, taking focus.
+    await expect(async () => {
+      await page.evaluate(
+        ({ worktreeId, tabId }) => {
+          const state = window.__store?.getState()
+          const pageId = state?.browserTabsByWorktree[worktreeId]?.find(
+            (tab) => tab.id === tabId
+          )?.activePageId
+          if (pageId) {
+            state?.focusBrowserTabInWorktree(worktreeId, pageId, { surfacePane: true })
+          }
+        },
+        { worktreeId: remote.worktreeId, tabId: remoteTabId }
+      )
+      await notice.getByRole('button', { name: 'Reconnect', exact: true }).click({ timeout: 2_000 })
+      await expect(notice).toContainText(
+        'The remote browser is unavailable. Check its setup on the server.',
+        { timeout: 2_000 }
+      )
+    }).toPass({ timeout: 30_000 })
     console.log('[browser-service-after-retry]', await notice.innerText())
     expect(JSON.parse(await serverCall(page, environment.id, 'repo.list'))).toMatchObject({
       ok: true,
