@@ -258,10 +258,11 @@ describe('a Claude start whose CLI answers initialize but not a control request'
       ok: true
     })
 
-    await vi.waitFor(() => expect(record(host)?.options).toEqual({ model: 'claude-sonnet-5' }), {
+    await vi.waitFor(() => expect(record(host)?.lease.claimStatus).toBe('live'), {
       timeout: DEADLINE_MS * 40
     })
-    expect(record(host)?.lease.claimStatus).toBe('live')
+    // No effort was learned, and the model Claude's config ran is no listed row: nothing saved.
+    expect(record(host)?.options ?? {}).toEqual({})
     expect(await statusRows(host)).toEqual([])
     expect(claude.children(SESSION)).toHaveLength(1)
   })

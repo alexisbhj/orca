@@ -9,6 +9,9 @@ import { createScriptedClaudeRuntime } from './structured-claude-scripted-runtim
 const STALLED = 'claude-started-stalled'
 const HEALTHY = 'claude-started-healthy'
 const CALLER = { callerKey: 'client-1' }
+// Nothing was picked and no listed row names the model Claude's own config ran, so only the
+// effort it reported is recorded; the next start lets the config choose the model again.
+const PROVEN_OPTIONS = { effort: 'high' }
 
 let claude = createScriptedClaudeRuntime([STALLED, HEALTHY])
 
@@ -42,10 +45,7 @@ describe('a Claude child proving its start', () => {
 
     // What the child proved is still recorded, from the startup it already answered.
     await vi.waitFor(() =>
-      expect(host.deps.store.getRecord(STALLED)?.options).toEqual({
-        model: 'claude-sonnet-5',
-        effort: 'high'
-      })
+      expect(host.deps.store.getRecord(STALLED)?.options).toEqual(PROVEN_OPTIONS)
     )
     expect(claude.child(STALLED).calls).toEqual(['get_settings'])
 
@@ -70,10 +70,7 @@ describe('a Claude child proving its start', () => {
       ok: true
     })
     await vi.waitFor(() =>
-      expect(host.deps.store.getRecord(STALLED)?.options).toEqual({
-        model: 'claude-sonnet-5',
-        effort: 'high'
-      })
+      expect(host.deps.store.getRecord(STALLED)?.options).toEqual(PROVEN_OPTIONS)
     )
     // The other start is still where it was: reserved, with no new child.
     expect(host.deps.store.getRecord(HEALTHY)?.lease.claimStatus).toBe('reserved')
@@ -108,6 +105,6 @@ describe('a Claude child proving its start', () => {
 
     landWrite()
     await recovery
-    expect(store.getRecord(HEALTHY)?.options).toEqual({ model: 'claude-sonnet-5', effort: 'high' })
+    expect(store.getRecord(HEALTHY)?.options).toEqual(PROVEN_OPTIONS)
   })
 })
