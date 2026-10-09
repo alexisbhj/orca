@@ -1521,9 +1521,10 @@ export function createRemoteRuntimePtyTransport(
       return true
     }
     if (expired !== null) {
+      // Why hold first: the journal discard fails a held write in flight, which must already be retired.
+      recoveryInputHold.discardThroughCohort(expired)
       // Why the whole journal: its bytes were sent before the oldest held cohort was typed.
       inputJournal.discard()
-      recoveryInputHold.discardThroughCohort(expired)
     }
     return false
   }

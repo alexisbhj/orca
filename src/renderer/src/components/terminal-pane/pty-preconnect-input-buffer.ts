@@ -81,6 +81,8 @@ export function createPtyPreconnectInputBuffer(
   let pendingCodeUnits = 0
   let buffering = true
   let activeAcceptedInput: BufferedInput | null = null
+  // Why: an in-flight write from a dropped cohort fails as a retirement, not a broken link.
+  let retiredAcceptedInput: BufferedInput | null = null
   let activeFlush: Promise<void> | null = null
   let stopFlush!: () => void
   const flushStopped = new Promise<void>((resolve) => {
@@ -162,6 +164,7 @@ export function createPtyPreconnectInputBuffer(
     buffering = false
     const inFlight = activeAcceptedInput
     activeAcceptedInput = null
+    retiredAcceptedInput = null
     inFlight?.resolve?.(false)
     for (const input of dropped) {
       input.resolve?.(false)
@@ -170,6 +173,9 @@ export function createPtyPreconnectInputBuffer(
   }
 
   const dropThroughCohort = (cohort: number): void => {
+    if (activeAcceptedInput && activeAcceptedInput.cohort <= cohort) {
+      retiredAcceptedInput = activeAcceptedInput
+    }
     const dropped = pending.filter((input) => input.cohort <= cohort)
     if (dropped.length === 0) {
       return
@@ -232,8 +238,17 @@ export function createPtyPreconnectInputBuffer(
             return
           }
           input.resolve?.(accepted)
-          // Why not for a withdrawn write: its caller gave up on it alone, not on what was typed after it.
-          if (!accepted && !input.signal?.aborted && !writer.continuesAfterFailedWrite?.()) {
+          const retired = retiredAcceptedInput === input
+          if (retired) {
+            retiredAcceptedInput = null
+          }
+          // Why not for a withdrawn or retired write: only it was given up, not what was typed after it.
+          if (
+            !accepted &&
+            !input.signal?.aborted &&
+            !retired &&
+            !writer.continuesAfterFailedWrite?.()
+          ) {
             clear()
             return
           }
