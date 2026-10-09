@@ -25,6 +25,12 @@ export function writeHangDetectionMarker(markerPath: string, marker: HangDetecti
 }
 
 export function readHangDetectionMarker(markerPath: string): HangDetectionMarker | null {
+  return readAvailableHangDetectionMarker(markerPath) ?? null
+}
+
+function readAvailableHangDetectionMarker(
+  markerPath: string
+): HangDetectionMarker | null | undefined {
   let raw: string
   try {
     if (statSync(markerPath).size > 64 * 1024) {
@@ -32,7 +38,7 @@ export function readHangDetectionMarker(markerPath: string): HangDetectionMarker
     }
     raw = readFileSync(markerPath, 'utf8')
   } catch {
-    return null
+    return undefined
   }
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -67,7 +73,11 @@ export function readHangDetectionMarker(markerPath: string): HangDetectionMarker
 }
 
 export function consumeHangDetectionMarker(markerPath: string): HangDetectionMarker | null {
-  const marker = readHangDetectionMarker(markerPath)
+  const marker = readAvailableHangDetectionMarker(markerPath)
+  // Retry unavailable reads next startup; only successfully inspected files are consumable.
+  if (marker === undefined) {
+    return null
+  }
   try {
     rmSync(markerPath, { force: true })
   } catch {
