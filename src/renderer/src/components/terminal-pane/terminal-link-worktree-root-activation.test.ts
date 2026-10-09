@@ -43,11 +43,14 @@ vi.mock('@/lib/connection-context', () => ({
 
 installTerminalLinkTestEnvironment(doubles)
 
+// The source pane's own row: an unplaceable source must not get a root shortcut.
+const SOURCE_WORKTREE = { id: 'wt-1', path: '/tmp' }
+
 describe('handleOscLink', () => {
   it('switches to an exact known worktree root without local auth or stat', async () => {
     setPlatform('Macintosh')
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-2', path: '/tmp/other-worktree' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-2', path: '/tmp/other-worktree' }]
     }
 
     openDetectedFilePath('/tmp/other-worktree', null, null, deps)
@@ -62,7 +65,7 @@ describe('handleOscLink', () => {
   it('coalesces duplicate known-root activation from provider and mouseup fallback', async () => {
     setPlatform('Macintosh')
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-2', path: '/tmp/other-worktree' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-2', path: '/tmp/other-worktree' }]
     }
 
     openDetectedFilePath('/tmp/other-worktree', null, null, deps)
@@ -78,7 +81,7 @@ describe('handleOscLink', () => {
     setPlatform('Macintosh')
     statMock.mockResolvedValueOnce({ isDirectory: true })
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-2', path: '/tmp/other-worktree' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-2', path: '/tmp/other-worktree' }]
     }
 
     openDetectedFilePath('/tmp/other-worktree', null, null, {
@@ -117,7 +120,7 @@ describe('handleOscLink', () => {
   it('switches to a Windows worktree root when resolved separators differ from store state', async () => {
     setPlatform('Windows')
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-win', path: 'C:\\Users\\Alice\\Repo' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-win', path: 'C:\\Users\\Alice\\Repo' }]
     }
 
     openDetectedFilePath('C:/Users/Alice/Repo', null, null, {
@@ -135,7 +138,7 @@ describe('handleOscLink', () => {
     setPlatform('Macintosh')
     vi.mocked(activateAndRevealWorktree).mockReturnValueOnce(false)
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-2', path: '/tmp/other-worktree' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-2', path: '/tmp/other-worktree' }]
     }
 
     openDetectedFilePath('/tmp/other-worktree', null, null, deps)
@@ -229,7 +232,7 @@ describe('createFilePathLinkProvider range bounds', () => {
   it('switches to a known worktree root from direct fallback even when cache says missing', async () => {
     setPlatform('Macintosh')
     storeState.worktreesByRepo = {
-      repo: [{ id: 'wt-2', path: '/tmp/other-worktree' }]
+      repo: [SOURCE_WORKTREE, { id: 'wt-2', path: '/tmp/other-worktree' }]
     }
 
     const opened = openFilePathLinkAtBufferPosition(

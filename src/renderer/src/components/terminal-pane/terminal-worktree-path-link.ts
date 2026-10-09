@@ -3,7 +3,9 @@ import type { Worktree } from '../../../../shared/worktree/types'
 import { normalizeAbsolutePath } from '@/lib/terminal-path-normalization'
 import { resolveExactWorktreeRoute } from '@/lib/worktree-owner-route'
 import {
+  getFloatingWorkspaceOperationRoute,
   resolveWorktreeOperationRouteResult,
+  type WorktreeOperationRoute,
   type WorktreeOperationRouteState
 } from '@/lib/worktree-operation-route'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
@@ -94,10 +96,17 @@ function getWorktreeRootPathIndex(
   return index
 }
 
+function routeExecutionHostId(route: WorktreeOperationRoute): ExecutionHostId | null {
+  return (
+    route.executionHostId ??
+    (route.runtimeEnvironmentId ? toRuntimeExecutionHostId(route.runtimeEnvironmentId) : null)
+  )
+}
+
 function terminalFileSourceHost(
   state: WorktreeRootPathState,
   context: RuntimeFileOperationArgs | undefined
-): ExecutionHostId {
+): ExecutionHostId | null {
   const target = getActiveRuntimeTarget(context?.settings)
   if (target.kind === 'environment') {
     const sourceRoute = context?.worktreeId
@@ -113,7 +122,20 @@ function terminalFileSourceHost(
     }
     return toRuntimeExecutionHostId(target.environmentId)
   }
-  return context?.connectionId ? toSshExecutionHostId(context.connectionId) : 'local'
+  if (context?.connectionId) {
+    return toSshExecutionHostId(context.connectionId)
+  }
+  if (!context?.worktreeId) {
+    return 'local'
+  }
+  const floatingRoute = getFloatingWorkspaceOperationRoute(context.worktreeId)
+  if (floatingRoute) {
+    return routeExecutionHostId(floatingRoute)
+  }
+  // Why: a missing connectionId also means "owner unknown" (same-id rows on several hosts,
+  // restore before the repo row lands); only a resolved owner may name the source host.
+  const sourceRoute = resolveWorktreeOperationRouteResult(state, context.worktreeId)
+  return sourceRoute.kind === 'resolved' ? routeExecutionHostId(sourceRoute.route) : null
 }
 
 export function resolveKnownWorktreeRootPathLink(
@@ -128,6 +150,9 @@ export function resolveKnownWorktreeRootPathLink(
   }
   // Why: resolved only on an exact root hit; hover runs this for every candidate path.
   const sourceHost = terminalFileSourceHost(state, fileContext)
+  if (!sourceHost) {
+    return null
+  }
   let match: WorktreeRootPathLink | null = null
   for (const root of roots) {
     const exact = resolveExactWorktreeRoute(state, root)
@@ -136,12 +161,8 @@ export function resolveKnownWorktreeRootPathLink(
     if (owner.kind !== 'resolved') {
       continue
     }
-    const hostId =
-      owner.route.executionHostId ??
-      (owner.route.runtimeEnvironmentId
-        ? toRuntimeExecutionHostId(owner.route.runtimeEnvironmentId)
-        : null)
-    if (hostId !== sourceHost) {
+    const hostId = routeExecutionHostId(owner.route)
+    if (!hostId || hostId !== sourceHost) {
       continue
     }
     if (match) {

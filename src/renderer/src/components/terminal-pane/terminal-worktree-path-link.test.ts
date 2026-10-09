@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
+import { getConnectionIdFromState } from '@/lib/connection-owner-resolution'
+import { makeRepo, makeWorktree } from '../worktree-jump-palette-test-fixtures'
 import {
   normalizeWorktreeRootPathForTerminalLink,
   resolveKnownWorktreeRootPathLink
@@ -240,5 +242,53 @@ describe('terminal root link ownership', () => {
     expect(resolveKnownWorktreeRootPathLink('/target', second, remoteContext('beta'))?.id).toBe(
       'target'
     )
+  })
+
+  describe('direct SSH source with a same-id desktop twin', () => {
+    const twin = (hostId: ExecutionHostId) =>
+      makeWorktree('repo::/home/u/proj', 'proj', { repoId: 'repo', path: '/home/u/proj', hostId })
+    const sameIdState = (activeHost: ExecutionHostId | null) => ({
+      repos: [
+        { ...makeRepo(), id: 'repo', executionHostId: 'local' as const },
+        { ...makeRepo(), id: 'repo', connectionId: 'box', executionHostId: 'ssh:box' as const }
+      ],
+      worktreesByRepo: { repo: [twin('local'), twin('ssh:box')] },
+      folderWorkspaces: [],
+      projectGroups: [],
+      activeWorktreeId: activeHost ? 'repo::/home/u/proj' : null,
+      activeWorkspaceExecutionHostId: activeHost
+    })
+    const sshContext = (state: Parameters<typeof getConnectionIdFromState>[0]) => ({
+      settings: null,
+      worktreeId: 'repo::/home/u/proj',
+      worktreePath: '/home/u/proj',
+      connectionId: getConnectionIdFromState(state, 'repo::/home/u/proj') ?? undefined
+    })
+
+    it('resolves the root on the active SSH host, not the desktop', () => {
+      const state = sameIdState('ssh:box')
+      const context = sshContext(state)
+      expect(context.connectionId).toBeUndefined()
+      expect(resolveKnownWorktreeRootPathLink('/home/u/proj', state, context)).toEqual({
+        id: 'repo::/home/u/proj',
+        path: '/home/u/proj',
+        executionHostId: 'ssh:box'
+      })
+    })
+
+    it('offers no root shortcut when the source host cannot be resolved', () => {
+      const state = sameIdState(null)
+      expect(resolveKnownWorktreeRootPathLink('/home/u/proj', state, sshContext(state))).toBeNull()
+    })
+  })
+
+  it('does not treat a source whose owner rows have not loaded as local', () => {
+    const state = {
+      ...createState({ desktop: [{ id: 'desktop', path: '/target' }] }),
+      runtimeEnvironments: [],
+      runtimeEnvironmentCatalogHydrated: false
+    }
+    const context = { settings: null, worktreeId: 'restoring::/x', worktreePath: '/x' }
+    expect(resolveKnownWorktreeRootPathLink('/target', state, context)).toBeNull()
   })
 })
