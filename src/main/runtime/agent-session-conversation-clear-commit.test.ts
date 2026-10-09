@@ -93,6 +93,7 @@ describe("a /clear's commit", () => {
       options: { model: 'sonnet' },
       launchArgs: ['--flag'],
       providerHandleChain: [],
+      permissionRevision: 0,
       createdAt: NOW + 5,
       updatedAt: NOW + 5,
       lease: {
