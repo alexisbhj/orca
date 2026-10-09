@@ -1,9 +1,9 @@
 // Structural rules for the workspace tab layout the runtime holds. Pure: callers pass the runtime's
 // session partitions (and optionally the previous ones) and get every breach back.
 
-import type { ExecutionHostId } from '../../../shared/execution-host'
-import type { Tab, TabGroup } from '../../../shared/tab-types'
-import { collectLayoutLeafIdsInOrder } from '../restoring-sessions/terminal-layout-normalization'
+import type { ExecutionHostId } from '../execution-host'
+import type { Tab, TabGroup } from '../tab-types'
+import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 import {
   collectTerminalLeafOwners,
   isSameTerminal,

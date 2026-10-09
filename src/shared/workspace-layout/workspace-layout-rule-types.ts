@@ -1,5 +1,5 @@
-import type { ExecutionHostId } from '../../../shared/execution-host'
-import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
+import type { ExecutionHostId } from '../execution-host'
+import type { WorkspaceSessionState } from '../workspace-session-state-types'
 
 export type WorkspaceLayoutPartition = { hostId: ExecutionHostId; session: WorkspaceSessionState }
 

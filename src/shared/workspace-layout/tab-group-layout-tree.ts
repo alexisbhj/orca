@@ -1,4 +1,4 @@
-import type { TabGroupLayoutNode } from '../../../../../shared/tab-types'
+import type { TabGroupLayoutNode } from '../tab-types'
 
 export function buildSplitNode(
   existingGroupId: string,
@@ -72,7 +72,10 @@ export function findSiblingGroupId(root: TabGroupLayoutNode, targetGroupId: stri
   )
 }
 
-function removeLeaf(root: TabGroupLayoutNode, targetGroupId: string): TabGroupLayoutNode | null {
+export function removeGroupLayoutLeaf(
+  root: TabGroupLayoutNode,
+  targetGroupId: string
+): TabGroupLayoutNode | null {
   if (root.type === 'leaf') {
     return root.groupId === targetGroupId ? null : root
   }
@@ -82,8 +85,8 @@ function removeLeaf(root: TabGroupLayoutNode, targetGroupId: string): TabGroupLa
   if (root.second.type === 'leaf' && root.second.groupId === targetGroupId) {
     return root.first
   }
-  const first = removeLeaf(root.first, targetGroupId)
-  const second = removeLeaf(root.second, targetGroupId)
+  const first = removeGroupLayoutLeaf(root.first, targetGroupId)
+  const second = removeGroupLayoutLeaf(root.second, targetGroupId)
   if (first === null) {
     return second
   }
@@ -108,7 +111,7 @@ export function collapseGroupLayout(
     return { layoutByWorktree, activeGroupIdByWorktree }
   }
   const siblingId = findSiblingGroupId(currentLayout, groupId)
-  const collapsed = removeLeaf(currentLayout, groupId)
+  const collapsed = removeGroupLayoutLeaf(currentLayout, groupId)
   const nextLayoutByWorktree = { ...layoutByWorktree }
   if (collapsed) {
     nextLayoutByWorktree[worktreeId] = collapsed

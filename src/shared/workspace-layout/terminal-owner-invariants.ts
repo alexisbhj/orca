@@ -1,9 +1,9 @@
-import { parseExecutionHostId, type ExecutionHostId } from '../../../shared/execution-host'
-import { parseAppSshPtyId } from '../../../shared/ssh-pty-id'
-import { isTerminalLeafId } from '../../../shared/stable-pane-id'
-import type { TerminalTab } from '../../../shared/terminal-tab-types'
-import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
-import { collectLayoutLeafIdsInOrder } from '../restoring-sessions/terminal-layout-normalization'
+import { parseExecutionHostId, type ExecutionHostId } from '../execution-host'
+import { parseAppSshPtyId } from '../ssh-pty-id'
+import { isTerminalLeafId } from '../stable-pane-id'
+import type { TerminalTab } from '../terminal-tab-types'
+import type { WorkspaceSessionState } from '../workspace-session-state-types'
+import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 
 // The two terminal-layout invariants: a terminal is bound to at most one leaf, and a leaf id is in
 // at most one tab. The binding write reports breaches; nothing removes them yet.
