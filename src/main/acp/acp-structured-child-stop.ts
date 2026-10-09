@@ -43,7 +43,16 @@ export async function stopAcpChildren(
   let cancelled = false
   for (const id of taskIds) {
     const request = control.request(session.lane.translator.providerSessionId, id)
-    const value = await session.connection.requestExtension(request.method, request.params)
+    let value: unknown
+    try {
+      value = await session.connection.requestExtension(request.method, request.params)
+    } catch (error) {
+      // The agent's own refusal usually means the subagent already ended; anything else leaves the effect unknown.
+      if (error instanceof AcpAgentError) {
+        continue
+      }
+      throw error
+    }
     const result = control.response(value, id)
     if (result.state && result.state !== 'working') {
       session.lane.apply(session.lane.translator.reconcileSubagent(id, result.state, at()))
