@@ -5,6 +5,7 @@ import {
 import type { WorkspaceAttachment, WorkspaceLinkedItem } from './worktree/types'
 import { getTaskSourceCacheScope, normalizeStoredTaskSourceContext } from './task-source-context'
 import { normalizeWorkspaceLinkedItem } from './workspace-linked-item'
+import { getWorkspaceReferenceIdentity } from './workspace-reference-identity'
 import { isWorkspaceLinkedItemSourceContextMatch } from './workspace-linked-item-source-context'
 
 function nonEmpty(value: unknown): string | undefined {
@@ -134,7 +135,10 @@ export function getWorkspaceAttachmentUrlScope(item: WorkspaceAttachment): strin
   }
 }
 
-export function normalizeWorkspaceAttachments(value: unknown): WorkspaceAttachment[] {
+export function normalizeWorkspaceAttachments(
+  value: unknown,
+  { preserveSources = false }: { preserveSources?: boolean } = {}
+): WorkspaceAttachment[] {
   if (!Array.isArray(value)) {
     return []
   }
@@ -144,7 +148,9 @@ export function normalizeWorkspaceAttachments(value: unknown): WorkspaceAttachme
     if (!item) {
       continue
     }
-    const key = getWorkspaceAttachmentKey(item)
+    const key = preserveSources
+      ? getWorkspaceReferenceIdentity(item)
+      : getWorkspaceAttachmentKey(item)
     const previous = items.get(key)
     items.set(key, {
       ...previous,
@@ -155,6 +161,9 @@ export function normalizeWorkspaceAttachments(value: unknown): WorkspaceAttachme
     })
   }
   const normalized = [...items.values()]
+  if (preserveSources) {
+    return normalized
+  }
   const groups = new Map<string, WorkspaceAttachment[]>()
   for (const item of normalized) {
     const identity = attachmentIdentity(item)

@@ -14,8 +14,72 @@ import type { AgentSessionRecordStore } from './agent-session-record-store'
 import { peekOpenedAgentSessionRecordStore } from './agent-session-record-store-slot'
 import { createAgentLaunchRecordWarmupGate } from './agent-launch-record-warmup-gate'
 import { registerDetectedWorktreeScanInvalidation } from '../ipc/worktrees/listing/register-detected-worktree-scan-invalidation'
+import {
+  listReferenceWorkspaces,
+  selectReferenceWorkspace,
+  listWorkspaceReferences
+} from './runtime-reference-catalog'
+import { findWorkspaceReferences } from './runtime-reference-find'
+import { createReferenceAgentIndex, referenceConnectionHosts } from './runtime-reference-agents'
+import type { RuntimeReferenceFindParams } from '../../shared/runtime-reference-contracts'
+import { getRepoExecutionHostId } from '../../shared/execution-host'
 
 class OrcaRuntimeService extends OrcaRuntimeWithMigrationCatalog {
+  async listWorkspaceReferences(selector: string, cwd?: string) {
+    const catalog = listReferenceWorkspaces(
+      this.requireStore(),
+      this.resolvedWorktrees.peek()?.worktrees
+    )
+    try {
+      return listWorkspaceReferences(selectReferenceWorkspace(catalog, selector, cwd))
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== 'selector_not_found') {
+        throw error
+      }
+      // A first link may target a discovered worktree with no saved metadata yet.
+      const discovered = await this.listResolvedWorktrees()
+      return listWorkspaceReferences(
+        selectReferenceWorkspace(
+          listReferenceWorkspaces(this.requireStore(), discovered),
+          selector,
+          cwd
+        )
+      )
+    }
+  }
+
+  async findWorkspaceReferences(params: RuntimeReferenceFindParams) {
+    if (params.worktree && params.repo) {
+      throw new Error('--repo and --worktree cannot be combined')
+    }
+    let workspaces = listReferenceWorkspaces(
+      this.requireStore(),
+      this.resolvedWorktrees.peek()?.worktrees
+    )
+    if (params.worktree) {
+      workspaces = [selectReferenceWorkspace(workspaces, params.worktree, params.cwd)]
+    } else if (params.repo) {
+      const repo = await this.resolveRepoSelector(params.repo)
+      workspaces = workspaces.filter(
+        (row) =>
+          row.kind === 'worktree' &&
+          row.repoId === repo.id &&
+          row.hostId === getRepoExecutionHostId(repo)
+      )
+    }
+    return findWorkspaceReferences(params, {
+      workspaces,
+      agents: async (workspaceKeys) =>
+        createReferenceAgentIndex(
+          this,
+          this.getOrchestrationDbIfAvailable(),
+          await this.openAgentSessionRecordStore(),
+          workspaceKeys,
+          referenceConnectionHosts(this.listRepos())
+        )
+    })
+  }
+
   constructor(...args: ConstructorParameters<typeof OrcaRuntimeWithMigrationCatalog>) {
     super(...args)
     // Why: the runtime listing re-runs a scan the worktree-change generation overtook and re-lists

@@ -1,3 +1,4 @@
+import { getWorkspaceReferenceIdentity } from '../../../../shared/workspace-reference-identity'
 import type { Repo } from '../../../../shared/repo-types'
 import type { WorkspaceAttachment, Worktree } from '../../../../shared/worktree/types'
 import {
@@ -8,7 +9,6 @@ import {
 } from '../../../../shared/task-source-context'
 import {
   getWorkspaceAttachmentUrlScope,
-  matchesWorkspaceAttachmentIdentity,
   normalizeWorkspaceAttachments
 } from '../../../../shared/workspace-attachment-normalization'
 
@@ -64,40 +64,13 @@ export function isWorkspaceAttachmentLinked(
   items: readonly WorkspaceAttachment[],
   candidate: WorkspaceAttachment
 ): boolean {
-  return items.some((item) => {
-    if (
-      matchesWorkspaceAttachmentIdentity(candidate, item) ||
-      matchesWorkspaceAttachmentIdentity(item, candidate)
-    ) {
-      return true
-    }
-    const sameReference =
-      item.provider === candidate.provider &&
-      item.type === candidate.type &&
-      item.number === candidate.number &&
-      (item.identifier ?? item.linearIdentifier ?? item.jiraIdentifier) ===
-        (candidate.identifier ?? candidate.linearIdentifier ?? candidate.jiraIdentifier)
-    const scope = getWorkspaceAttachmentUrlScope(item)
-    if (!sameReference || !scope || scope !== getWorkspaceAttachmentUrlScope(candidate)) {
-      return false
-    }
-    const oldContext = item.taskSourceContext
-    const newContext = candidate.taskSourceContext
-    return (
-      !oldContext ||
-      !newContext ||
-      (oldContext.hostId === newContext.hostId &&
-        oldContext.projectId === newContext.projectId &&
-        (!oldContext.accountLabel ||
-          !newContext.accountLabel ||
-          oldContext.accountLabel === newContext.accountLabel))
-    )
-  })
+  const identity = getWorkspaceReferenceIdentity(candidate)
+  return items.some((item) => getWorkspaceReferenceIdentity(item) === identity)
 }
 
 export function appendWorkspaceAttachment(
   items: readonly WorkspaceAttachment[],
   item: WorkspaceAttachment
 ): WorkspaceAttachment[] {
-  return normalizeWorkspaceAttachments([...items, item])
+  return normalizeWorkspaceAttachments([...items, item], { preserveSources: true })
 }
