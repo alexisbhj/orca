@@ -11,7 +11,6 @@ import type { AgentSessionProviderHandleLink } from '../../shared/agent-session-
 import { TUI_AGENT_DISPLAY_NAMES } from '../../shared/tui-agent-display-names'
 import { isTuiAgent } from '../../shared/tui-agent-config'
 import {
-  AgentSessionAcquisitionRefusal,
   AgentSessionPreSpawnError,
   type AgentSessionAcquisition,
   type StructuredAgentSessionAcquireInput
@@ -22,7 +21,8 @@ import {
   PROVIDER_SPAWN_TOKEN_ENV
 } from '../provider-process/provider-spawned-process-identity'
 import { structuredSessionChildIdentityEnv } from '../runtime/structured-session-child-identity-env'
-import { AcpAuthRequiredError } from './acp-errors'
+import { AcpAgentError } from './acp-errors'
+import { acpAuthenticationRequired, acpSignInRequiredRefusal } from './acp-turn-failures'
 import { ACP_CHILD_ENV_TO_DELETE } from './acp-launch-specs'
 import {
   ACP_REOPEN_FAILED,
@@ -44,6 +44,7 @@ import {
 import type { AcpStructuredSessionAdapterDeps } from './acp-structured-session-adapter-deps'
 import { AcpStructuredTurns, type AcpStructuredTurnsDeps } from './acp-structured-turns'
 import { RequestPermissionResponseSchema } from './generated/acp-protocol.generated'
+import { createStructuredAgentSessionLogger } from '../native-chat/agent-session-wire/structured-agent-session-logger'
 
 /** Frames an agent may send before its session exists; past this they are dropped. */
 const MAX_EARLY_FRAMES = 2_048
@@ -196,6 +197,7 @@ export async function acquireAcpStructuredSession(input: {
       generation,
       providerSessionId,
       dialect: spec.dialect,
+      logger: deps.logger ?? createStructuredAgentSessionLogger(),
       onInputAccepted: (clientMessageId) => session?.turns.accept(clientMessageId),
       onFailed: () => input.forceClose(sessionId)
     })
@@ -320,11 +322,8 @@ export async function acquireAcpStructuredSession(input: {
   } catch (error) {
     session = null
     slot.lane?.dispose()
-    if (error instanceof AcpAuthRequiredError) {
-      throw new AgentSessionAcquisitionRefusal(
-        `${spec.agent} reported that it is not signed in: ${error.message}`,
-        'notSignedIn'
-      )
+    if (error instanceof AcpAgentError && acpAuthenticationRequired(spec.dialect, error)) {
+      throw acpSignInRequiredRefusal(spec.agent, spec.dialect, error)
     }
     throw error
   }
