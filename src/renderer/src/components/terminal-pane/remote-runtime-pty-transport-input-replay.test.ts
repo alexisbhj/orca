@@ -10,6 +10,7 @@ import {
   type MultiplexSubscriptionCallbacks
 } from './remote-runtime-pty-transport-test-harness'
 import { REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS } from './remote-runtime-pty-recovery-state'
+import { REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS } from './remote-runtime-disconnected-input-grace'
 import { runTerminalPasteOperationWithTimeout } from './terminal-paste-operation-timeout'
 import { writeTerminalPastePtyInput } from './terminal-pty-paste-writer'
 import { executeTerminalPastePlan } from './terminal-paste-executor'
@@ -280,7 +281,95 @@ describe('remote pane input across a silent outage', () => {
     transport.destroy?.()
   })
 
-  it('drops input held or typed past the auto-recovery window instead of running it at a later reconnect', async () => {
+  it('keeps input held past the auto-recovery window and delivers it when the same terminal returns within the grace (P1-3)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { transport } = await connectPane({ inputAck: 1 })
+      let hostReachable = false
+      runtimeSubscribe.mockImplementation(
+        async (_args: unknown, callbacks: NonNullable<MultiplexSubscriptionCallbacks>) => {
+          if (!hostReachable) {
+            throw Object.assign(new Error('Could not connect to the remote Orca runtime.'), {
+              code: 'remote_runtime_unavailable'
+            })
+          }
+          subscriptionCallbacks = callbacks
+          queueMicrotask(emitMultiplexReady)
+          return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
+        }
+      )
+
+      subscriptionCallbacks?.onClose?.()
+      expect(transport.sendInput('HELD-1\r', 'driving')).toBe(true)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      expect(transport.getRecoveryState?.().phase).toBe('disconnected')
+      // Typed under the "disconnected" banner: still held for the same terminal.
+      expect(transport.sendInput('LATE-2\r', 'driving')).toBe(true)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS - 60_000)
+
+      hostReachable = true
+      expect(transport.retryRecovery?.()).toBe(true)
+      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(2))
+      attachStream(latestSubscribePayload().streamId, { inputAck: 1 })
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(
+        sentInputs(2)
+          .map((input) => input.text)
+          .join('')
+      ).toBe('HELD-1\rLATE-2\r')
+      transport.destroy?.()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never delivers a paste chunk held past its caller timeout under the disconnected banner', async () => {
+    vi.useFakeTimers()
+    try {
+      const { transport } = await connectPane({ inputAck: 1 })
+      let hostReachable = false
+      runtimeSubscribe.mockImplementation(
+        async (_args: unknown, callbacks: NonNullable<MultiplexSubscriptionCallbacks>) => {
+          if (!hostReachable) {
+            throw Object.assign(new Error('Could not connect to the remote Orca runtime.'), {
+              code: 'remote_runtime_unavailable'
+            })
+          }
+          subscriptionCallbacks = callbacks
+          queueMicrotask(emitMultiplexReady)
+          return { unsubscribe: vi.fn(), sendBinary: subscriptionSendBinary }
+        }
+      )
+
+      subscriptionCallbacks?.onClose?.()
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      expect(transport.getRecoveryState?.().phase).toBe('disconnected')
+
+      const paste = pasteChunk(transport, '\x1b[200~echo one\recho two\r')
+      await vi.advanceTimersByTimeAsync(TERMINAL_REMOTE_PASTE_OPERATION_TIMEOUT_MS + 10_000)
+      await expect(paste).resolves.toEqual({ timedOut: true })
+      // Typed after the paste error: still held for the same terminal.
+      transport.sendInput('ls\r', 'driving')
+
+      hostReachable = true
+      expect(transport.retryRecovery?.()).toBe(true)
+      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(2))
+      attachStream(latestSubscribePayload().streamId, { inputAck: 1 })
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(
+        sentInputs(2)
+          .map((input) => input.text)
+          .join('')
+      ).toBe('ls\r')
+      transport.destroy?.()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops input held or typed past the disconnected grace instead of running it at a later reconnect', async () => {
     vi.useFakeTimers()
     try {
       const { transport } = await connectPane({ inputAck: 1 })
@@ -300,13 +389,12 @@ describe('remote pane input across a silent outage', () => {
 
       subscriptionCallbacks?.onClose?.()
       transport.sendInput('HELD-1\r', 'driving')
-      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      await vi.advanceTimersByTimeAsync(
+        REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS + 1_000
+      )
       expect(transport.getRecoveryState?.().phase).toBe('disconnected')
-      // Typed into the dead pane under the "disconnected" banner.
-      transport.sendInput('git push -f\r', 'driving')
-      const paste = pasteChunk(transport, '\x1b[200~echo one\recho two\r')
-      await vi.advanceTimersByTimeAsync(TERMINAL_REMOTE_PASTE_OPERATION_TIMEOUT_MS + 10_000)
-      await expect(paste).resolves.toEqual({ timedOut: false, value: false })
+      // Typed into the dead pane long after it gave up.
+      expect(transport.sendInput('git push -f\r', 'driving')).toBe(false)
 
       hostReachable = true
       expect(transport.retryRecovery?.()).toBe(true)
