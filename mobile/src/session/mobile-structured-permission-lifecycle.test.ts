@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  MODEL_PLACEHOLDER_ONLY,
   permissionHost,
   permissionOptions,
   permissionSnapshot,
@@ -64,7 +65,7 @@ it.each(['claude', 'codex'])(
     )
     await act(async () => host.attach())
     await act(async () => host.publish(permissionSnapshot('auto')))
-    expect(read().structured.optionSnapshot).toEqual([])
+    expect(read().structured.optionSnapshot).toEqual(MODEL_PLACEHOLDER_ONLY)
     expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('auto')
     await act(async () => host.replies[0](permissionOptions('ask')))
     expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('auto')
@@ -88,7 +89,7 @@ it.each(['claude', 'codex'])(
     expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('ask')
     await act(async () => host.failReads())
     expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('ask')
-    expect(read().structured.optionSnapshot).toEqual([])
+    expect(read().structured.optionSnapshot).toEqual(MODEL_PLACEHOLDER_ONLY)
   }
 )
 

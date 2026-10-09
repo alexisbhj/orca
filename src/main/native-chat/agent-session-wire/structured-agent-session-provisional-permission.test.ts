@@ -27,6 +27,9 @@ it.each(['claude', 'codex'])(
           fetchedAt: 1,
           models: [{ id: 'm', label: 'M', isDefault: true, efforts: [], supportsFastMode: true }]
         }),
+        recordLiveListing: () => {},
+        prewarm: async () => {},
+        stop: () => {},
         providerStarted: () => {}
       }
     }

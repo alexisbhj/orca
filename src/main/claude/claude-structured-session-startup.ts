@@ -49,7 +49,11 @@ import {
 
 export type StructuredAgentSessionStartedOptions = Pick<
   StructuredAgentSessionStartedEvent,
-  'reportedOptions' | 'restoreSkippedOptions' | 'retiredOptions' | 'optionRevision'
+  | 'reportedOptions'
+  | 'restoreSkippedOptions'
+  | 'retiredOptions'
+  | 'optionRevision'
+  | 'catalogListing'
 >
 
 /** A lifecycle event the start reports, before the session's identity is stamped on it. */
@@ -173,20 +177,22 @@ function applyClaudeSettingsFacts(
   session.events?.publish()
 }
 
-/** What the start persists as the session's options. The applied effort is display-only: saved,
- *  it would pin an effort nobody chose on every reopen, past a later settings change. */
+/** What the start persists as the session's options, and the account listing it read for the
+ *  host's catalog. The applied effort is display-only: saved, it would pin an effort nobody chose
+ *  on every reopen, past a later settings change. */
 function claudeStartedReportedOptions(
   session: ClaudeSession,
   catalog: unknown[],
   readMutationSequence = session.optionMutationSequence
-): StructuredAgentSessionStartedOptions['reportedOptions'] {
+): Pick<StructuredAgentSessionStartedOptions, 'reportedOptions' | 'catalogListing'> {
   const result = claudeStructuredSessionOptionsFrom(session, catalog, readMutationSequence)
   const current = { ...result.current, permissionMode: claudeChatPermissionMode(session) }
+  const listing = result.catalogListing ? { catalogListing: result.catalogListing } : {}
   if (session.options.has('effort') || session.reportedOptions.effort !== undefined) {
-    return current
+    return { reportedOptions: current, ...listing }
   }
   const { effort: _displayOnly, ...persisted } = current
-  return persisted
+  return { reportedOptions: persisted, ...listing }
 }
 
 /** Applies the initialize answer and reports `started`, so the host hands the child what it holds;
@@ -237,7 +243,7 @@ export async function settleClaudeSessionStartup(input: {
       // `list_models` is answered from this same initialize result, so nothing is re-read. A
       // saved Fast the launch left out is decided once settings are read, so this read settles
       // none of it (an older sequence never rewrites an option).
-      reportedOptions: claudeStartedReportedOptions(
+      ...claudeStartedReportedOptions(
         session,
         readClaudeModels(initialized.initialization),
         session.fastModeAtStart ? session.optionMutationSequence - 1 : undefined
@@ -296,7 +302,9 @@ async function settleClaudeStartupSettings(
   const startFastMode = writtenSinceRead ? null : admitClaudeStartFastMode(session, facts)
   input.report({
     type: 'options-reported',
-    reportedOptions: claudeStartedReportedOptions(session, readClaudeModels(facts.initialization)),
+    // `started` already carried this listing to the host.
+    reportedOptions: claudeStartedReportedOptions(session, readClaudeModels(facts.initialization))
+      .reportedOptions,
     restoreSkippedOptions: [...session.restoreSkippedOptions],
     ...claudeRetiredOptions(session),
     optionRevision

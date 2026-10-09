@@ -23,12 +23,11 @@ it('refreshes idle host permission changes, turn and provider changes, and recon
     permissionModes: { current: mode, supported: ['ask', 'auto', 'bypass'] }
   }))
   const client: RpcClient = {
-    sendRequest: async () => ({
-      id: 'r',
-      ok: true,
-      result: await reads(),
-      _meta: { runtimeId: 'h' }
-    }),
+    // Only the options read is counted; the host's model list never answers here.
+    sendRequest: async (method) =>
+      method === 'agentSession.modelCatalog'
+        ? new Promise(() => {})
+        : { id: 'r', ok: true, result: await reads(), _meta: { runtimeId: 'h' } },
     subscribe: () => () => {},
     updateTerminalSubscriptionViewport: () => {},
     getState: () => 'connected',

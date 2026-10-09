@@ -2,16 +2,15 @@ import { toast } from 'sonner'
 import * as React from 'react'
 import { useCallback, useMemo } from 'react'
 import type { AgentType } from '../../../../shared/agent-status-types'
-import { structuredAgentSessionSeedCatalog } from './structured-agent-session-seed-catalog'
+import { structuredAgentSessionSeedCatalog } from '../../../../shared/structured-agent-session-seed-catalog'
 import {
   canSetStructuredAgentSessionOption,
   lockedStructuredAgentSessionOptionSnapshot,
-  pendingModelListStructuredAgentSessionOptionSnapshot,
   structuredAgentSessionOptionSnapshot,
-  structuredAgentSessionOptionView,
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
 import { structuredAgentSessionOptionPicks } from '../../../../shared/structured-agent-session-option-picks'
+import { structuredAgentSessionOptionView } from '../../../../shared/structured-agent-session-option-view'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { enqueueSessionOptionSettingsWrite } from './native-chat-session-option-settings-write'
 import { encodeStructuredAgentSessionOptionValue } from '../../../../shared/structured-agent-session-option-codec'
@@ -100,6 +99,9 @@ export function useStructuredAgentSessionOptions(args: {
     fence,
     sessionId,
     target,
+    newLaunch: launch?.kind === 'new',
+    ...(launch?.worktree ? { worktree: launch.worktree } : {}),
+    seedsModel: launchSeedOptions?.model !== undefined,
     providerVisible,
     providerStarting: args.providerStarting ?? false,
     // A new chat's host knows nothing of its model before the provider starts; a resumed one's
@@ -126,21 +128,18 @@ export function useStructuredAgentSessionOptions(args: {
     optionCatalog,
     enabled: args.isVisible,
     // A resumed conversation may keep its own model, so only a new one runs the listed default.
-    namesDefault: launch?.kind === 'new' && optionCatalog?.hostListingNamesConfiguredModel === true,
+    newLaunch: launch?.kind === 'new',
     ...(launch?.worktree ? { worktree: launch.worktree } : {}),
     fence,
     turnId,
+    reportedUnpickedModel:
+      launch?.kind === 'new' &&
+      launchSeedOptions?.model === undefined &&
+      optionState.catalogSource === 'live',
     ...(args.providerRunning ? { providerRunning: true } : {}),
     activeOptionRecordRef,
     updateOptionState
   })
-  // A list in hand, the running provider's or the host's, ends the wait for the host's; so does a
-  // verdict, whose re-check is for the chat's notice, not the picker.
-  const modelListPending =
-    hostCatalog.awaitingListing &&
-    hostCatalog.unavailable === null &&
-    optionState.catalogSource !== 'live' &&
-    optionState.catalogSource !== 'host'
 
   // What a settled pick must remember so the next launch starts where the user left off.
   const rememberOptionPicks = useCallback(
@@ -183,9 +182,8 @@ export function useStructuredAgentSessionOptions(args: {
     const snapshot = structuredAgentSessionOptionSnapshot(
       structuredAgentSessionOptionView(optionState, launchSeedOptions, held)
     )
-    const shown = acceptsPicks ? snapshot : lockedStructuredAgentSessionOptionSnapshot(snapshot)
-    return modelListPending ? pendingModelListStructuredAgentSessionOptionSnapshot(shown) : shown
-  }, [acceptsPicks, held, launchSeedOptions, modelListPending, optionState])
+    return acceptsPicks ? snapshot : lockedStructuredAgentSessionOptionSnapshot(snapshot)
+  }, [acceptsPicks, held, launchSeedOptions, optionState])
   const setStructuredOption = useCallback(
     async (id: string, value: string | boolean): Promise<boolean> => {
       const view = {
@@ -196,8 +194,6 @@ export function useStructuredAgentSessionOptions(args: {
       if (
         !optionCatalog ||
         encoded === null ||
-        // A typed `/model` reaches here without the picker.
-        optionSnapshot.some((descriptor) => descriptor.id === id && descriptor.choicesPending) ||
         !canSetStructuredAgentSessionOption(view, id, value)
       ) {
         return false
@@ -232,7 +228,6 @@ export function useStructuredAgentSessionOptions(args: {
       held,
       launchSeedOptions,
       optionCatalog,
-      optionSnapshot,
       optionStateRef,
       pendingOptionRef,
       sendStructuredOption,

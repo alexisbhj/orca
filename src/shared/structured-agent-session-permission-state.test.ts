@@ -6,9 +6,9 @@ import {
   applyStructuredAgentSessionOptions,
   canSetStructuredAgentSessionOption,
   commitStructuredAgentSessionOptionValues,
-  createStructuredAgentSessionOptionState,
-  structuredAgentSessionOptionView
+  createStructuredAgentSessionOptionState
 } from './structured-agent-session-options'
+import { structuredAgentSessionOptionView } from './structured-agent-session-option-view'
 import { structuredAgentSessionOptionPicks } from './structured-agent-session-option-picks'
 
 const MODELS: AgentSessionOptionsResult['models'] = [

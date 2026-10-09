@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
 import type { MobileSessionTab } from './mobile-session-route-types'
 import {
+  MODEL_PLACEHOLDER_ONLY,
   permissionHost,
   usePermissionComposition
 } from './mobile-permission-composition.test-fixture'
@@ -108,7 +109,7 @@ it.each(['claude', 'codex'] as const)(
       await open(true)
       const picker = read().nativeChatSessionOptions?.permissionPicker
       expect(picker?.current ?? null, `${update.name} pending`).toBe(update.seed?.mode ?? null)
-      expect(read().structured.optionSnapshot).toEqual([])
+      expect(read().structured.optionSnapshot).toEqual(MODEL_PLACEHOLDER_ONLY)
       await act(async () => host.failReads())
       expect(
         read().nativeChatSessionOptions?.permissionPicker?.current ?? null,

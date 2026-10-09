@@ -7,9 +7,9 @@ import {
 } from '../../../../shared/agent-chat-permission-mode'
 import {
   commitStructuredAgentSessionOptionValues,
-  structuredAgentSessionOptionView,
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
+import { structuredAgentSessionOptionView } from '../../../../shared/structured-agent-session-option-view'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { holdStructuredAgentSessionLaunchOption } from '@/lib/structured-agent-session-launch-options'
 import { agentSessionWriteFailureText } from './agent-session-write-notice-text'

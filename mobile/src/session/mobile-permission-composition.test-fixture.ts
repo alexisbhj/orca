@@ -1,4 +1,4 @@
-import { vi } from 'vitest'
+import { expect, vi } from 'vitest'
 import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
 import type { AgentSessionSubscribeEvent } from '../../../src/shared/agent-session-wire'
 import type { RpcClient } from '../transport/rpc-client'
@@ -20,6 +20,10 @@ export function permissionHost() {
   })
   // The host's answer to every request, by method; a vi.fn so tests can assert on or replace it.
   const handleRequest = vi.fn(async (method: string, params?: unknown) => {
+    if (method === 'agentSession.modelCatalog') {
+      // The host's model list has not answered: the model pill stays the quiet placeholder.
+      return new Promise<RpcResponse>(() => {})
+    }
     if (method === 'agentSession.options') {
       return new Promise<RpcResponse>((resolve, reject) => {
         replies.push(resolve)
@@ -56,6 +60,11 @@ export function permissionHost() {
     failReads: () => failures.forEach((reject) => reject(new Error('Host unavailable')))
   }
 }
+
+/** The quiet, unpickable model placeholder: what shows before any model list answers. */
+export const MODEL_PLACEHOLDER_ONLY = [
+  expect.objectContaining({ id: 'model', settable: false, valueSource: 'unknown' })
+]
 
 export function permissionSnapshot(
   mode: AgentSessionPermissionSeed['mode'],

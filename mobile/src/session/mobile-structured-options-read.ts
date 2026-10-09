@@ -7,7 +7,8 @@ export function readMobileStructuredOptions(args: {
   sessionId: string
   generation: { current: number }
   isCurrent: () => boolean
-  onPermissionModes?: (modes: AgentSessionOptionsResult['permissionModes']) => void
+  /** Every answer, even one a newer read or reset superseded. */
+  onAnswer?: (result: AgentSessionOptionsResult) => void
   onResult: (result: AgentSessionOptionsResult) => void
 }): void {
   const sequence = ++args.generation.current
@@ -15,7 +16,7 @@ export function readMobileStructuredOptions(args: {
     sessionId: args.sessionId
   })
     .then((result) => {
-      args.onPermissionModes?.(result.permissionModes)
+      args.onAnswer?.(result)
       if (args.isCurrent() && args.generation.current === sequence) {
         args.onResult(result)
       }

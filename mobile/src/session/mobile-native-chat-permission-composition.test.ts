@@ -59,6 +59,10 @@ function holdOptions() {
   const replies: ((value: RpcResponse) => void)[] = []
   const failures: ((reason: Error) => void)[] = []
   const sendRequest = vi.fn(async (method: string) => {
+    if (method === 'agentSession.modelCatalog') {
+      // The host's model list has not answered: the model pill stays the quiet placeholder.
+      return new Promise<RpcResponse>(() => {})
+    }
     if (method === 'agentSession.options') {
       return new Promise<RpcResponse>((resolve, reject) => {
         replies.push(resolve)
@@ -148,6 +152,13 @@ function pills(prefix: string) {
   )
 }
 
+/** Only the quiet, unpickable model placeholder shows: no model is listed before a reply. */
+function expectModelPlaceholder(): void {
+  expect(root().findByType(MobileNativeChatComposer).props.sessionOptions).toMatchObject({
+    controller: { snapshot: [{ id: 'model', settable: false, valueSource: 'unknown' }] }
+  })
+}
+
 function optionReply(agent: string, current = 'ask'): RpcResponse {
   return success({
     models: [{ id: 'm', label: 'M', isDefault: true, efforts: [] }],
@@ -168,10 +179,7 @@ it.each(['claude', 'codex'])(
       renderer = create(createElement(Composer, { agent, client, permissionSeed: seed }))
     })
     expect(replies).toHaveLength(1)
-    expect(root().findByType(MobileNativeChatComposer).props.sessionOptions).toMatchObject({
-      controller: { snapshot: [] }
-    })
-    expect(pills('Model,')).toHaveLength(0)
+    expectModelPlaceholder()
     expect(pills('Permissions,')).toHaveLength(1)
     expect(pills('Permissions,')[0].props).toMatchObject({
       accessibilityLabel: 'Permissions, Ask for approval',
@@ -219,7 +227,7 @@ it.each(['claude', 'codex'])(
     })
     expect(pills('Permissions,')).toHaveLength(1)
     await act(async () => failures[0](new Error('Host unavailable')))
-    expect(pills('Model,')).toHaveLength(0)
+    expectModelPlaceholder()
     expect(pills('Permissions,')).toHaveLength(1)
     expect(pills('Permissions,')[0].props).toMatchObject({
       accessibilityLabel: 'Permissions, Ask for approval',
@@ -234,9 +242,8 @@ it.each(['claude', 'codex'])('waits for an older %s host that supplies no seed',
     renderer = create(createElement(Composer, { agent, client }))
   })
   expect(replies).toHaveLength(1)
-  expect(root().findByType(MobileNativeChatComposer).props.sessionOptions).toBeNull()
+  expectModelPlaceholder()
   expect(pills('Permissions,')).toHaveLength(0)
-  expect(pills('Model,')).toHaveLength(0)
   await act(async () => replies[0](optionReply(agent)))
   expect(pills('Model,')).toHaveLength(1)
   expect(pills('Permissions,')[0].props).toMatchObject({

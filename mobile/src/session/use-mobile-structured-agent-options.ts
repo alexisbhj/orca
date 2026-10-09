@@ -4,7 +4,7 @@ import type {
   StructuredOptionsController
 } from './mobile-structured-options-controller'
 import type { AgentSessionConversationCommand } from '../../../src/shared/agent-session-conversation-command'
-import { getAgentSessionOptionCatalog } from '../../../src/shared/agent-session-option-catalog'
+import { structuredAgentSessionSeedCatalog } from '../../../src/shared/structured-agent-session-seed-catalog'
 import type { AgentSessionOptionResult } from '../../../src/shared/agent-session-wire'
 import type { SessionOptionValue } from '../../../src/shared/native-chat-session-options'
 import {
@@ -18,6 +18,11 @@ import {
 } from '../../../src/shared/structured-agent-session-options'
 import { structuredAgentSessionOptionPicks } from '../../../src/shared/structured-agent-session-option-picks'
 import { persistMobileStructuredOptionPicks } from './mobile-native-chat-session-option-persistence'
+import { useMobileHostModelCatalogUpgrade } from './use-mobile-host-model-catalog-upgrade'
+import {
+  forgetMobileCreatedStructuredSession,
+  mobileCreatedStructuredSession
+} from './mobile-created-structured-sessions'
 import { encodeStructuredAgentSessionOptionValue } from '../../../src/shared/structured-agent-session-option-codec'
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
@@ -44,8 +49,13 @@ export function useMobileStructuredAgentOptions(
     permissionMode,
     unloadedTurnRevisions
   } = args
+  // Every agent's seed, as on the desktop: a built-in list or the provider-default pill.
+  const optionCatalog = useMemo(
+    () => (agent ? structuredAgentSessionSeedCatalog(agent) : null),
+    [agent]
+  )
   const [optionState, setOptionState] = useState(() =>
-    createStructuredAgentSessionOptionState(agent ?? 'codex')
+    createStructuredAgentSessionOptionState(agent ?? 'codex', optionCatalog)
   )
   const optionStateRef = useRef(optionState)
   const activeOptionRecordRef = useRef(optionState.record)
@@ -64,10 +74,6 @@ export function useMobileStructuredAgentOptions(
     sessionId: string
     commands: readonly AgentSessionConversationCommand[]
   } | null>(null)
-  const optionCatalog = useMemo(
-    () => (agent === 'claude' || agent === 'codex' ? getAgentSessionOptionCatalog(agent) : null),
-    [agent]
-  )
   const { permission, begin, confirmRead, confirmWrite, getFence, pending } =
     useMobileStructuredPermissionState(args)
   const permissionView = useCallback(
@@ -76,14 +82,42 @@ export function useMobileStructuredAgentOptions(
     [permission]
   )
 
+  const optionIdentityRef = useRef(JSON.stringify([args.sessionKey, agent, sessionId]))
   useEffect(() => {
-    const next = createStructuredAgentSessionOptionState(agent ?? 'codex')
+    const identity = JSON.stringify([args.sessionKey, agent, sessionId])
+    const sameSession = optionIdentityRef.current === identity
+    optionIdentityRef.current = identity
+    const previous = optionStateRef.current
+    const seeded = createStructuredAgentSessionOptionState(agent ?? 'codex', optionCatalog)
+    // A host answer is the account's, not the fence's: keep it rather than fall back to the placeholder.
+    const next =
+      sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
+        ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
+        : seeded
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null
     optionStateRef.current = next
     activeOptionRecordRef.current = next.record
     setOptionState(next)
-  }, [agent, enabled, fence, sessionId, args.sessionKey])
+  }, [agent, enabled, fence, optionCatalog, sessionId, args.sessionKey])
+
+  // A chat this phone created runs the listed default, as a desktop chat its own view launched does.
+  const createdHere = useMemo(
+    () => (sessionId ? mobileCreatedStructuredSession(sessionId) : undefined),
+    [sessionId]
+  )
+  useMobileHostModelCatalogUpgrade({
+    agent,
+    client,
+    sessionId,
+    enabled,
+    fence,
+    newLaunch: createdHere !== undefined,
+    ...(createdHere ? { worktree: createdHere.worktree } : {}),
+    optionCatalog,
+    activeOptionRecordRef,
+    updateOptionState
+  })
 
   useEffect(() => {
     if (!client || !sessionId || !enabled || !connected || !optionCatalog) {
@@ -97,7 +131,11 @@ export function useMobileStructuredAgentOptions(
       sessionId,
       generation: optionReadGeneration,
       isCurrent: () => !stale && optionMutationGeneration.current === readGeneration,
-      onPermissionModes: (modes) => confirmRead(permissionRead, modes),
+      onAnswer: (result) => {
+        // This view keeps its latch; a later one may run a model picked here.
+        forgetMobileCreatedStructuredSession(sessionId)
+        confirmRead(permissionRead, result.permissionModes)
+      },
       onResult: (result) => {
         setConversationSupport({ sessionId, commands: result.conversationCommands ?? [] })
         updateOptionState((current) =>
@@ -163,7 +201,7 @@ export function useMobileStructuredAgentOptions(
           sessionId,
           generation: optionReadGeneration,
           isCurrent,
-          onPermissionModes: (modes) => confirmRead(permissionRead, modes),
+          onAnswer: (answer) => confirmRead(permissionRead, answer.permissionModes),
           onResult: (refreshed) => {
             updateOptionState((latest) =>
               applyStructuredAgentSessionOptions(latest, optionCatalog, refreshed)
@@ -203,11 +241,10 @@ export function useMobileStructuredAgentOptions(
               ? commitStructuredAgentSessionOptionValues(permissionView(current), committed)
               : current
           )
-          // Only accepted per-model picks become the next chat's default.
-          if (
-            (agent === 'claude' || agent === 'codex') &&
-            id !== AGENT_CHAT_PERMISSION_MODE_OPTION_ID
-          ) {
+          // Only accepted per-model picks become the next chat's default: an `unknown` outcome
+          // commits optimistically, and remembering one the provider refused would seed a launch
+          // the user never chose.
+          if (agent && id !== AGENT_CHAT_PERMISSION_MODE_OPTION_ID) {
             void persistMobileStructuredOptionPicks({
               client,
               agent,

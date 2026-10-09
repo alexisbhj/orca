@@ -1,7 +1,4 @@
-import type {
-  AgentSessionFastModeState,
-  AgentSessionOptionsResult
-} from '../../shared/agent-session-wire'
+import type { AgentSessionFastModeState } from '../../shared/agent-session-wire'
 import {
   currentModelId,
   listedModels,
@@ -12,10 +9,15 @@ import {
   type ListedModel
 } from './claude-structured-model-catalog'
 import type { ClaudeSession } from './claude-structured-session-state'
-import { claudeFastModeSupport } from './claude-structured-fast-mode-support'
 import { claudePermissionModesFor } from './claude-structured-permission-mode'
 import { structuredAgentSessionOptionModels } from '../native-chat/agent-session-wire/structured-agent-session-option-models'
-import { claudeCatalogRowsOfAccount } from './claude-structured-retired-model'
+import {
+  claudeCatalogListing,
+  claudeFastModeSupport,
+  wireClaudeModels,
+  type WireClaudeModel
+} from './claude-structured-catalog-listing'
+import type { StructuredAgentSessionLiveOptions } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { decodeStructuredAgentSessionOptionValue } from '../../shared/structured-agent-session-option-codec'
 
 /**
@@ -205,66 +207,16 @@ export function claudeCatalogAdmitsModel(models: readonly ListedModel[], modelId
   )
 }
 
-type WireClaudeModel = AgentSessionOptionsResult['models'][number]
-
-function wireClaudeModel(entry: ListedModel): WireClaudeModel {
-  return {
-    id: entry.id,
-    label: entry.label,
-    ...(entry.description ? { description: entry.description } : {}),
-    isDefault: entry.isDefault,
-    efforts: entry.efforts,
-    ...(entry.supportsFastMode !== undefined ? { supportsFastMode: entry.supportsFastMode } : {})
-  }
-}
-
-function wireClaudeModels(models: readonly ListedModel[]): WireClaudeModel[] {
-  return models.map(wireClaudeModel)
-}
-
 /** The built-in models a running child lists when the CLI gives it none; a chat at rest with no
  *  catalog lists the same. */
 export function claudeFallbackModelOptions(): WireClaudeModel[] {
   return wireClaudeModels(seedModels())
 }
 
-/** The listing, with what the CLI runs when no effort is sent on each model the child applies —
- *  a default only a running child knows, and only while this session has no effort pick. */
-function catalogClaudeModels(session: ClaudeSession, discovered: ListedModel[]): WireClaudeModel[] {
-  const applied = session.options.has('effort') ? undefined : session.appliedOptions
-  return discovered.map((listed) => {
-    const model = wireClaudeModel(listed)
-    const effort = applied?.effort
-    const runsApplied =
-      applied?.model !== undefined &&
-      (listed.id === applied.model || listed.resolvedModel === applied.model)
-    return effort && runsApplied && model.efforts.some((choice) => choice.value === effort)
-      ? { ...model, defaultEffort: effort }
-      : model
-  })
-}
-
-/** Write a provider-listed catalog through to the host store. Account-level
- *  facts only: this session's disabled reason and its unlisted current model
- *  stay out, so another surface never inherits session state as a catalog. */
-function writeClaudeCatalogThrough(session: ClaudeSession, discovered: ListedModel[]): void {
-  if (discovered.length === 0 || !session.catalogAccess) {
-    return
-  }
-  const rows = claudeCatalogRowsOfAccount(session.catalogAccess, discovered, session.launchedModel)
-  const support = claudeFastModeSupport(rows, undefined)
-  session.catalogAccess.store.recordSuccess(session.catalogAccess.fingerprint, 'claude', {
-    models: catalogClaudeModels(session, rows),
-    ...(support ? { fastModeSupport: support } : {}),
-    fastModeTierByModel: new Map(),
-    origin: 'live-session'
-  })
-}
-
 export async function readClaudeStructuredSessionOptions(
   session: ClaudeSession,
   timeoutMs: number | undefined
-): Promise<AgentSessionOptionsResult> {
+): Promise<StructuredAgentSessionLiveOptions> {
   const readMutationSequence = session.optionMutationSequence
   // Before startup both requests would wait on initialize; answer from the saved options.
   const [catalog, settings] =
@@ -312,9 +264,9 @@ export function claudeStructuredSessionOptionsFrom(
   session: ClaudeSession,
   catalog: unknown[] | null,
   readMutationSequence = session.optionMutationSequence
-): AgentSessionOptionsResult {
+): StructuredAgentSessionLiveOptions {
   const discovered = listedModels(catalog ? { models: catalog } : null)
-  writeClaudeCatalogThrough(session, discovered)
+  const catalogListing = claudeCatalogListing(session, discovered)
   const listed = discovered.length > 0 ? discovered : seedModels()
   const current = readClaudeCurrentModel(session)
   const model = currentModelId(listed, current.id)
@@ -365,6 +317,7 @@ export function claudeStructuredSessionOptionsFrom(
       ...(fastMode !== undefined ? { fastMode } : {}),
       ...(session.fastModeState ? { fastModeState: session.fastModeState } : {}),
       ...(confirmed.length > 0 ? { confirmed } : {})
-    }
+    },
+    ...(catalogListing ? { catalogListing } : {})
   }
 }
