@@ -1,10 +1,11 @@
+import { filterRecord, omitStoredFields } from './stored-record-fields'
 import { canReplacePreviewContentType, partitionPinnedTabOrder } from './tab-order'
 import { getNextTerminalOrdinal } from './terminal-tab-ordinal'
 import { layoutContainsLeafId } from './terminal-pane-tree'
 import {
   applied,
   boundPtyIds,
-  emptyWorkspace,
+  workspaceOrEmpty,
   findTab,
   findTerminal,
   paneKeysOf,
@@ -39,31 +40,29 @@ export function createTerminalTab(
   command: CommandOf<'createTerminalTab'>,
   context: LayoutContext
 ): Applied {
-  const workspace = model.workspaces[command.workspace] ?? emptyWorkspace()
+  const workspace = workspaceOrEmpty(model, command.workspace)
   const terminals = workspace.tabs.flatMap((tab) => (tab.kind === 'terminal' ? [tab] : []))
   const ordinal = getNextTerminalOrdinal(
     terminals.map((tab) => ({ defaultTitle: tab.terminal.defaultTitle, title: '' }))
   )
   const id = context.mintId()
   const leafId = context.mintLeafId()
-  const worktreeId = command.creation?.worktreeId ?? command.workspace
   const tab: LayoutTerminalTab = {
     id,
     entityId: id,
-    worktreeId,
     createdAt: context.now(),
     customTitle: command.title ?? null,
     color: command.color ?? null,
     ...(command.viewMode ? { viewMode: command.viewMode } : {}),
     kind: 'terminal',
-    terminal: { defaultTitle: `Terminal ${ordinal}`, ...command.creation, worktreeId },
+    terminal: { defaultTitle: `Terminal ${ordinal}`, ...command.creation },
     panes: { root: { type: 'leaf', leafId } }
   }
   const placed = placeNewTab(workspace, tab, command, context)
   const paneKey = paneKeyOf(id, leafId)
   const next = withWorkspace(model, command.workspace, placed)
   return applied(
-    { ...next, records: advanceTopologyRevision(next.records, worktreeId) },
+    { ...next, records: advanceTopologyRevision(next.records, placed.worktreeId) },
     { tabId: id, leafId, paneKey },
     { startPaneKeys: [paneKey] }
   )
@@ -73,12 +72,11 @@ function withoutPaneRecords(
   records: WorkspaceLayoutRecords,
   paneKeys: readonly string[]
 ): WorkspaceLayoutRecords {
-  const drop = <T>(record: Record<string, T> | undefined) =>
-    record && Object.fromEntries(Object.entries(record).filter(([key]) => !paneKeys.includes(key)))
+  const keep = (key: string) => !paneKeys.includes(key)
   return {
     ...records,
-    sleepingByPaneKey: drop(records.sleepingByPaneKey),
-    incarnationsByPaneKey: drop(records.incarnationsByPaneKey)
+    sleepingByPaneKey: filterRecord(records.sleepingByPaneKey, keep),
+    incarnationsByPaneKey: filterRecord(records.incarnationsByPaneKey, keep)
   }
 }
 
@@ -109,13 +107,10 @@ export function closeTab(
     return updated
   }
   const records = withoutPaneRecords(updated.records, paneKeysOf(tab))
-  return { ...updated, records: advanceTopologyRevision(records, tab.terminal.worktreeId) }
+  return { ...updated, records: advanceTopologyRevision(records, workspace.worktreeId) }
 }
 
 export function closeTabs(model: WorkspaceLayoutModel, command: CommandOf<'closeTabs'>): Applied {
-  if (!model.workspaces[command.workspace]) {
-    return applied(model, { closed: command.tabIds, refused: [], alreadyClosed: true })
-  }
   let next = model
   const closed: string[] = []
   const refused: RefusedClose[] = []
@@ -202,8 +197,7 @@ export function setChatPane(
   if (command.leafId !== null && !layoutContainsLeafId(tab.panes.root, command.leafId)) {
     return refuse('pane_not_found')
   }
-  const { chatLeafId: _previous, ...panes } = tab.panes
-  void _previous
+  const panes = omitStoredFields(tab.panes, ['chatLeafId'])
   return updateTab(model, command.workspace, {
     ...tab,
     panes: command.leafId === null ? panes : { ...panes, chatLeafId: command.leafId }
@@ -218,8 +212,8 @@ export function promotePreviewTab(
   if (!tab) {
     return refuse('tab_not_found')
   }
-  const { isPreview: _preview, ...promoted } = tab
-  void _preview
+  const promoted = { ...tab }
+  delete promoted.isPreview
   return updateTab(model, command.workspace, promoted)
 }
 
@@ -231,7 +225,7 @@ export function placeContentTab(
   groupId: string | undefined,
   context: LayoutContext
 ): WorkspaceLayoutModel {
-  let workspace = model.workspaces[key] ?? emptyWorkspace()
+  let workspace = workspaceOrEmpty(model, key)
   const group = workspace.groups.find((entry) => entry.id === groupId) ?? workspace.groups[0]
   const preview = tab.isPreview
     ? workspace.tabs.find(

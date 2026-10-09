@@ -3,6 +3,7 @@
 
 import type { SleepingAgentSessionRecord } from '../agent-session-resume'
 import type { PersistedClientHostedBrowserPage } from '../client-hosted-browser-page-record'
+import { omitStoredFields, withoutKey } from './stored-record-fields'
 import { isSameTerminal } from './terminal-owner-invariants'
 import {
   applied,
@@ -34,7 +35,7 @@ export type LayoutTransition =
       ptyId: string
       incarnationId?: string
     }
-  | { type: 'processExited'; surface: ExitedSurface; legacyRowPtyId?: string | null }
+  | { type: 'processExited'; surface: ExitedSurface }
   | { type: 'sshLeaseTerminated'; ptyIds: string[] }
   | {
       type: 'orphanAdopted'
@@ -150,16 +151,6 @@ function orphanAdopted(
   return started.ok ? applied(started.model, created.result) : started
 }
 
-function withoutSleeping(model: WorkspaceLayoutModel, paneKey: string): WorkspaceLayoutModel {
-  const sleeping = model.records.sleepingByPaneKey
-  if (!sleeping?.[paneKey]) {
-    return model
-  }
-  const { [paneKey]: _woken, ...rest } = sleeping
-  void _woken
-  return { ...model, records: { ...model.records, sleepingByPaneKey: rest } }
-}
-
 export function applyLayoutTransition(
   model: WorkspaceLayoutModel,
   transition: LayoutTransition,
@@ -169,22 +160,29 @@ export function applyLayoutTransition(
     case 'processStarted':
       return processStarted(model, transition)
     case 'processExited':
-      return applied(
-        retireExitedSurface(model, transition.surface, transition.legacyRowPtyId).model
-      )
+      return applied(retireExitedSurface(model, transition.surface).model)
     case 'sshLeaseTerminated':
       return sshLeaseTerminated(model, transition.ptyIds)
     case 'orphanAdopted':
       return orphanAdopted(model, transition, context)
     case 'ownerRemoved':
       return applied(removeWorkspaces(model, transition.workspaces))
-    case 'identityRenamed':
-      return applied(renameWorkspace(model, transition.from, transition.to))
+    case 'identityRenamed': {
+      const renamedModel = renameWorkspace(model, transition.from, transition.to)
+      return renamedModel ? applied(renamedModel) : refuse('workspace_exists')
+    }
     case 'legacyWorkerRecovered': {
       const { surface } = transition
       const next =
         transition.resolution === 'exited' ? retireExitedSurface(model, surface).model : model
-      return applied(withoutSleeping(next, paneKeyOf(surface.terminalTabId, surface.leafId)))
+      const paneKey = paneKeyOf(surface.terminalTabId, surface.leafId)
+      return applied({
+        ...next,
+        records: {
+          ...next.records,
+          sleepingByPaneKey: withoutKey(next.records.sleepingByPaneKey, paneKey)
+        }
+      })
     }
     case 'clientHostedPageAnnounced': {
       const pages = model.records.clientHostedBrowserPagesByWorkspace ?? {}
@@ -207,8 +205,7 @@ export function applyLayoutTransition(
       if (!location || location.workspaceKey !== transition.workspace) {
         return refuse('tab_not_found')
       }
-      const { agentLaunchPane: _previous, ...terminal } = location.tab.terminal
-      void _previous
+      const terminal = omitStoredFields(location.tab.terminal, ['agentLaunchPane'])
       return updateTab(model, transition.workspace, {
         ...location.tab,
         terminal: transition.agentLaunchPane

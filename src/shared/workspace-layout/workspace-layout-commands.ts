@@ -8,7 +8,7 @@ import {
   openBrowserTab,
   openEditorTab
 } from './workspace-layout-content-commands'
-import { createGroup, moveTab, setGroupRatios, splitGroup } from './workspace-layout-group-commands'
+import { moveTab, setGroupRatios, splitGroup } from './workspace-layout-group-commands'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
 import {
   closePane,
@@ -43,7 +43,10 @@ export function applyLayoutCommand(
 ): Applied {
   if (!model.workspaces[command.workspace] && !CREATES_WORKSPACE.has(command.type)) {
     // Closing what is already gone is not an error (#10747).
-    return command.type === 'closePane' || command.type === 'closeTabs'
+    if (command.type === 'closeTabs') {
+      return applied(model, { alreadyClosed: true, closed: command.tabIds, refused: [] })
+    }
+    return command.type === 'closePane'
       ? applied(model, { alreadyClosed: true })
       : refuse('workspace_not_found')
   }
@@ -60,8 +63,6 @@ export function applyLayoutCommand(
       return moveTab(model, command)
     case 'splitGroup':
       return splitGroup(model, command, context)
-    case 'createGroup':
-      return createGroup(model, command, context)
     case 'setGroupRatios':
       return setGroupRatios(model, command)
     case 'setPaneRatios':

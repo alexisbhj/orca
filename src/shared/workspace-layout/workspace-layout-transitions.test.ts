@@ -6,8 +6,9 @@ import {
   emptyModel,
   terminalTab,
   testContext,
-  WS
-} from './workspace-layout-command-fixtures'
+  WS,
+  asLoaded
+} from './workspace-layout-command.test-fixture'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
 import { checkWorkspaceLayoutModelRules } from './workspace-layout-model-rules'
 import { moveWorkspaceToPartition } from './workspace-layout-owner-transitions'
@@ -120,7 +121,7 @@ describe('layout transitions', () => {
       { type: 'orphanAdopted', workspace: WS, ptyId: 'orphan-1' },
       context
     )
-    expect(result.ok && checkWorkspaceLayoutModelRules([result.model])).toEqual([])
+    expect(result.ok && checkWorkspaceLayoutModelRules([asLoaded(result.model)])).toEqual([])
     expect(result.ok && leavesOf(result.model, result.result.tabId!)).toEqual({
       [result.ok ? result.result.leafId! : '']: 'orphan-1'
     })
@@ -134,9 +135,21 @@ describe('layout transitions', () => {
       context
     )
     expect(renamed.ok && Object.keys(renamed.model.workspaces)).toEqual(['repo-1::/renamed'])
-    expect(renamed.ok && renamed.model.workspaces['repo-1::/renamed']!.tabs[0]!.worktreeId).toBe(
+    expect(renamed.ok && renamed.model.workspaces['repo-1::/renamed']!.worktreeId).toBe(
       'repo-1::/renamed'
     )
+    const occupied = build(
+      context,
+      [{ type: 'createTerminalTab', workspace: 'repo-1::/other' }],
+      model
+    ).model
+    expect(
+      applyLayoutTransition(
+        occupied,
+        { type: 'identityRenamed', from: WS, to: 'repo-1::/other' },
+        context
+      )
+    ).toEqual({ ok: false, code: 'workspace_exists' })
     const removed = applyLayoutTransition(
       model,
       { type: 'ownerRemoved', workspaces: [WS] },
@@ -199,7 +212,9 @@ describe('concurrent commands, both orders', () => {
           : applyLayoutTransition(next, step.transition, context)
       codes.push(result.ok ? 'ok' : result.code)
       if (result.ok) {
-        expect(checkWorkspaceLayoutModelRules([result.model], [next])).toEqual([])
+        expect(checkWorkspaceLayoutModelRules([asLoaded(result.model)], [asLoaded(next)])).toEqual(
+          []
+        )
         next = result.model
       }
     }

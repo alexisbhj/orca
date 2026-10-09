@@ -10,7 +10,7 @@ import { FLOATING_TERMINAL_WORKTREE_ID } from '../constants'
 import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 import { applyLayoutCommand } from './workspace-layout-commands'
 import type { LayoutCommand, LayoutContext } from './workspace-layout-command-types'
-import { emptyModel, testContext } from './workspace-layout-command-fixtures'
+import { emptyModel, testContext, asLoaded } from './workspace-layout-command.test-fixture'
 import { loadWorkspaceLayout } from './workspace-layout-load'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
 import { checkWorkspaceLayoutModelRules, emptyLayoutBeside } from './workspace-layout-model-rules'
@@ -84,7 +84,7 @@ class Harness {
     this.log.push(`${step.label} → ${result.ok ? 'ok' : result.code}`)
     if (result.ok) {
       expect(
-        checkWorkspaceLayoutModelRules([result.model], [this.model]),
+        checkWorkspaceLayoutModelRules([asLoaded(result.model)], [asLoaded(this.model)]),
         this.log.join('\n')
       ).toEqual([])
       this.model = result.model
@@ -121,7 +121,8 @@ class Harness {
     const saved = saveWorkspaceLayout({ ...emptyLayoutBeside(), layout: this.model })
     let minted = 0
     const loaded = loadWorkspaceLayout(this.model.hostId, saved, {
-      mintId: () => `reload-${++minted}`
+      mintId: () => `reload-${++minted}`,
+      mintLeafId: () => `reload-leaf-${++minted}`
     })
     expect(loaded.normalizations, this.log.join('\n')).toEqual([])
     expect(saveWorkspaceLayout({ ...emptyLayoutBeside(), layout: loaded.layout })).toEqual(saved)

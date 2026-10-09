@@ -2,7 +2,7 @@ import { LOCAL_EXECUTION_HOST_ID } from '../execution-host'
 import { applyLayoutCommand } from './workspace-layout-commands'
 import type { LayoutCommand, LayoutContext } from './workspace-layout-command-types'
 import type { LayoutTerminalTab, WorkspaceLayoutModel } from './workspace-layout-model'
-import { checkWorkspaceLayoutModelRules } from './workspace-layout-model-rules'
+import { checkWorkspaceLayoutModelRules, emptyLayoutBeside } from './workspace-layout-model-rules'
 
 export const WS = 'repo-1::/Users/dev/orca'
 
@@ -30,7 +30,7 @@ export function build(context: LayoutContext, commands: LayoutCommand[], model =
     if (!applied.ok) {
       throw new Error(`${command.type} refused: ${applied.code}`)
     }
-    const violations = checkWorkspaceLayoutModelRules([applied.model], [next])
+    const violations = checkWorkspaceLayoutModelRules([asLoaded(applied.model)], [asLoaded(next)])
     if (violations.length > 0) {
       throw new Error(
         `${command.type} broke ${violations.map((violation) => violation.rule).join(', ')}`
@@ -48,4 +48,9 @@ export function terminalTab(model: WorkspaceLayoutModel, tabId: string): LayoutT
     throw new Error(`no terminal tab ${tabId}`)
   }
   return tab
+}
+
+/** A model with nothing beside it, as the Serializer and the rules check take it. */
+export function asLoaded(layout: WorkspaceLayoutModel) {
+  return { ...emptyLayoutBeside(), layout }
 }

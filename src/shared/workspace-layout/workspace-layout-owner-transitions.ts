@@ -1,5 +1,6 @@
 // Transitions that remove, rename or rehome a whole workspace with every record that names it.
 
+import { filterRecord } from './stored-record-fields'
 import { paneKeysOf } from './workspace-layout-command-steps'
 import type {
   WorkspaceLayout,
@@ -8,12 +9,6 @@ import type {
 } from './workspace-layout-model'
 
 type KeyedRecord<T> = Record<string, T> | undefined
-
-function pick<T>(record: KeyedRecord<T>, keep: (key: string, value: T) => boolean): KeyedRecord<T> {
-  return (
-    record && Object.fromEntries(Object.entries(record).filter(([key, value]) => keep(key, value)))
-  )
-}
 
 function terminalPaneKeys(workspace: WorkspaceLayout | undefined): Set<string> {
   return new Set(
@@ -24,25 +19,29 @@ function terminalPaneKeys(workspace: WorkspaceLayout | undefined): Set<string> {
 /** The records that belong to these workspaces, and the rest. */
 function splitRecords(model: WorkspaceLayoutModel, keys: readonly string[]) {
   const paneKeys = new Set(keys.flatMap((key) => [...terminalPaneKeys(model.workspaces[key])]))
+  const worktreeIds = keys.map((key) => model.workspaces[key]?.worktreeId ?? key)
   const { records } = model
   const ofThese = (inside: boolean): WorkspaceLayoutRecords => ({
     ...(inside ? {} : records),
-    sleepingByPaneKey: pick(records.sleepingByPaneKey, (key) => paneKeys.has(key) === inside),
-    incarnationsByPaneKey: pick(
+    sleepingByPaneKey: filterRecord(
+      records.sleepingByPaneKey,
+      (key) => paneKeys.has(key) === inside
+    ),
+    incarnationsByPaneKey: filterRecord(
       records.incarnationsByPaneKey,
       (key) => paneKeys.has(key) === inside
     ),
-    defaultTabsAppliedByWorkspace: pick(
+    defaultTabsAppliedByWorkspace: filterRecord(
       records.defaultTabsAppliedByWorkspace,
       (key) => keys.includes(key) === inside
     ),
-    clientHostedBrowserPagesByWorkspace: pick(
+    clientHostedBrowserPagesByWorkspace: filterRecord(
       records.clientHostedBrowserPagesByWorkspace,
       (key) => keys.includes(key) === inside
     ),
-    closedTerminalTabTombstones: pick(
+    closedTerminalTabTombstones: filterRecord(
       records.closedTerminalTabTombstones,
-      (_key, tombstone) => keys.includes(tombstone.worktreeId) === inside
+      (_key, tombstone) => worktreeIds.includes(tombstone.worktreeId) === inside
     )
   })
   return { taken: ofThese(true), kept: ofThese(false) }
@@ -103,47 +102,26 @@ export function moveWorkspaceToPartition(
 
 const renamed = (value: string, from: string, to: string) => (value === from ? to : value)
 
-/** A worktree's identity changed: its key and every record naming the old id follow. */
+/**
+ * A worktree's identity changed: its key, its worktree id and every record naming them follow.
+ * Null when `to` already holds a workspace: two layouts are never merged.
+ */
 export function renameWorkspace(
   model: WorkspaceLayoutModel,
   from: string,
   to: string
-): WorkspaceLayoutModel {
+): WorkspaceLayoutModel | null {
   const workspace = model.workspaces[from]
   if (!workspace || from === to) {
     return model
   }
-  const moved: WorkspaceLayout = {
-    ...workspace,
-    tabs: workspace.tabs.map((tab) => ({
-      ...tab,
-      worktreeId: renamed(tab.worktreeId, from, to),
-      ...(tab.kind === 'terminal'
-        ? { terminal: { ...tab.terminal, worktreeId: renamed(tab.terminal.worktreeId, from, to) } }
-        : {})
-    })),
-    groups: workspace.groups.map((group) => ({
-      ...group,
-      worktreeId: renamed(group.worktreeId, from, to)
-    })),
-    ...(workspace.editorFiles
-      ? {
-          editorFiles: workspace.editorFiles.map((file) => ({
-            ...file,
-            worktreeId: renamed(file.worktreeId, from, to)
-          }))
-        }
-      : {}),
-    ...(workspace.browserTabs
-      ? {
-          browserTabs: workspace.browserTabs.map((tab) => ({
-            ...tab,
-            worktreeId: renamed(tab.worktreeId, from, to)
-          }))
-        }
-      : {})
+  if (model.workspaces[to]) {
+    return null
   }
-  const workspaces = { ...model.workspaces, [to]: moved }
+  const workspaces = {
+    ...model.workspaces,
+    [to]: { ...workspace, worktreeId: renamed(workspace.worktreeId, from, to) }
+  }
   delete workspaces[from]
   const { records } = model
   const rekey = <T>(record: KeyedRecord<T>): KeyedRecord<T> =>

@@ -35,8 +35,16 @@ export function applied(
   }
 }
 
-export function emptyWorkspace(): WorkspaceLayout {
-  return { tabs: [], groups: [], keepsEmptyTerminalRows: false }
+/** A workspace's first tab creates its entry; its worktree id is its key unless the runtime opened it first. */
+export function workspaceOrEmpty(model: WorkspaceLayoutModel, key: string): WorkspaceLayout {
+  return (
+    model.workspaces[key] ?? {
+      worktreeId: key,
+      tabs: [],
+      groups: [],
+      keepsEmptyTerminalRows: false
+    }
+  )
 }
 
 export function findTab(workspace: WorkspaceLayout, tabId: string): LayoutTab | undefined {
@@ -117,7 +125,7 @@ export function placeNewTab(
     workspace.groups[0]
   const groups = [...workspace.groups]
   if (!group) {
-    group = { id: context.mintId(), worktreeId: tab.worktreeId, tabOrder: [] }
+    group = { id: context.mintId(), tabOrder: [] }
     groups.push(group)
   }
   let tabOrder: string[]

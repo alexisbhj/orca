@@ -7,7 +7,7 @@ import {
   terminalTab,
   testContext,
   WS
-} from './workspace-layout-command-fixtures'
+} from './workspace-layout-command.test-fixture'
 import type { WorkspaceLayoutModel } from './workspace-layout-model'
 
 const context = testContext()
@@ -23,7 +23,7 @@ function setup() {
       workspace: WS,
       fileId: '/w/a.ts',
       contentType: 'editor',
-      file: { filePath: '/w/a.ts', relativePath: 'a.ts', worktreeId: WS, language: 'typescript' }
+      file: { filePath: '/w/a.ts', relativePath: 'a.ts', language: 'typescript' }
     }
   ])
   const [first, second, editor] = results
@@ -214,14 +214,6 @@ describe('layout command refusals', () => {
         type: 'splitGroup',
         workspace: WS,
         tabId: tabA,
-        besideGroupId: 'nope',
-        direction: 'right'
-      })
-    ).toBe('group_not_found')
-    expect(
-      refusal(model, {
-        type: 'createGroup',
-        workspace: WS,
         besideGroupId: 'nope',
         direction: 'right'
       })
@@ -436,7 +428,6 @@ describe('layout command effects', () => {
     expect(opened.model.workspaces[WS]!.browserTabs).toEqual([
       {
         id: browser!.tabId,
-        worktreeId: WS,
         sessionProfileId: 'p1',
         pageIds: [browser!.pageId],
         createdAt: expect.any(Number)

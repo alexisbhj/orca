@@ -1,6 +1,7 @@
 // Commands on the panes of one terminal tab. Pane ids never change; a moved pane keeps its id
 // and its terminal.
 
+import { withoutKey } from './stored-record-fields'
 import { getNextTerminalOrdinal } from './terminal-tab-ordinal'
 import {
   equalizeLayout,
@@ -42,15 +43,6 @@ function paneTab(
   return tab?.panes?.root ? { ...tab, panes: tab.panes } : null
 }
 
-function withoutLeafEntry(record: Record<string, string> | undefined, leafId: string) {
-  if (!record || !Object.hasOwn(record, leafId)) {
-    return record
-  }
-  const { [leafId]: _removed, ...rest } = record
-  void _removed
-  return rest
-}
-
 export function splitPane(
   model: WorkspaceLayoutModel,
   command: CommandOf<'splitPane'>,
@@ -74,7 +66,10 @@ export function splitPane(
   return applied(
     {
       ...next.model,
-      records: advanceTopologyRevision(next.model.records, tab.terminal.worktreeId)
+      records: advanceTopologyRevision(
+        next.model.records,
+        model.workspaces[command.workspace]!.worktreeId
+      )
     },
     { leafId, paneKey },
     { startPaneKeys: [paneKey] }
@@ -171,7 +166,7 @@ export function renamePane(model: WorkspaceLayoutModel, command: CommandOf<'rena
   if (!layoutContainsLeafId(tab.panes.root, command.leafId)) {
     return refuse('pane_not_found')
   }
-  const titles = withoutLeafEntry(tab.panes.titlesByLeafId, command.leafId) ?? {}
+  const titles = withoutKey(tab.panes.titlesByLeafId, command.leafId) ?? {}
   const titlesByLeafId =
     command.title === null ? titles : { ...titles, [command.leafId]: command.title }
   return updateTab(model, command.workspace, { ...tab, panes: { ...tab.panes, titlesByLeafId } })
@@ -186,15 +181,17 @@ function rekeyPaneRecords(
   const next = { ...records }
   const incarnation = records.incarnationsByPaneKey?.[from]
   if (incarnation !== undefined) {
-    const { [from]: _old, ...rest } = records.incarnationsByPaneKey!
-    void _old
-    next.incarnationsByPaneKey = { ...rest, [to]: incarnation }
+    next.incarnationsByPaneKey = {
+      ...withoutKey(records.incarnationsByPaneKey, from),
+      [to]: incarnation
+    }
   }
   const sleeping = records.sleepingByPaneKey?.[from]
   if (sleeping) {
-    const { [from]: _old, ...rest } = records.sleepingByPaneKey!
-    void _old
-    next.sleepingByPaneKey = { ...rest, [to]: { ...sleeping, paneKey: to, tabId } }
+    next.sleepingByPaneKey = {
+      ...withoutKey(records.sleepingByPaneKey, from),
+      [to]: { ...sleeping, paneKey: to, tabId }
+    }
   }
   return next
 }
@@ -227,13 +224,11 @@ export function movePaneToNewTab(
   const moved: LayoutTerminalTab = {
     id,
     entityId: id,
-    worktreeId: tab.worktreeId,
     createdAt: context.now(),
     customTitle: null,
     color: null,
     kind: 'terminal',
     terminal: {
-      worktreeId: tab.terminal.worktreeId,
       defaultTitle: `Terminal ${ordinal}`,
       ...(tab.terminal.startupCwd ? { startupCwd: tab.terminal.startupCwd } : {}),
       ...(tab.terminal.shellOverride ? { shellOverride: tab.terminal.shellOverride } : {})
@@ -250,8 +245,8 @@ export function movePaneToNewTab(
     panes: {
       ...tab.panes,
       root: removeLayoutLeaf(tab.panes.root, leafId),
-      ptyIdsByLeafId: withoutLeafEntry(tab.panes.ptyIdsByLeafId, leafId),
-      titlesByLeafId: withoutLeafEntry(tab.panes.titlesByLeafId, leafId)
+      ptyIdsByLeafId: withoutKey(tab.panes.ptyIdsByLeafId, leafId),
+      titlesByLeafId: withoutKey(tab.panes.titlesByLeafId, leafId)
     }
   }
   if (source.panes?.chatLeafId === leafId) {
@@ -280,7 +275,7 @@ export function movePaneToNewTab(
   )
   const next = withWorkspace(model, command.workspace, placed)
   return applied(
-    { ...next, records: advanceTopologyRevision(records, tab.terminal.worktreeId) },
+    { ...next, records: advanceTopologyRevision(records, workspace.worktreeId) },
     { tabId: id }
   )
 }

@@ -44,7 +44,6 @@ export type LayoutCommand =
     })
   | (On & { type: 'moveTab'; tabId: string; toGroupId: string; index: number })
   | (On & { type: 'splitGroup'; tabId: string; besideGroupId: string; direction: GroupSide })
-  | (On & { type: 'createGroup'; besideGroupId: string; direction: GroupSide })
   | (On & { type: 'setGroupRatios'; groupLayout: TabGroupLayoutNode })
   | (On & { type: 'setPaneRatios'; tabId: string; root: TerminalPaneLayoutNode })
   | (On & { type: 'movePane'; tabId: string; leafId: string; targetLeafId: string; side: PaneSide })
@@ -104,6 +103,7 @@ export type LayoutRefusalCode =
   | 'last_pane'
   | 'pane_sleeping'
   | 'pane_already_bound'
+  | 'workspace_exists'
 
 /** What the runtime does after applying: stop or start terminals. The reply never waits on them. */
 export type LayoutEffects = { stopPtyIds: string[]; startPaneKeys: string[] }
