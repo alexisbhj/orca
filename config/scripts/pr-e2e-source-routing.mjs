@@ -1,7 +1,8 @@
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
+import { isUnitTestSupportSource } from './pr-code-change-scope.mjs'
 
-const isProductSource = (file) => !/\.test\.tsx?$/.test(file)
+const isProductSource = (file) => !/\.test\.tsx?$/.test(file) && !isUnitTestSupportSource(file)
 
 // Why config/patches: the xterm fork owns the helper textarea an input method attaches to, so a
 // patch edit can break composition without touching a file named "ime".
@@ -13,6 +14,15 @@ const NATIVE_IME_HARNESS =
   /^(?:config\/scripts\/focus-nested-wayland-terminal\.sh$|config\/scripts\/(?:run-terminal-ibus-hangul-e2e|terminal-ime-engagement-receipt)\.mjs$|tests\/e2e\/terminal-ime-(?:boundary-probe|byte-reader|engagement-receipt)\.ts$|tests\/e2e\/terminal-(?:ibus-hangul|hangul-terminating-digit|macos-2set-korean)-native\.spec\.ts$)/
 
 export const PR_E2E_SOURCE_ROUTES = [
+  {
+    id: 'ssh.orcad-editor-ownership',
+    specs: ['tests/e2e/ssh-orcad-editor-ownership.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/runtime\/(?:web-session-existing-tab-index|web-session-tabs-sync\/(?:mirrored-editor-file-identity|tab-builders|apply-preparation-browser|state-equality-files|terminal-surfaces))\.ts$/.test(
+        file
+      )
+  },
   {
     id: 'serve.orcad-mode-switch',
     specs: ['tests/e2e/orcad-serve-mode-switch.spec.ts'],
@@ -44,6 +54,33 @@ export const PR_E2E_SOURCE_ROUTES = [
         /^src\/main\/(?:ipc\/ssh-host-server-|ssh\/(?:ssh-host-server-|orcad-runtime-conversion|orcad-migration-|orcad-retained-source|orcad-runtime-deployment))/.test(
           file
         ))
+  },
+  {
+    id: 'ssh.orcad-browser-capabilities',
+    specs: ['tests/e2e/ssh-orcad-browser-capabilities.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/main\/(?:runtime\/(?:runtime-browser-commands-factory|orca-runtime-get-status)|host\/electron-browser-commands|orcad\/orcad-browser-)/.test(
+        file
+      )
+  },
+  {
+    id: 'browser.orcad-service-status',
+    specs: ['tests/e2e/ssh-orcad-browser-service-status.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/components\/browser-pane\/stream-remote\/remote-browser-stream-(?:errors|status|lifecycle|restart-attempt)\.ts$/.test(
+        file
+      )
+  },
+  {
+    id: 'ssh.orcad-browser-routing',
+    specs: ['tests/e2e/ssh-orcad-browser-routing.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/(?:main\/browser\/local-ssh-browser|main\/ipc\/browser\.ts$|renderer\/src\/(?:lib\/(?:ssh-workspace-browser-route-eligibility|worktree-host-connection-phase)|components\/browser-pane\/use-ssh-workspace-browser-route))/.test(
+        file
+      )
   },
   {
     id: 'ssh.orcad-idle-exit',

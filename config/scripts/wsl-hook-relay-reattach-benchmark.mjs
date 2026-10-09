@@ -268,7 +268,7 @@ async function main() {
     wslArgs(distro, [
       '/bin/sh',
       '-c',
-      'for node_bin in "$(command -v node 2>/dev/null || true)" "$HOME/.local/bin/node"; do [ -x "$node_bin" ] || continue; "$node_bin" -p process.versions.node && exit 0; done; exit 1'
+      `for node_bin in "$(command -v node 2>/dev/null || true)" "$HOME/.nvm/versions/node"/*/bin/node /usr/local/bin/node /usr/bin/node "$HOME/.local/bin/node"; do [ -x "$node_bin" ] || continue; "$node_bin" -e 'process.exit(Number(process.versions.node.split(".")[0])>=24?0:1)' 2>/dev/null || continue; "$node_bin" -p process.versions.node && exit 0; done; exit 1`
     ]),
     { allowFailure: true }
   )

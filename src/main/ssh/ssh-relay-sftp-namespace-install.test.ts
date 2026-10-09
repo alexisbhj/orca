@@ -324,8 +324,11 @@ describe('relay install writes on a split SFTP namespace', () => {
   let capture: Capture
   let warnSpy: ReturnType<typeof vi.spyOn>
 
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     vi.clearAllMocks()
+    // The host-npm path is opt-in; these cases cover it.
+    vi.stubEnv('ORCA_SSH_REMOTE_RUNTIME', 'legacy')
     vi.mocked(execCommand).mockReset().mockResolvedValue('')
     vi.mocked(uploadDirectory).mockImplementation((_sftp, _local, remote: string) => {
       capture.uploadTargets.push(remote)
@@ -586,8 +589,11 @@ describe('relay repair writes on a split SFTP namespace', () => {
   let capture: Capture
   let warnSpy: ReturnType<typeof vi.spyOn>
 
+  afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     vi.clearAllMocks()
+    // The host-npm path is opt-in; these cases cover it.
+    vi.stubEnv('ORCA_SSH_REMOTE_RUNTIME', 'legacy')
     vi.mocked(execCommand).mockReset().mockResolvedValue('')
     vi.mocked(uploadDirectory).mockResolvedValue(undefined)
     vi.mocked(parseUnameToRelayPlatform).mockReturnValue('linux-x64')
