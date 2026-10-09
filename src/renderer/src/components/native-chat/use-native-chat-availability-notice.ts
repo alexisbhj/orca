@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { AgentSessionUnavailable } from '../../../../shared/agent-session-availability'
 import { readAgentSessionFailureFact } from '../../../../shared/agent-session-failure'
-import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
+import type {
+  AgentJournalRenderItem,
+  AgentJournalSubmission
+} from '../../../../shared/agent-session-journal-types'
 import type { AgentType } from '../../../../shared/agent-status-types'
 import { agentSessionRefusalReasonWords } from '../../../../shared/agent-session-refusal-reason-words'
 import type { AgentSessionWriteRefusal } from '../../../../shared/agent-session-write-failure'
@@ -26,15 +29,36 @@ function failedStartReason(items: readonly AgentJournalRenderItem[] | undefined)
   return reason
 }
 
+/** Why the newest send was turned away, which its own line already says. */
+function newestRejectionReason(
+  submissions: readonly Pick<
+    AgentJournalSubmission,
+    'dispatchState' | 'rejection' | 'submittedAt'
+  >[]
+): string | null {
+  const newest = submissions.reduce<(typeof submissions)[number] | null>(
+    (latest, submission) =>
+      !latest || submission.submittedAt >= latest.submittedAt ? submission : latest,
+    null
+  )
+  return newest?.dispatchState === 'rejected'
+    ? (readAgentSessionFailureFact(newest.rejection)?.kind ?? null)
+    : null
+}
+
 /** The host's verdict on why no chat can start here, as a notice that never holds Send: the
  *  verdict can be wrong while a send would work. Dismissed per verdict, so a changed or returning
- *  one shows again; left out while the chat's failed start already says the same reason. */
+ *  one shows again; left out while the chat's failed start or newest send already says it. */
 export function useNativeChatAvailabilityNotice(input: {
   unavailable: AgentSessionUnavailable | null | undefined
   agent: AgentType
   agentLabel: string
   launchFailure: AgentSessionWriteRefusal | null
   journalItems: readonly AgentJournalRenderItem[] | undefined
+  submissions?: readonly Pick<
+    AgentJournalSubmission,
+    'dispatchState' | 'rejection' | 'submittedAt'
+  >[]
 }): NativeChatComposerNotice | null {
   const { unavailable, journalItems } = input
   const key = !unavailable
@@ -47,12 +71,20 @@ export function useNativeChatAvailabilityNotice(input: {
     setDismissal({ key, dismissed: false })
   }
   const rowReason = useMemo(() => failedStartReason(journalItems), [journalItems])
+  const sendReason = useMemo(
+    () => newestRejectionReason(input.submissions ?? []),
+    [input.submissions]
+  )
   if (!unavailable || (dismissal.key === key && dismissal.dismissed)) {
     return null
   }
   const launchWords = input.launchFailure && agentSessionRefusalReasonWords(input.launchFailure)
   const launchReason = launchWords && 'fact' in launchWords ? launchWords.fact : null
-  if (launchReason === unavailable.reason || rowReason === unavailable.reason) {
+  if (
+    launchReason === unavailable.reason ||
+    rowReason === unavailable.reason ||
+    sendReason === unavailable.reason
+  ) {
     return null
   }
   return {

@@ -142,19 +142,29 @@ describe("a chat's sign-in verdict", () => {
   })
 
   // A verdict the agent's own start gave ends with that agent: the idle sweep stopping it is read.
-  it("reads again when the chat's agent stops or starts while a verdict is said", async () => {
+  it("reads again when the chat's agent stops or starts", async () => {
     const reads = catalogReads()
     const { result, rerender } = renderOptions()
     await act(async () => rerender({ turnId: null, providerRunning: true }))
-    await reads.answer(0, { origin: 'unknown', unavailable: SIGNED_OUT })
+    expect(reads.count()).toBe(2)
+    await reads.answer(1, { origin: 'unknown', unavailable: SIGNED_OUT })
     expect(result.current.unavailable).toEqual(SIGNED_OUT)
     await act(async () => rerender({ turnId: null, providerRunning: false }))
-    expect(reads.count()).toBe(2)
-    await reads.answer(1, { origin: 'unknown' })
+    expect(reads.count()).toBe(3)
+    await reads.answer(2, { origin: 'unknown' })
     expect(result.current.unavailable).toBeNull()
-    // With nothing said, the agent starting again reads nothing more.
+  })
+
+  it('drops a signed-out answer read before the agent stopped', async () => {
+    const reads = catalogReads()
+    const { result, rerender } = renderOptions()
     await act(async () => rerender({ turnId: null, providerRunning: true }))
-    expect(reads.count()).toBe(2)
+    await act(async () => rerender({ turnId: null, providerRunning: false }))
+    expect(reads.count()).toBe(3)
+    await reads.answer(1, { origin: 'unknown', unavailable: SIGNED_OUT })
+    expect(result.current.unavailable).toBeNull()
+    await reads.answer(2, { origin: 'unknown' })
+    expect(result.current.unavailable).toBeNull()
   })
 
   it('a turn starting with no verdict reads nothing more', async () => {

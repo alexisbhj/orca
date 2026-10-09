@@ -81,3 +81,26 @@ it('keeps one auth explanation while an unechoed message still reads as unsent',
   })
   expect([...notices.values()].map((notice) => notice.text)).toEqual(['Your message was not sent.'])
 })
+
+// A signed-out Pi turns the send away before any turn: that send's own line says it.
+it("steps aside while the newest send was turned away for the notice's reason", () => {
+  const sent = (submittedAt: number, rejected?: 'notSignedIn' | 'providerRejected') => ({
+    submittedAt,
+    dispatchState: rejected ? ('rejected' as const) : ('accepted' as const),
+    ...(rejected ? { rejection: { kind: rejected } } : {})
+  })
+  const notice = (submissions: ReturnType<typeof sent>[]) =>
+    renderHook(() =>
+      useNativeChatAvailabilityNotice({
+        agent: 'pi',
+        agentLabel: 'Pi',
+        unavailable: { reason: 'notSignedIn' },
+        launchFailure: null,
+        journalItems: [],
+        submissions
+      })
+    ).result.current
+  expect(notice([sent(1, 'notSignedIn')])).toBeNull()
+  expect(notice([sent(1, 'providerRejected')])?.text).toContain('/login')
+  expect(notice([sent(1, 'notSignedIn'), sent(2)])?.text).toContain('/login')
+})
