@@ -127,7 +127,8 @@ describe('the wide host-area session', () => {
     expect(routeViewOf(desktopRoutes(false), HOST_ROUTE, true)).toEqual({
       pageRoutes: [],
       pageRouteGrants: [],
-      routeGrants: []
+      routeGrants: [],
+      hostAreaDeclared: false
     })
   })
 

@@ -220,11 +220,13 @@ export function routeViewOf(
 ) {
   const entries = implementedPageRouteEntries(routes)
   const root = hostAreaRoot(pathname)
+  const hostAreaDeclared = root !== null && pageCanOwnHostArea(routes, root)
   // Native unless the page declares it: an older page draws its own sidebar beside the native one.
-  if (wide && (root === null || !pageCanOwnHostArea(routes, root))) {
-    return { pageRoutes: [], pageRouteGrants: [], routeGrants: [] }
+  if (wide && !hostAreaDeclared) {
+    return { pageRoutes: [], pageRouteGrants: [], routeGrants: [], hostAreaDeclared }
   }
   return {
+    hostAreaDeclared,
     pageRoutes: entries.map((route) => route.pathname),
     pageRouteGrants: entries.map((route) => ({
       pathname: route.pathname,

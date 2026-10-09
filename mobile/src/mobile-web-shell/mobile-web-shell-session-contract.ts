@@ -230,6 +230,8 @@ export type MobileWebShellSession = {
   readonly routePathname: string
   /** A wide layout: served only under `canOwnHostArea`; the host route gets every route's grants. */
   readonly wide: boolean
+  /** The bundle in hand declares `canOwnHostArea`, so a detail route's wide answer is its narrow one. */
+  readonly hostAreaDeclared: boolean
   /** Every route pattern this shell would render from the page, as the bundle in hand declares
    *  them. The page is told, so it keeps a navigation into one of them instead of handing it back. */
   readonly pageRoutes: readonly string[]

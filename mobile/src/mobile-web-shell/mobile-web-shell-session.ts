@@ -39,6 +39,7 @@ export function createMobileWebShellSession(
     pageRoutes: [],
     pageRouteGrants: [],
     routeGrants: [],
+    hostAreaDeclared: false,
     state: CHECKING,
     retriedOnce: false,
     remountedOnce: false,
@@ -118,11 +119,7 @@ function onManifestRead(
   }
   // Before the compat verdict, because a route that stays native has nothing to wall about: a
   // bundle this shell could not open is not a reason to refuse a screen it was never going to open.
-  const { pageRoutes, pageRouteGrants, routeGrants } = routeViewOf(
-    manifest.routes,
-    session.routePathname,
-    session.wide
-  )
+  const view = routeViewOf(manifest.routes, session.routePathname, session.wide)
   // Same build id is the same bytes, because the id is their digest: a route-grant edit publishes
   // the generation already on disk under a newer manifest. Read before this route's verdict,
   // because that verdict is about this route while the manifest is the truth about the whole
@@ -137,12 +134,8 @@ function onManifestRead(
       : { ...cached, routes: manifest.routes, compat: manifest }
   const persist: readonly MobileWebShellSessionEffect[] =
     same === null ? [] : [{ kind: 'persist-manifest', manifest: manifest.wire }]
-  if (!rendersRoute(pageRoutes, session.routePathname)) {
-    return step(
-      session,
-      { cached: same ?? cached, pageRoutes, pageRouteGrants, routeGrants, state: NATIVE_ROUTE },
-      persist
-    )
+  if (!rendersRoute(view.pageRoutes, session.routePathname)) {
+    return step(session, { cached: same ?? cached, ...view, state: NATIVE_ROUTE }, persist)
   }
   const verdict = evaluateMobileWebBundleCompat({
     hostCapabilities: gates.hostCapabilities,
@@ -157,19 +150,12 @@ function onManifestRead(
     return step(session, { state: { kind: 'wall', verdict } })
   }
   if (same !== null) {
-    return openCached(
-      session,
-      same,
-      { cached: same, pageRoutes, pageRouteGrants, routeGrants },
-      persist
-    )
+    return openCached(session, same, { cached: same, ...view }, persist)
   }
   return step(
     session,
     {
-      pageRoutes,
-      pageRouteGrants,
-      routeGrants,
+      ...view,
       requestedBuildId: manifest.buildId,
       state: {
         kind: 'fetching',

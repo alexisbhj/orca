@@ -126,4 +126,40 @@ describe('the per-workspace keys of a host-area page', () => {
     view.writeStorage('orca:nativeChatTabs:host-2:wt-3', '["no"]')
     expect(store.get('orca:nativeChatTabs:host-2:wt-3')).toBeUndefined()
   })
+
+  it('refuses a write to a key the entry cap left out, so the stored list survives', async () => {
+    for (let index = 0; index < 40; index += 1) {
+      store.set(`orca:nativeChatTabs:host-1:wt-${String(index)}`, `{"tab-${String(index)}":"chat"}`)
+    }
+    const view = await snapshotFor('/h/host-1', true)
+    const held = view.readStorage()
+    const dropped = 'orca:nativeChatTabs:host-1:wt-39'
+    expect(held.storage[dropped]).toBeUndefined()
+    expect(held.storageOversize).toContain(dropped)
+    const pair = createFakeBridgePortPair({
+      route: { pathname: '/h/host-1' },
+      ownsHostArea: true,
+      storage: held.storage,
+      storageOversize: held.storageOversize
+    })
+    await pair.flush()
+    const session = pair.client.getShellSession()
+    if (session === null) {
+      throw new Error('no init')
+    }
+    publishPageStorage(
+      session.storage,
+      (key, value) => pair.client.notifyStorageWrite(key, value),
+      'host-1',
+      '/h/host-1',
+      session.storageOversize,
+      session.ownsHostArea
+    )
+    // The page reads the default for it, so its read-modify-write would replace the whole list.
+    await expect(pageAsyncStorage.setItem(dropped, '{"tab-new":"chat"}')).rejects.toThrow()
+    pair.client.notifyStorageWrite(dropped, '{"tab-new":"chat"}')
+    await pair.flush()
+    expect(pair.storageWrites).toEqual([])
+    expect(store.get(dropped)).toBe('{"tab-39":"chat"}')
+  })
 })

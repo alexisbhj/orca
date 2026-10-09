@@ -153,7 +153,10 @@ export function usePageHostSnapshot(
       }
       // `oversize` crosses as well as being logged: a key the page holds no value for is one its
       // own write would replace rather than extend (ruling 33.6).
-      return { storage: entries, storageOversize: oversize }
+      // A workspace key the entry cap left out is one too: the chat-tab write is read-modify-write,
+      // so a page reading the default would replace the device's list.
+      const capped = dropped.filter((key) => !oversize.includes(key) && workspaceKeys(key))
+      return { storage: entries, storageOversize: [...oversize, ...capped] }
     }, [hostArea, hostId, routePathname, workspaceKeys]),
     refreshStorage,
     writeStorage

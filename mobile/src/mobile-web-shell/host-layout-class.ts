@@ -1,10 +1,10 @@
-import { createContext, useEffect } from 'react'
+import { createContext, useEffect, type Dispatch, type SetStateAction } from 'react'
 
 /** What `app/h/_layout.tsx` tells the shell screens under it: whether it is wide, and a way to say a
  *  host-area page is serving so the native sidebar steps aside on the host route. */
 export type HostLayoutClass = {
   wide: boolean
-  reportHostArea: (hostId: string | null) => void
+  reportHostArea: Dispatch<SetStateAction<string | null>>
 }
 
 export const HostLayoutClassContext = createContext<HostLayoutClass>({
@@ -23,6 +23,7 @@ export function useReportedHostArea(
       return
     }
     report(hostId)
-    return () => report(null)
+    // Only its own report: a session for another host may have taken over since.
+    return () => report((current) => (current === hostId ? null : current))
   }, [report, hostId, serving])
 }

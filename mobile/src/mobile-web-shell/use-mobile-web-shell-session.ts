@@ -11,6 +11,7 @@ import {
   type MobileWebShellRuntime
 } from './mobile-web-shell-runtime'
 import { readMobileWebShellReachability } from './mobile-web-shell-reachability'
+import { hostAreaRoot } from './page-route-policy'
 import { shellPageBackClaimed } from './shell-page-back-claim'
 import { shellPageFrame, type ShellPageFrame } from './shell-page-frame'
 import {
@@ -72,7 +73,8 @@ export function useMobileWebShellSession(args: {
   hostId: string
   /** The route this mount stands for, matched against the page routes the bundle declares. */
   routePathname: string
-  /** A wide layout; see `MobileWebShellSession.wide`. A change rebuilds the session. */
+  /** A wide layout; see `MobileWebShellSession.wide`. A change rebuilds the session only where it
+   *  changes the answer. */
   wide?: boolean
   runtime?: MobileWebShellRuntime
 }): MobileWebShellSessionView {
@@ -214,16 +216,34 @@ export function useMobileWebShellSession(args: {
     }
   }, [runEffect])
 
+  // The width the session was built for; a flip that cannot change the answer only updates it.
+  const wideRef = useRef(wide)
+  const [rebuilds, setRebuilds] = useState(0)
+  useEffect(() => {
+    if (wideRef.current === wide) {
+      return
+    }
+    wideRef.current = wide
+    const session = sessionRef.current
+    // A detail route under a declaring bundle is served the same either way; rebuilding it would
+    // reload an open page and lose its scroll and draft.
+    if (hostAreaRoot(routePathname) !== routePathname && session.hostAreaDeclared) {
+      sessionRef.current = { ...session, wide }
+      return
+    }
+    setRebuilds((count) => count + 1)
+  }, [routePathname, wide])
+
   useEffect(() => {
     // A new host is a new session: the old one's latches, cache handle and in-flight work all go.
     invalidate()
-    sessionRef.current = createMobileWebShellSession(routePathname, wide)
+    sessionRef.current = createMobileWebShellSession(routePathname, wideRef.current)
     startedAtRef.current = runtime.now()
     setState(sessionRef.current.state)
     setPageReady(sessionRef.current.pageReady)
     setPageFrame(shellPageFrame(sessionRef.current))
     return invalidate
-  }, [hostId, invalidate, routePathname, runtime, wide])
+  }, [hostId, invalidate, rebuilds, routePathname, runtime])
 
   const { statusPending, statusReadable, hostCapabilities, hostProtocolWindow } = gates
   const reachability = readMobileWebShellReachability(connState, client)
@@ -247,10 +267,10 @@ export function useMobileWebShellSession(args: {
     hostId,
     hostProtocolWindow,
     reachability,
+    rebuilds,
     routePathname,
     statusPending,
-    statusReadable,
-    wide
+    statusReadable
   ])
 
   const retry = useCallback(() => {

@@ -21,8 +21,24 @@ const doubles = vi.hoisted(
       hostCapabilities: string[]
       hostProtocolWindow: { protocolVersion: number; minCompatibleMobileVersion: number }
     }
+    manifestReads: number
+    manifest: () => MobileWebBundleManifestRead
   } => ({
     routes: [],
+    manifestReads: 0,
+    manifest: () => ({
+      schemaVersion: 1,
+      buildId: 'b'.repeat(64),
+      minCompatibleRuntimeProtocolVersion: 2,
+      runtimeProtocolVersion: 5,
+      pageVersion: 1,
+      entrypoint: 'index.html',
+      totalBytes: 2048,
+      assets: [
+        { path: 'index.html', sha256: 'c'.repeat(64), byteLength: 2048, contentType: 'text/html' }
+      ],
+      routes: doubles.routes
+    }),
     gates: {
       statusPending: false,
       statusReadable: true,
@@ -43,21 +59,10 @@ vi.mock('../transport/client-context', () => ({
 }))
 vi.mock('../transport/rpc-operation', () => ({
   defineRpcOperation: (definition: unknown) => definition,
-  runRpcOperation: async () => ({
-    manifest: {
-      schemaVersion: 1,
-      buildId: 'b'.repeat(64),
-      minCompatibleRuntimeProtocolVersion: 2,
-      runtimeProtocolVersion: 5,
-      pageVersion: 1,
-      entrypoint: 'index.html',
-      totalBytes: 2048,
-      assets: [
-        { path: 'index.html', sha256: 'c'.repeat(64), byteLength: 2048, contentType: 'text/html' }
-      ],
-      routes: doubles.routes
-    }
-  })
+  runRpcOperation: async () => {
+    doubles.manifestReads += 1
+    return { manifest: doubles.manifest() }
+  }
 }))
 vi.mock('../transport/mobile-web-bundle-fetch', () => ({
   fetchMobileWebBundle: () => new Promise(() => {})
@@ -66,7 +71,12 @@ vi.mock('../transport/mobile-web-bundle-fetch', () => ({
 import { useMobileWebShellSession } from './use-mobile-web-shell-session'
 
 const store: GenerationStore = {
-  readActiveGeneration: async () => null,
+  // The same build on disk, so a session opens it and reaches `ready` without a download.
+  readActiveGeneration: async () => ({
+    buildId: 'b'.repeat(64),
+    directory: 'file:///cache/gen',
+    manifest: doubles.manifest()
+  }),
   stageGeneration: async () => {
     throw new Error('not reached')
   },
@@ -93,23 +103,29 @@ function routes(declares: boolean): MobileWebBundleManifestRead['routes'] {
   ]
 }
 
-async function settledKinds(declares: boolean, widths: readonly boolean[]) {
+async function settledKinds(
+  declares: boolean,
+  widths: readonly boolean[],
+  routePathname = '/h/host-1/session/wt-1'
+) {
   doubles.routes = routes(declares)
+  doubles.manifestReads = 0
   doubles.gates.hostCapabilities = [MOBILE_WEB_BUNDLE_CAPABILITY]
-  const seen: { state: MobileWebShellSessionState; grants: readonly string[] }[] = []
+  const seen: MobileWebShellSessionState[] = []
+  let minted = 0
   function Probe({ wide }: { wide: boolean }) {
     const session = useMobileWebShellSession({
       hostId: 'host-1',
-      routePathname: '/h/host-1/session/wt-1',
+      routePathname,
       wide,
       runtime: {
         createStore: () => store,
-        mintSessionId: () => 'session-id',
+        mintSessionId: () => `session-${String((minted += 1))}`,
         now: () => 0,
         setTimer: () => () => {}
       }
     })
-    seen.push({ state: session.state, grants: session.routeGrants })
+    seen.push(session.state)
     return null
   }
   const mounted: { tree: ReactTestRenderer | null } = { tree: null }
@@ -123,26 +139,30 @@ async function settledKinds(declares: boolean, widths: readonly boolean[]) {
       }
     })
     await act(async () => {})
-    kinds.push(seen.at(-1)?.state.kind ?? 'none')
+    const state = seen.at(-1)
+    kinds.push(state?.kind === 'ready' ? `ready ${state.sessionId}` : (state?.kind ?? 'none'))
   }
   act(() => mounted.tree?.unmount())
-  return kinds
+  return { kinds, manifestReads: doubles.manifestReads }
 }
 
 describe('a detail session across a layout-class change', () => {
-  it('goes native on a wide layout under a page without the declaration, and back', async () => {
-    expect(await settledKinds(false, [false, true, false])).toEqual([
-      'fetching',
-      'native-route',
-      'fetching'
-    ])
+  it('keeps an open page through a flip under a declaring bundle: same session, no re-read', async () => {
+    expect(await settledKinds(true, [false, true, false])).toEqual({
+      kinds: ['ready session-1', 'ready session-1', 'ready session-1'],
+      manifestReads: 1
+    })
   })
 
-  it('stays served at both widths under a declaring page, beside the native sidebar', async () => {
-    expect(await settledKinds(true, [false, true, false])).toEqual([
-      'fetching',
-      'fetching',
-      'fetching'
-    ])
+  it('goes native on a wide layout under a page without the declaration, and back', async () => {
+    expect(await settledKinds(false, [false, true, false])).toEqual({
+      kinds: ['ready session-1', 'native-route', 'ready session-2'],
+      manifestReads: 3
+    })
+  })
+
+  it('rebuilds the host route, whose wide session owns the area under other grants', async () => {
+    const { kinds } = await settledKinds(true, [false, true], '/h/host-1')
+    expect(kinds).toEqual(['ready session-1', 'ready session-2'])
   })
 })

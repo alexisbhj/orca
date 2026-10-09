@@ -65,9 +65,9 @@ vi.mock('../navigation/host-stack', async () => {
     HostStack: function HostAreaSession(): null {
       const { wide, reportHostArea } = useContext(layoutClass.HostLayoutClassContext)
       layoutClass.useReportedHostArea(
-        (hostId) => {
-          env.reports.push(hostId)
-          reportHostArea(hostId)
+        (action) => {
+          env.reports.push(typeof action === 'function' ? 'cleared' : action)
+          reportHostArea(action)
         },
         'host-1',
         wide && env.hostAreaServing
