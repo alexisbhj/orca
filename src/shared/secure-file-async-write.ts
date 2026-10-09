@@ -5,13 +5,12 @@ import { serializePathWrite } from './path-write-serializer'
 import {
   hardenSecurePathOnce,
   rememberHardenedPath,
-  UNSUPPORTED_DIRECTORY_FSYNC_CODES,
+  isUnsupportedDirectoryFsyncError,
   type HardeningOutcome
 } from './secure-file'
 import { recordHardeningOutcome } from './secure-path-hardening-retry-budget'
 import { bestEffortRestrictWindowsPath } from './secure-path-windows-acl'
 
-/** Async lane. Use this from anything an IPC handler can await; see `writeSecureFileAsync`. */
 export async function writeSecureJsonFileAsync(
   targetPath: string,
   value: unknown
@@ -19,7 +18,6 @@ export async function writeSecureJsonFileAsync(
   return await writeSecureFileAsync(targetPath, JSON.stringify(value, null, 2))
 }
 
-/** Async lane. Use this from anything an IPC handler can await; see `writeSecureFileAsync`. */
 export async function writeDurableSecureJsonFileAsync(
   targetPath: string,
   value: unknown
@@ -103,10 +101,7 @@ export async function bestEffortFsyncDirectory(directory: string): Promise<void>
   try {
     await fsyncPath(directory, 'r')
   } catch (error) {
-    if (
-      error instanceof Error &&
-      UNSUPPORTED_DIRECTORY_FSYNC_CODES.has((error as NodeJS.ErrnoException).code ?? '')
-    ) {
+    if (isUnsupportedDirectoryFsyncError(error)) {
       return
     }
     throw error

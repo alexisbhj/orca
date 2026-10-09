@@ -51,9 +51,9 @@ function freshDirectory(prefix: string): string {
   return directory
 }
 
-const posixIt = process.platform === 'win32' ? it.skip : it
+const directoryFsync: Step[] = process.platform === 'win32' ? [] : ['fsync:directory']
 
-posixIt('keeps the file fsync before the rename and the directory fsync after it', async () => {
+it('keeps the file fsync before the rename and the directory fsync after it', async () => {
   const directory = freshDirectory('orca-secure-async-order-')
   const target = join(directory, 'secret.json')
 
@@ -61,10 +61,10 @@ posixIt('keeps the file fsync before the rename and the directory fsync after it
 
   expect(readFileSync(target, 'utf-8')).toBe('{"ok":1}')
   // Publishing the name before the data fsync is what lets a crash expose a zero-length credential.
-  expect(steps).toEqual(['write', 'fsync:file', 'rename', 'fsync:directory'])
+  expect(steps).toEqual(['write', 'fsync:file', 'rename', ...directoryFsync])
 })
 
-posixIt('serializes concurrent writes to one target instead of interleaving them', async () => {
+it('serializes concurrent writes to one target instead of interleaving them', async () => {
   const directory = freshDirectory('orca-secure-async-race-')
   const target = join(directory, 'secret.json')
   // Distinct and large enough that a torn write would resemble neither payload.
@@ -83,16 +83,16 @@ posixIt('serializes concurrent writes to one target instead of interleaving them
     'write',
     'fsync:file',
     'rename',
-    'fsync:directory',
+    ...directoryFsync,
     'write',
     'fsync:file',
     'rename',
-    'fsync:directory'
+    ...directoryFsync
   ])
   expect(readdirSync(directory)).toEqual(['secret.json'])
 })
 
-posixIt('releases the per-path lane once the writes settle', async () => {
+it('releases the per-path lane once the writes settle', async () => {
   const directory = freshDirectory('orca-secure-async-lane-')
   const before = pendingPathWriteCountForTests()
 
@@ -105,7 +105,7 @@ posixIt('releases the per-path lane once the writes settle', async () => {
   expect(pendingPathWriteCountForTests()).toBe(before)
 })
 
-posixIt('removes the temp file when the write cannot be published', async () => {
+it('removes the temp file when the write cannot be published', async () => {
   const directory = freshDirectory('orca-secure-async-fail-')
   // A directory standing where the file belongs makes the rename fail after the temp write landed.
   const target = join(directory, 'blocked')
@@ -114,4 +114,19 @@ posixIt('removes the temp file when the write cannot be published', async () => 
   await expect(writeSecureFileAsync(target, 'x')).rejects.toThrow()
 
   expect(readdirSync(directory)).toEqual(['blocked'])
+})
+
+it('releases a failed writer so the next write can publish', async () => {
+  const directory = freshDirectory('orca-secure-async-recover-')
+  const target = join(directory, 'secret.json')
+  const before = pendingPathWriteCountForTests()
+  const { serializePathWrite } = await import('./path-write-serializer')
+  const failed = serializePathWrite(target, async () => {
+    throw new Error('write failed')
+  })
+  const following = writeSecureFileAsync(target, 'recovered')
+  await expect(failed).rejects.toThrow('write failed')
+  await expect(following).resolves.toBe(true)
+  expect(readFileSync(target, 'utf8')).toBe('recovered')
+  expect(pendingPathWriteCountForTests()).toBe(before)
 })

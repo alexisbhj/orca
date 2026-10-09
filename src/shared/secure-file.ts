@@ -39,7 +39,16 @@ type HardenedPathCacheEntry = {
   birthtimeMs: number
 }
 
-export const UNSUPPORTED_DIRECTORY_FSYNC_CODES = new Set(['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'])
+const UNSUPPORTED_DIRECTORY_FSYNC_CODES = new Set(['EINVAL', 'ENOTSUP', 'EOPNOTSUPP'])
+
+export function isUnsupportedDirectoryFsyncError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    UNSUPPORTED_DIRECTORY_FSYNC_CODES.has(error.code)
+  )
+}
 
 // Why: hardening spawns icacls synchronously (once when the DACL already verifies, four times when it must be rewritten), so cache idempotent re-hardens per process.
 let hardenedPathsThisProcess = new SecurePathHardeningCache<HardenedPathCacheEntry>(
@@ -187,10 +196,7 @@ export function bestEffortFsyncDirectorySync(directory: string): void {
   try {
     fsyncPathSync(directory, 'r')
   } catch (error) {
-    if (
-      error instanceof Error &&
-      UNSUPPORTED_DIRECTORY_FSYNC_CODES.has((error as NodeJS.ErrnoException).code ?? '')
-    ) {
+    if (isUnsupportedDirectoryFsyncError(error)) {
       return
     }
     throw error
