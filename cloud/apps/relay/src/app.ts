@@ -35,6 +35,7 @@ import {
   type RelayAssignmentStore,
   type ResolvedRelayAssignment
 } from './assignment-store.js'
+import { ASSIGNMENT_LEASE_AUDIENCE, assignmentLeaseKeyId } from './assignment-lease.js'
 import { AssignmentRejectionLogWindow } from './assignment-rejection-log-window.js'
 import { CELL_ADMISSION_STATES } from './cell-admission-selector.js'
 import { registerCellSeatFeedRoute } from './cell-seat-feed-route.js'
@@ -166,6 +167,7 @@ export function createRelayApp(
     }
   }
   const verifyRelayToken = createRelayTokenVerifier(config)
+  const assignmentLeaseKid = assignmentLeaseKeyId(config.assignmentSigningKey)
   const verifyAdminToken = createAdminTokenVerifier(config)
   const verifyReadOnlyAdminToken = createReadOnlyAdminTokenVerifier(config)
   const verifyRegionalRehomeControlApplyToken =
@@ -542,9 +544,9 @@ export function createRelayApp(
       assignmentEpoch: assignment.assignmentEpoch,
       relayHostId: claims.relayHostId
     })
-      .setProtectedHeader({ alg: 'HS256' })
+      .setProtectedHeader({ alg: 'HS256', kid: assignmentLeaseKid })
       .setIssuer(config.publicUrl)
-      .setAudience('orca-relay-cell')
+      .setAudience(ASSIGNMENT_LEASE_AUDIENCE)
       .setSubject(claims.sub)
       .setIssuedAt()
       .setExpirationTime('5m')
