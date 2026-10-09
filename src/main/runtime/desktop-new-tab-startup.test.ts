@@ -126,7 +126,8 @@ async function compareMainInputs(args: {
     command: expected.launchCommand,
     env: expected.env,
     launchConfig: expected.launchConfig,
-    startupCommandDelivery: expected.startupCommandDelivery
+    // Main's pane forces shell-ready for any SSH startup command (pane-transport-options.ts).
+    startupCommandDelivery: args.host.connectionId ? 'shell-ready' : expected.startupCommandDelivery
   })
   expect(carry).toHaveBeenCalledExactlyOnceWith(
     Boolean(text) &&

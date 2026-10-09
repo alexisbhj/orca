@@ -1,4 +1,5 @@
 import type { SessionOptionValue } from '../../shared/native-chat-session-options'
+import type { StartupCommandDelivery } from '../../shared/codex-startup-delivery'
 import type { RuntimeStore } from './runtime-store-contract'
 import type { TerminalWorkspaceLaunchScope } from './runtime-legacy-worker-terminal-recovery-types'
 import type { TerminalCreateOptions } from './runtime-terminal-contracts'
@@ -27,6 +28,11 @@ export async function buildRuntimeAgentTerminalStartupOptions(
   // Why: `workspace.repo` is display metadata and may be a row from another host; the launch
   // shape must match the PTY route this scope already resolved.
   const isRemote = Boolean(workspace.connectionId)
+  // Main's rule (#12963): any SSH startup command waits for the shell-ready marker, because a slow
+  // remote login shell can drop a command typed after the relay's flat delay.
+  const deliveryFor = (
+    planned: StartupCommandDelivery | undefined
+  ): StartupCommandDelivery | undefined => (isRemote ? 'shell-ready' : planned)
   if (opts.startupAgent && !isTuiAgentEnabled(opts.startupAgent, settings.disabledTuiAgents)) {
     throw new Error(`Agent ${opts.startupAgent} is disabled. Choose an enabled agent.`)
   }
@@ -69,7 +75,7 @@ export async function buildRuntimeAgentTerminalStartupOptions(
       ...(plan.env ? { env: plan.env } : {}),
       launchConfig: plan.launchConfig,
       launchAgent: agent,
-      startupCommandDelivery: plan.startupCommandDelivery,
+      startupCommandDelivery: deliveryFor(plan.startupCommandDelivery),
       ...(opts.startupAgent ? { telemetry: agentStartedTelemetry(agent, opts.launchSource) } : {})
     }
   }
@@ -122,7 +128,7 @@ export async function buildRuntimeAgentTerminalStartupOptions(
     ...(startupPlan.env ? { env: startupPlan.env } : {}),
     launchConfig: startupPlan.launchConfig,
     launchAgent: agent,
-    startupCommandDelivery: startupPlan.startupCommandDelivery,
+    startupCommandDelivery: deliveryFor(startupPlan.startupCommandDelivery),
     // A bare command the user typed stays out of launch accounting, as before.
     ...(opts.startupAgent ? { telemetry: agentStartedTelemetry(agent, opts.launchSource) } : {})
   }
