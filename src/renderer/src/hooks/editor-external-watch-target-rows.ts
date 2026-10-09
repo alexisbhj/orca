@@ -11,9 +11,8 @@ import { parseWorkspaceKey } from '../../../shared/workspace-scope'
 
 type WatchTargetRowState = Pick<
   AppState,
-  'worktreesByRepo' | 'repos' | 'folderWorkspaces' | 'projectGroups' | 'activeWorktreeId'
-> &
-  Partial<Pick<AppState, 'activeWorkspaceExecutionHostId'>>
+  'worktreesByRepo' | 'repos' | 'folderWorkspaces' | 'projectGroups'
+>
 
 export type EditorExternalWatchTargetRows = {
   worktree: AppState['worktreesByRepo'][string][number] | undefined
@@ -21,21 +20,6 @@ export type EditorExternalWatchTargetRows = {
   folderWorkspace: AppState['folderWorkspaces'][number] | undefined
   projectGroup: AppState['projectGroups'][number] | undefined
   connectionId: string | null | undefined
-}
-
-function getOwnerExecutionHostId(
-  state: WatchTargetRowState,
-  worktreeId: string,
-  owner: string | null
-): ExecutionHostId | null {
-  if (owner) {
-    return toRuntimeExecutionHostId(owner)
-  }
-  const activeHost =
-    state.activeWorktreeId === worktreeId
-      ? parseExecutionHostId(state.activeWorkspaceExecutionHostId)
-      : null
-  return activeHost && activeHost.kind !== 'runtime' ? activeHost.id : null
 }
 
 function pickHostRow<T>(
@@ -50,13 +34,12 @@ function pickHostRow<T>(
   return onHost ?? rows[0]
 }
 
-/** The catalog rows for one watch target, taken from the row on the owner's execution host. */
+/** The catalog rows for one watch consumer, taken from the row on that consumer's own execution host. */
 export function resolveEditorExternalWatchTargetRows(
   state: WatchTargetRowState,
   worktreeId: string,
-  owner: string | null
+  hostId: ExecutionHostId | null
 ): EditorExternalWatchTargetRows | null {
-  const hostId = getOwnerExecutionHostId(state, worktreeId, owner)
   const worktree = pickHostRow(
     getIndexedWorktreesById(state.worktreesByRepo, worktreeId),
     hostId,

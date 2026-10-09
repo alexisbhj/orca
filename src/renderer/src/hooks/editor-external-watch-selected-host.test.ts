@@ -113,3 +113,52 @@ it('watches each open file owner at its own host root', () => {
     ['host-b', '/host-b/repo']
   ])
 })
+
+it('keeps an open local editor watched locally when a same-id direct-SSH folder is selected', () => {
+  const localFile = {
+    id: 'local:a.txt',
+    filePath: '/local/notes/a.txt',
+    relativePath: 'a.txt',
+    worktreeId: 'folder:notes',
+    language: 'plaintext',
+    isDirty: false,
+    mode: 'edit' as const,
+    runtimeEnvironmentId: null,
+    operationProvenance: {
+      generation: {
+        route: { executionHostId: 'local' as const, runtimeEnvironmentId: null },
+        runtimeConnectionGeneration: null,
+        runtimePairingRevision: undefined,
+        runtimeSshGeneration: null,
+        nestedSshGeneration: null,
+        directSshGeneration: null
+      },
+      ownershipProjection: 'explicit' as const
+    }
+  }
+  const state: SelectedHostState = {
+    ...makeState('folder'),
+    activeWorktreeId: 'folder:notes',
+    activeWorkspaceExecutionHostId: 'ssh:ssh-a',
+    openFiles: [localFile],
+    folderWorkspaces: [
+      makeFolderWorkspace({ id: 'notes', folderPath: '/local/notes', executionHostId: 'local' }),
+      makeFolderWorkspace({
+        id: 'notes',
+        folderPath: '/remote/notes',
+        executionHostId: 'ssh:ssh-a'
+      })
+    ]
+  }
+  const watched = (next: SelectedHostState): [string, string | undefined][] =>
+    selectEditorExternalWatchTargets(next).targets.map((target) => [
+      target.worktreePath,
+      target.connectionId
+    ])
+
+  expect(watched({ ...state, rightSidebarOpen: false })).toEqual([['/local/notes', undefined]])
+  expect(watched(state)).toEqual([
+    ['/local/notes', undefined],
+    ['/remote/notes', 'ssh-a']
+  ])
+})

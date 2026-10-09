@@ -5,7 +5,12 @@ import { findRepoForHost } from '@/store/slices/repo-host-identity'
 import { isLocalWindowsDesktopClient } from '@/lib/desktop-window-chrome'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import { isWindowsAbsolutePathLike } from '../../../shared/cross-platform-path'
-import { parseExecutionHostId } from '../../../shared/execution-host'
+import {
+  parseExecutionHostId,
+  toRuntimeExecutionHostId,
+  toSshExecutionHostId,
+  type ExecutionHostId
+} from '../../../shared/execution-host'
 import { isGitRepoKind } from '../../../shared/repo-kind'
 import { resolveEditorExternalWatchTargetRows } from './editor-external-watch-target-rows'
 
@@ -74,6 +79,52 @@ export function getLocalWindowsWslAliasOption(
     : {}
 }
 
+type WatchConsumer = { owner: string | null; hostId: ExecutionHostId | null }
+
+/** The host an open file was opened on; never the current selection, which may name another host's same-id workspace. */
+function getOpenFileWatchConsumer(
+  file: Pick<OpenFile, 'externalSshTargetId' | 'operationProvenance' | 'runtimeEnvironmentId'>
+): WatchConsumer {
+  const owner = getOpenFileRuntimeOwner(file)
+  const capturedHostId = file.operationProvenance?.generation.route.executionHostId
+  return {
+    owner,
+    hostId:
+      capturedHostId ??
+      (file.externalSshTargetId
+        ? toSshExecutionHostId(file.externalSshTargetId)
+        : owner
+          ? toRuntimeExecutionHostId(owner)
+          : null)
+  }
+}
+
+function getSidebarWatchConsumer(
+  state: EditorExternalWatchTargetState,
+  worktreeId: string
+): WatchConsumer {
+  // Why: sidebar watcher must follow the selected worktree's host owner, not the host currently focused in the UI.
+  const owner = getRuntimeEnvironmentIdForWorktree(state, worktreeId)
+  if (owner) {
+    return { owner, hostId: toRuntimeExecutionHostId(owner) }
+  }
+  const selectedHost = parseExecutionHostId(state.activeWorkspaceExecutionHostId)
+  return { owner, hostId: selectedHost && selectedHost.kind !== 'runtime' ? selectedHost.id : null }
+}
+
+function addWatchConsumer(
+  consumersByWorktreeId: Map<string, Map<string, WatchConsumer>>,
+  worktreeId: string,
+  consumer: WatchConsumer
+): void {
+  let consumers = consumersByWorktreeId.get(worktreeId)
+  if (!consumers) {
+    consumers = new Map()
+    consumersByWorktreeId.set(worktreeId, consumers)
+  }
+  consumers.set(`${consumer.owner ?? ''}::${consumer.hostId ?? ''}`, consumer)
+}
+
 function isLocalHostStamp(value: string | null | undefined): boolean {
   return parseExecutionHostId(value)?.kind === 'local'
 }
@@ -133,16 +184,10 @@ export function selectEditorExternalWatchTargets(
     return cachedWatchedTargetsSnapshot
   }
 
-  const targetOwnersByWorktreeId = new Map<string, Set<string | null>>()
-  // Why: watcher ownership is scoped by worktree + runtime owner — the same path can be open locally and in a runtime workspace, and reads/saves already route per owner.
+  const consumersByWorktreeId = new Map<string, Map<string, WatchConsumer>>()
+  // Why: watcher ownership is scoped by worktree + execution host — the same workspace id can be open locally, over SSH and in a runtime, and reads/saves already route per host.
   for (const file of state.openFiles) {
-    let owners = targetOwnersByWorktreeId.get(file.worktreeId)
-    if (!owners) {
-      owners = new Set()
-      targetOwnersByWorktreeId.set(file.worktreeId, owners)
-    }
-    // Why: persisted/restored tabs may have runtimeEnvironmentId undefined; new openFile calls resolve inheritance before storing, so an ownerless tab stays local.
-    owners.add(getOpenFileRuntimeOwner(file))
+    addWatchConsumer(consumersByWorktreeId, file.worktreeId, getOpenFileWatchConsumer(file))
   }
   const activeWorktreeId = state.activeWorktreeId
   const activeWorktree = activeWorktreeId
@@ -172,24 +217,17 @@ export function selectEditorExternalWatchTargets(
       (shownRightSidebarTab === 'source-control' && sourceControlCanConsumeWatch))
   if (activeWorktreeNeedsSidebarWatch) {
     // Why: this app-level watcher owns Explorer/Source-Control subscriptions so downstream consumers don't fight over watch/unwatch IPC.
-    let owners = targetOwnersByWorktreeId.get(activeWorktreeId)
-    if (!owners) {
-      owners = new Set()
-      targetOwnersByWorktreeId.set(activeWorktreeId, owners)
-    }
-    // Why: sidebar watcher must follow the selected worktree's host owner, not the host currently focused in the UI.
-    owners.add(getRuntimeEnvironmentIdForWorktree(state, activeWorktreeId))
+    addWatchConsumer(
+      consumersByWorktreeId,
+      activeWorktreeId,
+      getSidebarWatchConsumer(state, activeWorktreeId)
+    )
   }
 
-  const nextTargets: EditorExternalWatchTarget[] = []
-  const parts: string[] = []
-  const sortedWorktreeIds = Array.from(targetOwnersByWorktreeId.keys()).sort()
-  for (const id of sortedWorktreeIds) {
-    const owners = Array.from(targetOwnersByWorktreeId.get(id) ?? []).sort((left, right) =>
-      (left ?? '').localeCompare(right ?? '')
-    )
-    for (const owner of owners) {
-      const rows = resolveEditorExternalWatchTargetRows(state, id, owner)
+  const targetsByKey = new Map<string, EditorExternalWatchTarget>()
+  for (const [id, consumers] of consumersByWorktreeId) {
+    for (const { owner, hostId } of consumers.values()) {
+      const rows = resolveEditorExternalWatchTargetRows(state, id, hostId)
       if (!rows || (rows.connectionId === undefined && rows.folderWorkspace)) {
         continue
       }
@@ -211,12 +249,16 @@ export function selectEditorExternalWatchTargets(
           ? { allowLocalWindowsWslAliases: true as const }
           : {})
       }
-      nextTargets.push(target)
-      parts.push(getEditorExternalWatchTargetKey(target))
+      targetsByKey.set(getEditorExternalWatchTargetKey(target), target)
     }
   }
 
-  const targetsKey = parts.join('|')
+  // Why: consumers on one host (an unqualified legacy tab and its captured sibling) collapse to one watch.
+  const sortedEntries = Array.from(targetsByKey).sort(([left], [right]) =>
+    left.localeCompare(right)
+  )
+  const nextTargets = sortedEntries.map(([, target]) => target)
+  const targetsKey = sortedEntries.map(([key]) => key).join('|')
   cachedOpenFiles = state.openFiles
   cachedWorktreesByRepo = state.worktreesByRepo
   cachedRepos = state.repos
