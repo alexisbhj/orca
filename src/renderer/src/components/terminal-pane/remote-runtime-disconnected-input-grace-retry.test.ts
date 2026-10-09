@@ -196,4 +196,46 @@ describe('disconnected input grace across retries', () => {
       vi.useRealTimers()
     }
   })
+
+  it('bounds a web pane Reconnect whose attach stalls, so a late snapshot never releases held keys', async () => {
+    vi.useFakeTimers()
+    try {
+      const healthyRuntimeCall = runtimeCall.getMockImplementation()
+      let hostReachable = false
+      runtimeCall.mockImplementation(async (request: { method: string; params?: unknown }) => {
+        if (!hostReachable && request.method === 'session.tabs.activate') {
+          throw unreachable()
+        }
+        return healthyRuntimeCall?.(request)
+      })
+      mockSubscribeUntilReachable(() => hostReachable)
+      const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+      const transport = createRemoteRuntimePtyTransport('env-1', {
+        worktreeId: 'wt-1',
+        tabId: 'web-terminal-host-tab-1',
+        leafId: 'pane:1'
+      })
+      transport.attach({ existingPtyId: 'remote:env-1@@terminal-1', callbacks: {} })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.sendInput('git push -f\r', 'driving')).toBe(true)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS - 10_000)
+
+      // The host answers the Reconnect, but the stream's initial snapshot never arrives.
+      hostReachable = true
+      expect(transport.retryRecovery?.()).toBe(true)
+      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(1))
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      expect(transport.getRecoveryState?.().phase).toBe('disconnected')
+
+      await vi.advanceTimersByTimeAsync(60 * 60_000)
+      attachLatestStream()
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(sentText()).toBe('')
+      transport.destroy?.()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

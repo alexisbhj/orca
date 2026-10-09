@@ -320,11 +320,8 @@ export function createRemoteRuntimePtyTransport(
   })
   const disconnectedInputGrace = createRemoteRuntimeDisconnectedInputGrace()
   let previousRecoveryPhase: RemoteRuntimePtyRecoveryPhase = 'idle'
-  // Why: the web Reconnect path cancels to idle only to replay its attach; the outage goes on.
-  let replayingFromDisconnected = false
   const recovery = new RemoteRuntimePtyRecoveryState(() => {
-    const leftLatchForRetry =
-      previousRecoveryPhase === 'disconnected' && (recovery.isActive || replayingFromDisconnected)
+    const leftLatchForRetry = previousRecoveryPhase === 'disconnected' && recovery.isActive
     previousRecoveryPhase = recovery.currentPhase
     if (recovery.currentPhase === 'disposed') {
       clearPublishedHandleWait()
@@ -350,11 +347,9 @@ export function createRemoteRuntimePtyTransport(
     }
     if (recovery.currentPhase === 'idle') {
       autoRecoveryWindowSpent = false
-      if (!replayingFromDisconnected) {
-        // Why before the reset: input that outlived the grace must not release into the recovered pane.
-        discardExpiredDisconnectedInput()
-        disconnectedInputGrace.reset()
-      }
+      // Why before the reset: input that outlived the grace must not release into the recovered pane.
+      discardExpiredDisconnectedInput()
+      disconnectedInputGrace.reset()
     }
     if (
       recovery.currentPhase === 'disconnected' ||
@@ -3055,15 +3050,15 @@ export function createRemoteRuntimePtyTransport(
         isWebTerminalSurfaceTabId(tabId ?? '') &&
         recovery.currentPhase === 'disconnected'
       ) {
-        replayingFromDisconnected = true
-        try {
-          recovery.cancel()
-        } finally {
-          replayingFromDisconnected = false
-        }
+        // Why begin, not cancel: the replay needs a deadline, or a stalled attach could release held
+        // input at any later time; an idle cancel would also count as recovered and reset the grace.
+        // The replayed attach starts this window afresh, as the idle cancel it replaces did.
+        autoRecoveryWindowSpent = false
+        recovery.begin()
         if (replayLastTransportEntryPoint()) {
           return true
         }
+        recovery.markDisconnected()
       }
       if (
         !destroyed &&
