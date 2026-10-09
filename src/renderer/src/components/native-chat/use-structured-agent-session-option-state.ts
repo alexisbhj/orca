@@ -13,6 +13,7 @@ import {
 } from '../../../../shared/structured-agent-session-options'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { callStructuredAgentSession } from '@/runtime/structured-agent-session-client'
+import { structuredAgentSessionHostKey } from '@/runtime/structured-agent-session-host-capability'
 import {
   createCoalescedPollRunner,
   type CoalescedPollRunner
@@ -101,6 +102,13 @@ export function useStructuredAgentSessionOptionState(args: {
   }, [agent, fence, identity])
 
   const optionsReadRef = useRef<CoalescedPollRunner | null>(null)
+  // Keyed by value: a caller may build the target inline, and each read's permission begin
+  // re-renders, so an identity dependency would start a read on every render.
+  const targetKey = structuredAgentSessionHostKey(target)
+  const targetRef = useRef(target)
+  useEffect(() => {
+    targetRef.current = target
+  }, [target])
   // Refresh options each turn to confirm which model the provider actually selected, and once
   // the provider starts: only then has the host read what it will run.
   useEffect(() => {
@@ -113,7 +121,7 @@ export function useStructuredAgentSessionOptionState(args: {
       const read = ++optionReadGeneration.current
       const permissionRead = beginPermissionRead?.()
       const result = await callStructuredAgentSession<AgentSessionOptionsResult>(
-        target,
+        targetRef.current,
         'agentSession.options',
         { sessionId }
       )
@@ -150,7 +158,7 @@ export function useStructuredAgentSessionOptionState(args: {
     providerVisible,
     readsBeforeStart,
     sessionId,
-    target,
+    targetKey,
     args.permissionMode,
     turnId,
     updateOptionState,
