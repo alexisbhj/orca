@@ -42,8 +42,13 @@ beforeEach(async () => {
   if (!spec) {
     throw new Error('ACP agent definition absent')
   }
+  const definition = acpStructuredAgentDefinition(spec)
+  // The rig adapter has no compact; this recovery never compacts.
   rig.host.deps.agents = new StructuredAgentRegistry([
-    { definition: acpStructuredAgentDefinition(spec), adapter: rig.host.deps.adapter }
+    {
+      definition: { ...definition, capabilities: { ...definition.capabilities, compact: false } },
+      adapter: rig.host.deps.adapter
+    }
   ])
   rig.adapter.acquire.mockImplementation(async ({ fence, spawnToken }) => ({
     acquisitionGeneration: 'acp-generation',
