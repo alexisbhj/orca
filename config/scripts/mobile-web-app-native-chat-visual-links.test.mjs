@@ -10,8 +10,6 @@
 import { createServer } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, webkit } from 'playwright-core'
-import { buildNativeChatVisualDocument } from '../../src/shared/native-chat-visual-shell'
-import { buildMobileNativeChatVisualHostDocument } from '../../mobile/src/session/mobile-native-chat-visual-host-document'
 import { mobileWebAppDependenciesPresent } from './mobile-web-app-bundle-dependencies.mjs'
 import { readShellCsp } from './mobile-web-app-render-harness.mjs'
 
@@ -33,11 +31,18 @@ const BRIDGE =
 const browsers = {}
 let shellServer = null
 let shellOrigin = null
+let buildNativeChatVisualDocument = null
+let buildMobileNativeChatVisualHostDocument = null
 
 beforeAll(async () => {
   if (!bundles) {
     return
   }
+  // Imported behind the gate: transforming a mobile/ module reads mobile/tsconfig.json, which
+  // extends a package the root-only unit shards do not install (see the session-dictation check).
+  ;({ buildNativeChatVisualDocument } = await import('../../src/shared/native-chat-visual-shell'))
+  ;({ buildMobileNativeChatVisualHostDocument } =
+    await import('../../mobile/src/session/mobile-native-chat-visual-host-document'))
   const header = await readShellCsp()
   const sealed = buildNativeChatVisualDocument({ html: VISUAL, channel: 'sealed', theme: THEME })
   // The web shell's page, under the header the shell ships, holding the visual as the web sibling does.
