@@ -104,9 +104,9 @@ it('Stop, then a user send: the withdrawn draft and the paused cards behind it d
   expect(await rig.drafts()).toEqual([])
 })
 
-// Bookkeeping never fails a Stop: a withdrawal that throws is reported and counts as nothing
-// withdrawn, so no pause holds the card it did send back, and that card sends again.
-it('a Stop whose withdrawal throws after landing still answers; the draft it released sends again under a fresh id', async () => {
+// Bookkeeping never fails a Stop: a withdrawal that throws is reported. The Stop's event was
+// issued with it, so the card it did send back waits under the pause until Resume sends it again.
+it('a Stop whose withdrawal throws after landing still answers; Resume sends the draft it released again under a fresh id', async () => {
   const working = await rig.workingSend()
   const a = await queuedDraft('A')
   const { release } = holdDelivery()
@@ -134,6 +134,10 @@ it('a Stop whose withdrawal throws after landing still answers; the draft it rel
   }
   expect((await rig.submission(firstA))?.dispatchState).toBe('rejected')
   const before = new Set([working, firstA])
+  expect(await rig.drafts()).toEqual([{ messageId: a, state: 'waiting' }])
+  expect(await rig.queuePause()).toMatchObject({ reason: 'stopped' })
+  expect((await submissionIds()).filter((id) => !before.has(id))).toEqual([])
+  expect(await rig.resume()).toMatchObject({ ok: true })
   await eventually(async () => {
     expect((await submissionIds()).filter((id) => !before.has(id))).toHaveLength(1)
     expect(await rig.drafts()).toEqual([])

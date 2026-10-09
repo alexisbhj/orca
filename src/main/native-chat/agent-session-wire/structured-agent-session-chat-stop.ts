@@ -121,11 +121,11 @@ export function mutateWithChatStop<TValue>(
         const inFlight = turnId !== undefined || isMainAgentWorking(ctx)
         const record = context.deps.store.getRecord(ctx.sessionId)
         if (!child || !inFlight) {
-          // Nothing to interrupt, so the answer may wait for the withdrawal.
+          // Nothing to interrupt, so the answer may wait for the withdrawal. The event is issued in
+          // the hold's tick, so no frame publishes a kept card without its pause.
+          const effect = hadQueued ? tookEffect() : Promise.resolve()
           const withdrewAny = await withdrew
-          if (withdrewAny) {
-            await tookEffect()
-          }
+          await effect
           return { ok: true, value: { ...named, cancelled: withdrewAny } }
         }
         const reach = hadQueued ? 'unrecorded' : stopReachesUnrecordedWork(ctx, turnId)
