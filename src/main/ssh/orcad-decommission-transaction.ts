@@ -4,6 +4,7 @@
  *
  * Phases: `prepared` (nothing sent), `stop-dispatched` (the request may have reached the
  * host), `process-exited` (exit proven by a completed-stop receipt). Only the last may commit.
+ * On the host the later two are filed under `dispatched`; see `orcadDecommissionJournal`.
  */
 import {
   serializeOrcadActivationRecord,
@@ -25,6 +26,18 @@ export type OrcadDecommissionTransaction = {
   recordBefore: OrcadActivationRecord
   recordAfter: OrcadActivationRecord
   request: OrcadManagedStopRequest | null
+}
+
+/** A dispatched stop as journaled: the real phase, under a field released desktops drop. */
+export type OrcadDecommissionDispatch = {
+  phase: 'stop-dispatched' | 'process-exited'
+  request: OrcadManagedStopRequest
+}
+
+export type OrcadDecommissionJournal = Omit<OrcadDecommissionTransaction, 'phase' | 'request'> & {
+  phase: 'prepared'
+  request: null
+  dispatched?: OrcadDecommissionDispatch
 }
 
 export type OrcadDecommissionRecoveryPlan =
@@ -68,6 +81,22 @@ export function withOrcadDecommissionProcessExited(
   now: Date
 ): OrcadDecommissionTransaction {
   return { ...transaction, phase: 'process-exited', updatedAt: now.toISOString() }
+}
+
+/**
+ * The entry as written to the host. Why a dispatched stop still reads `prepared` at the top level:
+ * a released desktop recovering `stop-dispatched` or `process-exited` commits its core recordAfter,
+ * which drops the stopped build's activeAppVersion, and its next connect then deploys its own older
+ * build over state the stopped one may have migrated. Reading `prepared`, it relaunches the recorded
+ * build instead. Released readers drop the unknown `dispatched` field.
+ */
+export function orcadDecommissionJournal(
+  transaction: OrcadDecommissionTransaction
+): OrcadDecommissionJournal {
+  const { phase, request, ...rest } = transaction
+  return phase === 'prepared' || !request
+    ? { ...rest, phase: 'prepared', request: null }
+    : { ...rest, phase: 'prepared', request: null, dispatched: { phase, request } }
 }
 
 /** A reason when the parsed journal is not a coherent decommission; otherwise `null`. */
