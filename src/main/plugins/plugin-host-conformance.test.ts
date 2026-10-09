@@ -27,6 +27,7 @@ type HostCallAdapter = (request: unknown, viaPanel: boolean) => Promise<PluginPa
 
 function createServices(): PluginHostServices {
   return {
+    invokeOwnCommand: async (_key, _commandId, args) => args ?? null,
     resolveActiveWorktreeContext: vi.fn().mockResolvedValue({
       worktreeId: WORKTREE_ID,
       branch: 'main',
@@ -105,6 +106,7 @@ function createAdapters(
 }
 
 const successParams: Record<string, unknown> = {
+  invokeOwnCommand: { commandId: 'echo', args: { value: 42 } },
   'workspace.readContext': {},
   'terminal.sendText': { terminalId: TERMINAL_ID, text: 'echo hi', enter: true },
   'notifications.show': { title: 'Hello' },
@@ -121,8 +123,8 @@ const successParams: Record<string, unknown> = {
 }
 
 describe('plugin host main/relay conformance', () => {
-  it('runs a granted success through both transports for all 13 v0 methods', async () => {
-    expect(PLUGIN_HOST_API_V0).toHaveLength(13)
+  it('runs a granted success through both transports for all public methods', async () => {
+    expect(PLUGIN_HOST_API_V0).toHaveLength(14)
     expect(Object.keys(successParams).sort()).toEqual(
       PLUGIN_HOST_API_V0.map((entry) => entry.name).sort()
     )

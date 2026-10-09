@@ -23,7 +23,8 @@ type PluginPanelControllerOptions = {
   executeHostCall: (
     pluginKey: string,
     method: string,
-    params: unknown
+    params: unknown,
+    assertSessionCurrent: () => void
   ) => Promise<PluginPanelActionOutcome>
   log: (pluginKey: string) => (line: string) => void
   panelAdmission?: PluginPanelCallAdmission
@@ -91,7 +92,23 @@ export class PluginPanelController {
     ) {
       return { ok: false, code: 'unavailable', error: 'panel session is no longer available' }
     }
-    return this.options.executeHostCall(binding.pluginKey, parsed.data.action, parsed.data.params)
+    const assertSessionCurrent = (): void => {
+      const current = this.options.resolveApprovedPlugin(binding.pluginKey)
+      if (
+        !this.sessions.resolve(ownerKey, sessionToken) ||
+        !current ||
+        current.rootDir !== binding.rootDir ||
+        JSON.stringify(current.manifest) !== binding.manifestRevision
+      ) {
+        throw new Error('panel session is no longer available')
+      }
+    }
+    return this.options.executeHostCall(
+      binding.pluginKey,
+      parsed.data.action,
+      parsed.data.params,
+      assertSessionCurrent
+    )
   }
 
   revokeOwner(ownerKey: string): void {

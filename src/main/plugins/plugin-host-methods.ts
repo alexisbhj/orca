@@ -112,7 +112,7 @@ export async function executePluginHostCall(
     return {
       ok: false,
       code: 'action_failed',
-      error: error instanceof Error ? error.message : String(error)
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 1024)
     }
   }
 }

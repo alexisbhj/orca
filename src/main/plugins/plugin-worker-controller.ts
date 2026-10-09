@@ -16,6 +16,7 @@ import {
 import { buildPluginWorkerSpawnSpec, pluginWorkerSpawnSpecsEqual } from './plugin-worker-spawn-spec'
 import type { PluginWorkerHandle } from './plugin-host-process'
 import type { PluginRunState } from './plugin-supervisor'
+import { assertPluginWorkerCommand } from './plugin-command-invocation'
 
 export type PluginWorkerControllerOptions = {
   entryPath: string
@@ -64,6 +65,23 @@ export class PluginWorkerController {
 
   activationError(pluginKey: string): string | null {
     return this.activationErrors.get(pluginKey) ?? null
+  }
+
+  async invoke(
+    plugin: ValidDiscoveredPlugin,
+    commandId: string,
+    args?: unknown,
+    assertSessionCurrent?: () => void
+  ): Promise<unknown> {
+    assertSessionCurrent?.()
+    assertPluginWorkerCommand(plugin, commandId)
+    const handle = await this.ensure(plugin)
+    assertSessionCurrent?.()
+    this.assertCurrentApproved(plugin)
+    if (!handle.commands.includes(commandId)) {
+      throw new Error(`plugin ${plugin.pluginKey} registered no handler for ${commandId}`)
+    }
+    return handle.invokeCommand(commandId, args)
   }
 
   async ensure(plugin: ValidDiscoveredPlugin): Promise<PluginWorkerHandle> {

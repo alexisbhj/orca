@@ -14,6 +14,7 @@
     "events": [{ "on": "worktree.created" }, { "on": "agent.status.changed" }]
   },
   "capabilities": [
+    { "kind": "commands:invokeOwn" },
     { "kind": "workspace:read" },
     { "kind": "terminal:send" },
     { "kind": "notifications:show" },

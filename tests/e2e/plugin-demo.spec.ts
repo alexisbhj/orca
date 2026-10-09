@@ -144,6 +144,14 @@ test('runs hello-orca panel, command, and event behind visible consent', async (
     }, pluginRoot)
 
     await openDemoPanel(orcaPage)
+    const panel = orcaPage.frameLocator('iframe[title="Hello Orca"]')
+    await panel.getByRole('button', { name: 'Invoke own worker command' }).click()
+    await expect(panel.locator('#status')).toContainText('"source":"panel"')
+    await expect(panel.locator('#status')).toContainText('"pong":true')
+    await expect(panel.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute(
+      'content',
+      /connect-src 'none'/
+    )
 
     const panelPath = join(pluginRoot, 'panel.html')
     const panelHtml = await readFile(panelPath, 'utf8')
