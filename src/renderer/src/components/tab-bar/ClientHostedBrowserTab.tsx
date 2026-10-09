@@ -47,6 +47,7 @@ export default function ClientHostedBrowserTab({
     <div {...slotProps}>
       <TabHoverCard
         title={label}
+        programName={translate('tabHoverCard.browser', 'Browser')}
         icon={<Laptop className="size-4" />}
         description={hostDescription}
       >

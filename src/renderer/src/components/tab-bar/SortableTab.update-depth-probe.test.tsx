@@ -109,7 +109,10 @@ vi.mock('./TerminalTabLeadingIcon', () => ({
 }))
 
 vi.mock('./shell-icons', () => ({ ShellIcon: () => <span /> }))
-vi.mock('@/lib/agent-catalog', () => ({ AgentIcon: () => <span /> }))
+vi.mock('@/lib/agent-catalog', () => ({
+  AgentIcon: () => <span />,
+  getAgentLabel: (agent: string) => agent
+}))
 vi.mock('../sidebar/WorktreeCardHelpers', () => ({ FilledBellIcon: () => <span /> }))
 
 function makeTab(overrides: Partial<TerminalTab> = {}): TerminalTab {

@@ -10,11 +10,13 @@ export function TabHoverCard({
   children,
   title,
   icon,
+  programName,
   description
 }: {
   children: ReactNode
   title: string
   icon: ReactNode
+  programName: string
   description?: string
 }): React.JSX.Element {
   const placement = useContext(TabCardPlacementContext)
@@ -98,13 +100,21 @@ export function TabHoverCard({
         onPlaced={handlePlaced}
         data-tab-hover-card="true"
       >
-        <div className="flex items-start gap-2">
-          <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
-            {icon}
-          </span>
-          <div className="min-w-0 flex-1 space-y-1 text-left">
-            <div className="break-words font-medium">{title}</div>
+        <div className="space-y-2 text-left">
+          <div className="space-y-1">
+            <div className="break-words font-medium" data-tab-hover-card-title>
+              {title}
+            </div>
             {description && <div className="break-all text-muted-foreground">{description}</div>}
+          </div>
+          <div
+            className="flex items-center gap-2 text-muted-foreground"
+            data-tab-hover-card-program
+          >
+            <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+              {icon}
+            </span>
+            <span className="min-w-0 break-all">{programName}</span>
           </div>
         </div>
       </TooltipContent>

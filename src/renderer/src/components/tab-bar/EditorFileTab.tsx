@@ -160,11 +160,8 @@ export default function EditorFileTab({
     // so one user action cannot start a second rename against the old path.
     renameCancelledRef.current = true
     setIsRenaming(false)
-    if (!newName) {
-      return
-    }
     const oldName = basename(file.filePath)
-    if (newName === oldName) {
+    if (!newName || newName === oldName) {
       return
     }
     const worktreePath = getUntitledFileRoot(file, worktree?.path ?? null)
@@ -409,6 +406,7 @@ export default function EditorFileTab({
         ) : (
           <TabHoverCard
             title={tabLabel}
+            programName={translate('tabHoverCard.editor', 'Editor')}
             icon={createElement(HoverIcon, { className: 'size-4' })}
             description={file.relativePath}
           >

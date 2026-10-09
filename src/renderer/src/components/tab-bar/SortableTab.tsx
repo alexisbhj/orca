@@ -3,6 +3,8 @@ import { useSortable } from '@dnd-kit/sortable'
 import { X, Minimize2, Pin } from 'lucide-react'
 import { stripLeadingAgentTitleDecoration } from '../../../../shared/agent-title-decoration'
 import { useTabAgent } from '@/lib/use-tab-agent'
+import { getAgentLabel } from '@/lib/agent-catalog'
+import { basename } from '@/lib/path'
 import { isImeCompositionKeyDown } from '@/lib/ime-composition-keyboard-event'
 import { Input } from '@/components/ui/input'
 import { TabHoverCard } from './TabHoverCard'
@@ -364,6 +366,13 @@ export default function SortableTab({
         ) : (
           <TabHoverCard
             title={displayTitle}
+            programName={
+              tabAgent
+                ? getAgentLabel(tabAgent)
+                : shellForIcon
+                  ? basename(shellForIcon)
+                  : translate('tabHoverCard.terminal', 'Terminal')
+            }
             icon={
               <TerminalTabLeadingIcon
                 agent={tabAgent}

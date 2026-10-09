@@ -235,9 +235,9 @@ export default function BrowserTab({
           <TabHoverCard
             title={tabLabel}
             icon={<BrowserFavicon faviconUrl={tab.faviconUrl} className="size-4" />}
-            description={
+            programName={
               isBlankBrowserTab(tab)
-                ? undefined
+                ? translate('tabHoverCard.browser', 'Browser')
                 : formatBrowserTabUrlLabel(redactKagiSessionToken(tab.url))
             }
           >
