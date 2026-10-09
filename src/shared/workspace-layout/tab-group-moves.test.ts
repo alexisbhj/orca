@@ -4,7 +4,7 @@ import {
   buildHeadlessTabGroupSplit,
   collectTabGroupLayoutGroupIds,
   removeTabGroupLayoutLeaf
-} from './headless-tab-group-split-layout'
+} from './tab-group-moves'
 
 const group = (id: string, tabs: string[], activeTabId = tabs[0] ?? null) => ({
   id,

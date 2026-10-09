@@ -1,9 +1,23 @@
-import type { Tab } from '../../../../../shared/tab-types'
-import { dedupeTabOrder } from '../tab-group-state'
+import type { Tab } from '../tab-types'
+
+type PinnedTab = Pick<Tab, 'id' | 'isPinned'>
+
+export function dedupeTabOrder(tabIds: string[]): string[] {
+  const seen = new Set<string>()
+  const deduped: string[] = []
+  for (const tabId of tabIds) {
+    if (seen.has(tabId)) {
+      continue
+    }
+    seen.add(tabId)
+    deduped.push(tabId)
+  }
+  return deduped
+}
 
 export function partitionPinnedTabOrder(
   tabOrder: string[],
-  tabs: Tab[],
+  tabs: readonly PinnedTab[],
   movingTabId: string
 ): string[] {
   const tabById = new Map(tabs.map((tab) => [tab.id, tab]))
@@ -27,7 +41,7 @@ export function applyTabOrderSortValues(tabs: Tab[], tabOrder: string[]): Tab[] 
  */
 export function insertTabIdIntoOrder(
   tabOrder: readonly string[],
-  tabs: readonly Tab[],
+  tabs: readonly PinnedTab[],
   tabId: string,
   isPinned: boolean,
   anchorTabId?: string

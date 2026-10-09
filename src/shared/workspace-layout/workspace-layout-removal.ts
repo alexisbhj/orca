@@ -1,6 +1,6 @@
 import { getRepoIdFromWorktreeId } from '../worktree/id'
 import { removeGroupLayoutLeaf } from './tab-group-layout-tree'
-import { removeLayoutLeaf } from './terminal-pane-tree'
+import { layoutContainsLeafId, removeLayoutLeaf } from './terminal-pane-tree'
 import {
   paneKeyOf,
   type LayoutTerminalTab,
@@ -81,7 +81,7 @@ export function advanceTopologyRevision(
   }
 }
 
-function withWorkspace(
+export function withWorkspace(
   model: WorkspaceLayoutModel,
   workspaceKey: string,
   workspace: WorkspaceLayout
@@ -129,5 +129,48 @@ export function retireTerminalPane(
   return {
     ...withWorkspace(model, workspaceKey, nextWorkspace),
     records: advanceTopologyRevision(records, tab.terminal.worktreeId)
+  }
+}
+
+export type ExitedSurface = {
+  worktreeId: string
+  terminalTabId: string
+  leafId: string
+  ptyId: string
+  incarnationId?: string
+}
+
+/**
+ * Today's exit retirement: a pane now showing another terminal or incarnation is left alone; a
+ * pane no longer in its tab only loses its incarnation. `legacyRowPtyId` closes a tab saved before
+ * pane layouts existed when it names this terminal.
+ */
+export function retireExitedSurface(
+  model: WorkspaceLayoutModel,
+  surface: ExitedSurface,
+  legacyRowPtyId?: string | null
+): { model: WorkspaceLayoutModel; retired: boolean } {
+  const paneKey = paneKeyOf(surface.terminalTabId, surface.leafId)
+  const incarnation = model.records.incarnationsByPaneKey?.[paneKey]
+  if (surface.incarnationId && incarnation && incarnation !== surface.incarnationId) {
+    return { model, retired: false }
+  }
+  const location = findTerminalTab(model, surface.terminalTabId)
+  const panes = location?.tab.panes
+  const inTree = Boolean(panes && layoutContainsLeafId(panes.root, surface.leafId))
+  const boundPtyId = inTree ? panes?.ptyIdsByLeafId?.[surface.leafId] : undefined
+  if (boundPtyId && boundPtyId !== surface.ptyId) {
+    return { model, retired: false }
+  }
+  if (location && (inTree || (!panes && legacyRowPtyId === surface.ptyId))) {
+    return { model: retireTerminalPane(model, location, surface.leafId), retired: true }
+  }
+  const records = {
+    ...model.records,
+    incarnationsByPaneKey: withoutKey(model.records.incarnationsByPaneKey, paneKey)
+  }
+  return {
+    model: { ...model, records: advanceTopologyRevision(records, surface.worktreeId) },
+    retired: false
   }
 }

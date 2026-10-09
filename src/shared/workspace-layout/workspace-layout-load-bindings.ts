@@ -1,13 +1,13 @@
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
 import { isSameTerminal } from './terminal-owner-invariants'
-import { collectLayoutLeafIdsInOrder, layoutContainsLeafId } from './terminal-pane-tree'
+import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 import type { LayoutContentFacts } from './workspace-layout-beside'
 import type { LayoutLoadNormalization } from './workspace-layout-load-types'
 import { paneKeyOf, tabsInOrder, type WorkspaceLayoutModel } from './workspace-layout-model'
 import {
   advanceTopologyRevision,
   findTerminalTab,
-  retireTerminalPane
+  retireExitedSurface
 } from './workspace-layout-removal'
 
 /** One terminal bound in two panes: the first pane in tab order keeps it, the other is unbound. */
@@ -63,26 +63,16 @@ export function applyLegacySurfaceTombstones(
     normalizations.push({ rule: 'legacy_tombstone_applied', ids: [paneKey] })
     // Clearing a tombstone must not drop the authority it gave older builds' save merge.
     next = { ...next, records: advanceTopologyRevision(next.records, tombstone.worktreeId) }
-    const incarnation = next.records.incarnationsByPaneKey?.[paneKey]
-    if (tombstone.incarnationId && incarnation && incarnation !== tombstone.incarnationId) {
-      continue
-    }
-    const location = findTerminalTab(next, tombstone.parentTabId)
-    const panes = location?.tab.panes
-    const inTree = Boolean(panes && layoutContainsLeafId(panes.root, tombstone.leafId))
-    const boundPtyId = inTree ? panes?.ptyIdsByLeafId?.[tombstone.leafId] : undefined
-    if (boundPtyId && boundPtyId !== tombstone.ptyId) {
-      continue
-    }
     const row = facts.terminalRows[tombstone.parentTabId]
-    if (!location || !(inTree || (!panes && row?.ptyId === tombstone.ptyId))) {
-      next = {
-        ...next,
-        records: { ...next.records, incarnationsByPaneKey: withoutPaneKey(next, paneKey) }
-      }
+    const exited = retireExitedSurface(
+      next,
+      { ...tombstone, terminalTabId: tombstone.parentTabId },
+      row?.ptyId
+    )
+    next = exited.model
+    if (!exited.retired) {
       continue
     }
-    next = retireTerminalPane(next, location, tombstone.leafId)
     const remaining = findTerminalTab(next, tombstone.parentTabId)?.tab.panes
     if (row && remaining) {
       const activeLeafId = session.terminalLayoutsByTabId?.[tombstone.parentTabId]?.activeLeafId
@@ -93,17 +83,4 @@ export function applyLegacySurfaceTombstones(
     }
   }
   return next
-}
-
-function withoutPaneKey(
-  model: WorkspaceLayoutModel,
-  paneKey: string
-): Record<string, string> | undefined {
-  const incarnations = model.records.incarnationsByPaneKey
-  if (!incarnations || !Object.hasOwn(incarnations, paneKey)) {
-    return incarnations
-  }
-  const { [paneKey]: _retired, ...rest } = incarnations
-  void _retired
-  return rest
 }

@@ -9,7 +9,7 @@ import type {
 import {
   buildHeadlessTabGroupMove,
   buildHeadlessTabGroupSplit
-} from './headless-tab-group-split-layout'
+} from '../../shared/workspace-layout/tab-group-moves'
 import { randomUUID } from 'node:crypto'
 import type { TabGroupLayoutNode } from '../../shared/tab-types'
 

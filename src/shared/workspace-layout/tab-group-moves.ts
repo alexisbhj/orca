@@ -1,6 +1,6 @@
-import type { RuntimeMobileSessionTabGroup } from '../../shared/runtime-types'
-import type { TabGroupLayoutNode } from '../../shared/tab-types'
-import { buildSplitNode, replaceLeaf } from '../../shared/workspace-layout/tab-group-layout-tree'
+import type { RuntimeMobileSessionTabGroup } from '../runtime-types'
+import type { TabGroupLayoutNode } from '../tab-types'
+import { buildSplitNode, replaceLeaf } from './tab-group-layout-tree'
 
 /**
  * Headless ("Orca server") tab-GROUP split operations (distinct from terminal
