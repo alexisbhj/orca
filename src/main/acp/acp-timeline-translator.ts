@@ -32,11 +32,11 @@ const SUBSTANTIVE_UPDATES = [
 
 export type AcpTimelineTranslatorOptions = {
   sessionId: string
+  /** The agent's id, naming whose words a failed turn's Details hold. */
+  agent?: string
   dialect?: AcpDialect
   /** The agent's display name, for a failed turn the provider gave no words for. */
   agentName?: string
-  /** The agent's id, naming whose words a failed turn's Details hold. */
-  agent?: string
 }
 
 /** Consumes each frame once; the host retries the returned grammar events. Lives exactly as long
