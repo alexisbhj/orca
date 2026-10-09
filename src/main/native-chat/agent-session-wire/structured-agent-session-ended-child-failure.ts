@@ -1,3 +1,5 @@
+// Why a queued message the child never took is rejected, by how that child ended.
+
 import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
 import type { StructuredAgentSessionStartFailureCause } from './structured-agent-session-failure-text'
 import type {
@@ -19,6 +21,7 @@ const ENDED_CHILD_FAILURE = {
   'user-stop': () => null,
   // The user closing this chat closes what was queued before it; see `closeWhatTheUserClosed`.
   'user-close': () => null,
+  'context-clear': () => null,
   // The host stopping the child is Orca's cause, never the provider's: a start that never finished.
   'host-stop': () => ({ failure: agentSessionFailureFact('hostStopped') }),
   exit: providerEndFailure,

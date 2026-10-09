@@ -5,6 +5,7 @@ import type { ConnectionState } from '../transport/types'
 import type { StructuredAgentSessionHostSupport } from './mobile-structured-agent-session-host-support'
 import { useMobileNativeChatSession } from './use-mobile-native-chat-session'
 import { useMobileStructuredAgentSession } from './use-mobile-structured-agent-session'
+import type { MobileNativeChatSendErrorReporter } from './use-mobile-native-chat-send-error'
 
 /** Mounts both transcript sources and hands back the one this tab's lane owns.
  *  Both hooks always run (hook order is fixed); the inactive lane is starved of
@@ -18,7 +19,6 @@ export function useMobileNativeChatSessionLane({
   sessionId,
   permissionSeed,
   sourceIdentity,
-  callerIdentity,
   hostSupport,
   appendComposerTextRef,
   enabled,
@@ -36,14 +36,13 @@ export function useMobileNativeChatSessionLane({
   sessionId: string | null
   permissionSeed?: AgentSessionPermissionSeed
   sourceIdentity: Parameters<typeof useMobileNativeChatSession>[0]['sourceIdentity']
-  callerIdentity: string
   hostSupport: StructuredAgentSessionHostSupport | null
   /** The active pane's live composer; a queued card's Edit copies through it.
    *  A ref because the drafts (and their append) mount after this lane. */
   appendComposerTextRef: { readonly current: (text: string) => boolean }
   enabled: boolean
   connState: ConnectionState
-  onSendError: (message: string) => void
+  onSendError: MobileNativeChatSendErrorReporter
   /** Called on any accepted queued-card action; retires the route's failure banner. */
   onActionResolved?: () => void
 }): {
@@ -66,7 +65,6 @@ export function useMobileNativeChatSessionLane({
     sessionId: structured ? sessionId : null,
     permissionSeed: structured ? permissionSeed : undefined,
     sourceIdentity,
-    callerIdentity,
     hostSupport,
     appendComposerText,
     enabled,

@@ -26,7 +26,6 @@ import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { readStructuredAgentSessionPermissionFact } from '../native-chat/agent-session-wire/structured-agent-session-permission-fact'
 import { seedStructuredConversationTabPermissions } from './structured-conversation-tab-permission-seed'
-import { replaceConversationInSnapshot } from './structured-conversation-tab-replacement'
 import { structuredWorkerHandleAgentStatus } from './orchestration/structured-worker-group-addressing'
 import {
   retitleStructuredConversationTab,
@@ -83,9 +82,6 @@ export class OrcaRuntimeWithPruneMobileSessionTabGroupLayout extends OrcaRuntime
   protected toMobileSessionTabsResult(
     snapshot: RuntimeMobileSessionTabsSnapshot
   ): RuntimeMobileSessionTabsResult {
-    for (const replacement of getStructuredAgentSessionHost()?.conversationReplacements?.() ?? []) {
-      snapshot = replaceConversationInSnapshot(snapshot, replacement)
-    }
     const host = getStructuredAgentSessionHost()
     snapshot = titleStructuredConversationTabs(snapshot, (sessionId) => {
       const record = host?.deps?.store?.getRecord(sessionId)

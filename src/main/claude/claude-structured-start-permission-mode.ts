@@ -8,11 +8,11 @@ import {
 } from './claude-structured-permission-application'
 import { claudeSdkPermissionMode } from './claude-structured-permission-mode'
 import type { ClaudeSession } from './claude-structured-session-state'
-import type { ClaudeStartupFacts } from './claude-structured-session-startup'
+import type { ClaudeInitializeFacts } from './claude-structured-session-startup'
 
 export function applyClaudeStartPermissionMode(
   session: ClaudeSession,
-  facts: ClaudeStartupFacts
+  facts: ClaudeInitializeFacts
 ): Promise<void> {
   return serializeClaudePermissionApplication(session, async (apply) => {
     if (!claudePermissionNeedsPreparation(session)) {

@@ -9,6 +9,7 @@ import { ChatSettingsSection } from './ChatSettingsSection'
 import { ActiveSettingsSectionProvider } from './SettingsSection'
 import { getChatAppearanceSearchEntries } from './chat-appearance-search'
 import { getChatNamingSearchEntry } from './chat-naming-search'
+import { getChatInlineVisualsSearchEntry } from './chat-inline-visuals-search'
 import { buildSettingsNavigationMetadata } from '@/hooks/useSettingsNavigationMetadata'
 import { buildCmdJSettingsResults } from '../cmd-j/palette-results'
 import { isSettingsNavigationTarget } from '@/lib/settings-navigation-types'
@@ -35,7 +36,7 @@ function renderChat(
   showDesktopOnlySettings = true,
   hasUnsavedChatPromptChanges = false
 ) {
-  const settings = { ...getDefaultSettings('/tmp'), experimentalStructuredNativeChat: enabled }
+  const settings = { ...getDefaultSettings('/tmp'), experimentalNativeChat: enabled }
   state.settings = settings
   const updateSettings = vi.fn(async (updates: Partial<GlobalSettings>) => {
     if (state.settings) {
@@ -49,7 +50,12 @@ function renderChat(
           settings={settings}
           updateSettings={updateSettings}
           writeSourceControlAiSettings={async () => {}}
-          searchEntries={[...getChatAppearanceSearchEntries(), getChatNamingSearchEntry()]}
+          searchEntries={[
+            ...getChatAppearanceSearchEntries(),
+            ...(showDesktopOnlySettings
+              ? [getChatNamingSearchEntry(), getChatInlineVisualsSearchEntry()]
+              : [])
+          ]}
           showDesktopOnlySettings={showDesktopOnlySettings}
           isMounted
           hasUnsavedChatPromptChanges={hasUnsavedChatPromptChanges}
@@ -93,16 +99,18 @@ describe('Chat settings page', () => {
     expect(screen.getByRole('spinbutton', { name: 'Text size' })).toBeTruthy()
     expect(container.querySelector('#chat-names')).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Name chats automatically' })).toBeNull()
+    expect(screen.queryByRole('switch', { name: 'Toggle inline visuals' })).toBeNull()
     const sections = buildSettingsNavigationMetadata({
       isMac: false,
       isWindows: false,
       isWebClient: true,
-      experimentalStructuredNativeChat: true,
+      nativeChatEnabled: true,
       repos: []
     })
     const results = buildCmdJSettingsResults(sections).filter((entry) => entry.sectionId === 'chat')
     expect(results.some((entry) => entry.targetSectionId === 'chat-text-size')).toBe(true)
     expect(results.some((entry) => entry.targetSectionId === 'chat-names')).toBe(false)
+    expect(results.some((entry) => entry.targetSectionId === 'chat-inline-visuals')).toBe(false)
   })
 
   it.each([false, undefined])('is absent with structured chat set to %s', (enabled) => {
@@ -130,14 +138,19 @@ describe('Chat settings page', () => {
     )
   })
 
-  it('renders Appearance and Chat names as peer sections with separate cards', () => {
+  it('renders Appearance, Inline visuals and Chat names as peers with separate cards', () => {
     const { container } = renderChat(true)
     const appearance = container.querySelector('#chat-appearance')
     const names = container.querySelector('#chat-names')
+    const visuals = container.querySelector('#chat-inline-visuals')
     expect(screen.getByRole('heading', { name: 'Chat names', level: 3 })).toBeTruthy()
     expect(appearance).toBeTruthy()
     expect(names).toBeTruthy()
     expect(appearance?.parentElement).toBe(names?.parentElement)
+    expect(visuals?.parentElement).toBe(appearance?.parentElement)
+    expect(visuals?.querySelector('[data-slot="card"]')).toBeTruthy()
+    expect(visuals?.contains(appearance)).toBe(false)
+    expect(visuals?.contains(names)).toBe(false)
     expect(appearance?.closest('[data-slot="card"]')).toBeNull()
     expect(names?.closest('[data-slot="card"]')).toBeNull()
     const appearanceCard = screen
@@ -160,7 +173,7 @@ describe('Chat settings page', () => {
       <TooltipProvider>
         <ActiveSettingsSectionProvider value="chat">
           <ChatSettingsSection
-            settings={{ ...getDefaultSettings('/tmp'), experimentalStructuredNativeChat: false }}
+            settings={{ ...getDefaultSettings('/tmp'), experimentalNativeChat: false }}
             updateSettings={vi.fn()}
             writeSourceControlAiSettings={async () => {}}
             searchEntries={[]}
@@ -186,7 +199,7 @@ describe('Chat settings page', () => {
       isMac: true,
       isWindows: false,
       isWebClient: false,
-      experimentalStructuredNativeChat: true,
+      nativeChatEnabled: true,
       repos: []
     })
     const results = buildCmdJSettingsResults(sections)
@@ -211,7 +224,7 @@ describe('Chat settings page', () => {
         isMac: false,
         isWindows: true,
         isWebClient: false,
-        experimentalStructuredNativeChat: true,
+        nativeChatEnabled: true,
         repos: []
       })
       const result = buildCmdJSettingsResults(sections).find(
@@ -251,7 +264,7 @@ describe('Chat settings page', () => {
       isMac: true,
       isWindows: false,
       isWebClient: false,
-      experimentalStructuredNativeChat: true,
+      nativeChatEnabled: true,
       repos: []
     })
     const result = buildCmdJSettingsResults(sections).find(
@@ -284,7 +297,7 @@ describe('Chat settings page', () => {
       isMac: true,
       isWindows: false,
       isWebClient: false,
-      experimentalStructuredNativeChat: true,
+      nativeChatEnabled: true,
       repos: []
     })
     const result = buildCmdJSettingsResults(sections).find(

@@ -25,6 +25,7 @@ import type {
 import { structuredAgentSessionConversationFence } from './structured-agent-session-provider-child'
 import { structuredAgentSessionFailureWordsContext } from './structured-agent-session-send-preparation'
 import { recoverStructuredRewind } from './structured-rewind-recovery'
+import { retireSignedOutStructuredAgentSessionChild } from './structured-agent-session-signed-out-child'
 
 export type StructuredAgentSessionConversationDelivery = {
   loop: StructuredAgentSessionDeliveryLoop
@@ -62,6 +63,8 @@ export function createStructuredAgentSessionConversationDelivery(input: {
   ) => Promise<StructuredAgentSessionResumeOutcome>
   /** Puts the session's child to rest as the idle sweep does; inside the caller's serialize. */
   restProviderChild: (sessionId: string) => Promise<void>
+  /** Stops a child that reported it is not signed in, so the start after it reads a new login. */
+  stopSignedOutAgent: (sessionId: string) => Promise<void>
   clientDelivery: Pick<
     StructuredAgentSessionClientDelivery,
     'publishRestored' | 'readChildWork' | 'readStopping' | 'publishStatus'
@@ -76,13 +79,30 @@ export function createStructuredAgentSessionConversationDelivery(input: {
     trackStart: input.trackStart,
     prepareDispatch: (sessionId) =>
       prepareStructuredAgentSessionDispatch(deps.adapter, input.acquireAborts, sessionId),
-    // A child launched for options the chat has since outgrown is replaced before it takes a send.
     ensureProviderChild: async (sessionId, startedFor) => {
+      // A send waiting on a person's Stop is not handed over yet; the step after the Stop decides.
+      const session = input.clientDelivery.readStopping(sessionId)
+        ? undefined
+        : sessions.get(sessionId)
+      const work = {
+        childWork: () => input.clientDelivery.readChildWork(sessionId),
+        hasOpenDispatch: () => {
+          const record = deps.store.getRecord(sessionId)
+          return record !== null && deps.hasOpenDispatch?.(record) === true
+        },
+        providerHoldsDispatch: () => deps.adapter.holdsDispatch?.(sessionId) === true
+      }
+      await retireSignedOutStructuredAgentSessionChild(sessionId, session, {
+        work,
+        stopAgent: input.stopSignedOutAgent,
+        logger: deps.logger
+      })
+      // A child launched for options the chat has since outgrown is replaced before it takes a send.
       await relaunchOutgrownStructuredAgentSessionChild(
         {
-          session: sessions.get(sessionId),
+          session,
           adapter: deps.adapter,
-          childWork: input.clientDelivery.readChildWork(sessionId),
+          work,
           restChild: () => input.restProviderChild(sessionId),
           logger: deps.logger
         },

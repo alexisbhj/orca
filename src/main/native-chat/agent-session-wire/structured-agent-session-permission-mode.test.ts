@@ -168,8 +168,16 @@ function liveSession(
     child: { generation: 'g1', fence: 1, phase: overrides.phase ?? 'ready' },
     journal: {
       activeTurnId: () => overrides.activeTurnId ?? null,
-      snapshot: () => ({ items })
+      visitItems: (visit) => items.forEach((item) => visit(item.itemId, item.sequence, item.body))
     }
+  }
+}
+
+function idleWork(holdsDispatch?: () => boolean) {
+  return {
+    childWork: () => undefined,
+    hasOpenDispatch: () => false,
+    providerHoldsDispatch: () => holdsDispatch?.() === true
   }
 }
 
@@ -179,7 +187,7 @@ function relaunch(
 ) {
   const restChild = vi.fn(async () => {})
   const run = relaunchOutgrownStructuredAgentSessionChild(
-    { session, adapter, childWork: undefined, restChild, logger: LOGGER },
+    { session, adapter, work: idleWork(adapter.holdsDispatch), restChild, logger: LOGGER },
     SESSION
   )
   return { restChild, run }
@@ -219,7 +227,7 @@ describe('relaunching a child the chat outgrew before a send', () => {
         {
           session: liveSession(),
           adapter: { childRelaunchRequired: () => true },
-          childWork: undefined,
+          work: idleWork(),
           restChild,
           logger: LOGGER
         },

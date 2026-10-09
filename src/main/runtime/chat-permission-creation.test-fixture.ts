@@ -64,7 +64,7 @@ export async function openChatPermissionCreationHost(
   const root = await mkdtemp(join(tmpdir(), 'orca-chat-default-creation-'))
   const state = getDefaultPersistedState(root)
   state.settings.nativeChatPermissionMode = initial
-  state.settings.experimentalStructuredNativeChat = true
+  state.settings.experimentalNativeChat = true
   state.settings.agentStatusHooksEnabled = false
   state.settings.agentWorkspaceTrustEnabled = false
   state.settings.agentDefaultEnv = {

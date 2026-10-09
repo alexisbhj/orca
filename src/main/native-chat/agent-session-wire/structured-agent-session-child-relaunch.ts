@@ -1,27 +1,26 @@
-import type { AgentJournalRenderItem } from '../../../shared/agent-session-journal-types'
 // An idle child that cannot run the chat's new mode resumes with the required launch flag.
-import { agentChildWorkLiveness } from '../../../shared/agent-status-child-work-liveness'
-import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionHostSession } from './structured-agent-session-host-types'
-import { hasPendingStructuredAgentSessionPrompt } from './structured-agent-session-idle-sweep'
+import {
+  structuredAgentSessionChildHasOpenWork,
+  type StructuredAgentSessionChildWorkReads
+} from './structured-agent-session-idle-sweep'
 import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
 
 export type StructuredAgentChildRelaunchSession = Pick<
   StructuredAgentSessionHostSession,
   'child'
 > & {
-  journal: {
-    activeTurnId: () => string | null
-    snapshot: () => { items: readonly AgentJournalRenderItem[] }
-  }
+  journal: Pick<AgentSessionJournal, 'activeTurnId' | 'visitItems'>
 }
 
 export async function relaunchOutgrownStructuredAgentSessionChild(
   input: {
     session: StructuredAgentChildRelaunchSession | undefined
-    adapter: Pick<StructuredAgentSessionAdapter, 'childRelaunchRequired' | 'holdsDispatch'>
-    childWork: readonly AgentChildWorkView[] | undefined
+    adapter: Pick<StructuredAgentSessionAdapter, 'childRelaunchRequired'>
+    /** What the child still serves besides its journal; owed work keeps it, as the sweep does. */
+    work: StructuredAgentSessionChildWorkReads
     /** Puts the child to rest; inside the caller's serialize. */
     restChild: () => Promise<void>
     logger: StructuredAgentSessionLogger
@@ -36,12 +35,7 @@ export async function relaunchOutgrownStructuredAgentSessionChild(
   if (!adapter.childRelaunchRequired?.(sessionId)) {
     return
   }
-  if (
-    session.journal.activeTurnId() !== null ||
-    adapter.holdsDispatch?.(sessionId) === true ||
-    agentChildWorkLiveness(input.childWork) !== null ||
-    hasPendingStructuredAgentSessionPrompt(session.journal.snapshot().items)
-  ) {
+  if (structuredAgentSessionChildHasOpenWork(session.journal, input.work)) {
     return
   }
   try {

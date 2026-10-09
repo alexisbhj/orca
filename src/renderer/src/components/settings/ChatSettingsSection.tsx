@@ -2,6 +2,7 @@ import { ChatPermissionSetting } from './ChatPermissionSetting'
 import { translate } from '@/i18n/i18n'
 import { AppearanceChatSection } from './AppearanceChatSection'
 import { ChatNamingSetting } from './ChatNamingSetting'
+import { NativeChatInlineVisualsSetting } from './NativeChatInlineVisualsSetting'
 import { SettingsSection } from './SettingsSection'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 import { matchesSettingsSearch } from './settings-search'
@@ -34,7 +35,7 @@ export function ChatSettingsSection({
   isMounted: boolean
 }): React.JSX.Element | null {
   const query = useAppStore((state) => state.settingsSearchQuery)
-  if (settings.experimentalStructuredNativeChat !== true) {
+  if (settings.experimentalNativeChat !== true) {
     return null
   }
   const title = translate('settings.appearance.chat.title', 'Chat')
@@ -43,10 +44,7 @@ export function ChatSettingsSection({
     <SettingsSection
       id="chat"
       title={title}
-      description={translate(
-        'settings.chat.description',
-        'Choose how chats look and get their names.'
-      )}
+      description={translate('settings.chat.description', 'Choose how chats look and behave.')}
       searchEntries={searchEntries}
       forceVisible={hasUnsavedChatPromptChanges}
       bodyClassName="rounded-none border-0 bg-transparent p-0 shadow-none"
@@ -74,6 +72,13 @@ export function ChatSettingsSection({
                 </CardContent>
               </Card>
             </section>
+          ) : null}
+          {showDesktopOnlySettings ? (
+            <NativeChatInlineVisualsSetting
+              settings={settings}
+              updateSettings={updateSettings}
+              forceVisible={matchesSettingsSearch(query, [{ title }])}
+            />
           ) : null}
           {showDesktopOnlySettings ? (
             <ChatNamingSetting

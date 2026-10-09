@@ -26,7 +26,8 @@ it.each(['claude', 'codex'])(
           origin: 'live-session',
           fetchedAt: 1,
           models: [{ id: 'm', label: 'M', isDefault: true, efforts: [], supportsFastMode: true }]
-        })
+        }),
+        providerStarted: () => {}
       }
     }
     const read = await readStructuredAgentSessionOptionsAtRest(deps, saved.sessionId)

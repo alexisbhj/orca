@@ -5,8 +5,7 @@ import { sessionFor } from './claude-structured-dispatch-test-support'
 import { setClaudeStructuredOption } from './claude-structured-options'
 import { prepareClaudePermissionMode } from './claude-structured-permission-application'
 import { applyClaudeStartPermissionMode } from './claude-structured-start-permission-mode'
-import { prepareClaudeStructuredSessionAcquisitionOptions } from './claude-structured-session-acquisition-options'
-import { createClaudeInitProof } from './claude-structured-session-startup'
+import { createClaudeInitProof } from './claude-structured-init-proof'
 
 afterEach(() => vi.useRealTimers())
 
@@ -29,11 +28,6 @@ it('startup and preparation derive Ask after a pending explicit write owns the p
     init: null,
     initProof: createClaudeInitProof(),
     initialization: { models: [] },
-    settings: null,
-    prepared: prepareClaudeStructuredSessionAcquisitionOptions({
-      settings: null,
-      initialization: {}
-    }),
     resumesTranscript: false,
     requestTimeoutMs: 50
   })

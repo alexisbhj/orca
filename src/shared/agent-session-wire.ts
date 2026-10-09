@@ -1,3 +1,4 @@
+import type { AgentSessionUnavailable } from './agent-session-availability'
 import type {
   AgentSessionBackgroundTask,
   AgentSessionBackgroundTaskState
@@ -16,11 +17,7 @@ export * from './agent-session-queued-message-wire'
 export * from './agent-session-turn-completion-wire'
 import type { AgentSessionConversationCommand } from './agent-session-conversation-command'
 import type { AgentSessionContextUsage } from './agent-session-context-usage'
-import type {
-  AgentSessionPermissionFrameFields,
-  AgentSessionPermissionModes,
-  AgentSessionPermissionFact
-} from './agent-chat-permission-mode'
+import type * as chatPermission from './agent-chat-permission-mode'
 import type { AgentSessionStatusPermissionModes } from './agent-session-initial-permission-mode'
 // ─── Structured agent-session wire contract ─────────────────────────────────
 // The shapes `agentSession.*` accepts and publishes. Phase 2 builds provider
@@ -181,7 +178,7 @@ export type AgentSessionJournalBatch = {
  *  rides beside its `queuedMessages`. */
 type AgentSessionFrameFields = {
   hostNow?: number
-} & AgentSessionPermissionFrameFields &
+} & chatPermission.AgentSessionPermissionFrameFields &
   AgentSessionQueuePublicationFields
 
 export type AgentSessionSubscribeEvent =
@@ -248,6 +245,11 @@ export type AgentSessionStatusSummary = AgentSessionStatusPermissionModes & {
   /** With `hostExecutionOwned`: whether that child has proven its start. `starting` is a
    *  published session whose provider has not yet answered startup; absent on older hosts. */
   hostExecutionPhase?: 'starting' | 'ready'
+  /** This restart action's progress, derived by the live host and never persisted.
+   *  Cleared when the action returns; absent on older hosts. */
+  restartResume?: {
+    phase: 'queued' | 'starting' | 'continued' | 'refused' | 'unconfirmed' | 'skipped'
+  }
   latestPrompt: string
   /** Provider model in force for the next turn; absent until the host has read the options. */
   model?: string
@@ -377,7 +379,7 @@ export type AgentSessionPromptResult = {
 }
 
 export type AgentSessionOptionResult = {
-  permissionFact?: AgentSessionPermissionFact
+  permissionFact?: chatPermission.AgentSessionPermissionFact
   key: string
   value: string
   /** Full effective next-turn values when the provider reconciled related options. */
@@ -415,13 +417,16 @@ export type AgentSessionFastModeSupport = {
  * for the key yet — the client keeps its static seed. Additive read-only
  * surface: an older host simply lacks the method.
  */
-export type AgentSessionModelCatalogResult =
-  | {
-      origin: 'unknown'
-      /** The host is running its first listing for this account; a `waitForListing` read answers
-       *  when it lands. Absent from a host that predates it. */
-      listingInProgress?: true
-    }
+export type AgentSessionModelCatalogResult = {
+  /** The host is running the listing this answer is waiting on (its first for the account, or
+   *  the probe re-checking `unavailable`); a `waitForListing` read answers when it lands. Absent
+   *  from a host that predates it; such a host sends it only with `unknown`. */
+  listingInProgress?: true
+  /** Why no chat can start under the account, as the host's probe last found it. Absent is
+   *  unknown, which shows nothing; an older host never sends it. */
+  unavailable?: AgentSessionUnavailable
+} & (
+  | { origin: 'unknown' }
   | {
       /** What produced the listing; any age is served, `fetchedAt` carries it. */
       origin: 'live-session' | 'probe'
@@ -429,6 +434,7 @@ export type AgentSessionModelCatalogResult =
       fastModeSupport?: AgentSessionFastModeSupport
       fetchedAt: number
     }
+)
 
 /** One entry of the `/` menu the running provider reports for itself. `skill`
  *  marks a name the session loaded as a skill rather than a built-in command;
@@ -474,17 +480,17 @@ export type AgentSessionOptionsResult = {
    *  `agentSession.threadGoal` never offers the controls. `current` is the
    *  latest goal the whole journal records, for a client whose loaded page
    *  starts after it. */
-  threadGoal?: { current: AgentJournalThreadGoal | null }
+  threadGoal?: { current: AgentJournalThreadGoal | null; contextFloor?: AgentJournalCursor }
   /** Present only where this session writes context facts to its turn rows.
    *  `current` is the newest of each part the whole journal records, for a
    *  client whose loaded page starts after the row that carries it. */
-  contextUsage?: { current: AgentSessionContextUsage }
+  contextUsage?: { current: AgentSessionContextUsage; contextFloor?: AgentJournalCursor }
   models: AgentSessionModelOption[]
   /** Session/account/transport support. Absent means unknown, never unsupported. */
   fastModeSupport?: AgentSessionFastModeSupport
   /** The chat's own permission mode. Absent from a host that predates the picker, which then
    *  shows none; read through `parseAgentSessionPermissionModes`. */
-  permissionModes?: AgentSessionPermissionModes
+  permissionModes?: chatPermission.AgentSessionPermissionModes
   current: {
     model: string
     effort?: string

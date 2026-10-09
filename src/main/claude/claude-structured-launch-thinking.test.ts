@@ -12,9 +12,11 @@ import {
   type ClaudeStructuredLaunchResolverDeps
 } from './claude-structured-launch-resolution'
 import { CLAUDE_THINKING_DISPLAY_FLAG, type ClaudeCliFlag } from './claude-cli-flag-support'
+import { beginClaudeAuthSwitch, endClaudeAuthSwitch } from '../claude-accounts/live-pty-gate'
 describe('readable Claude thinking', () => {
   const launchWith = (
     cliFlags?: ClaudeStructuredLaunchResolverDeps['cliFlags'],
+    authSwitchSettleTimeoutMs?: number,
     command = '/usr/local/bin/claude',
     launchArgs: string[] = []
   ) =>
@@ -26,7 +28,8 @@ describe('readable Claude thinking', () => {
       resolveAuthPolicy: () => ({ stripAuthEnv: false }),
       resolveEnv: () => ({ PROJECT_SHIM: '1', ANTHROPIC_API_KEY: 'sk-user' }),
       hasTranscript: async () => false,
-      ...(cliFlags ? { cliFlags } : {})
+      ...(cliFlags ? { cliFlags } : {}),
+      ...(authSwitchSettleTimeoutMs === undefined ? {} : { authSwitchSettleTimeoutMs })
     })({ identity: IDENTITY })
 
   // Whether the CLI's directory holds a `node` decides if the runtime pairing puts that directory
@@ -49,7 +52,7 @@ describe('readable Claude thinking', () => {
       if (sibling) {
         makeExecutable(join(binDir, process.platform === 'win32' ? 'node.cmd' : 'node'))
       }
-      const launch = await launchWith({ supports }, command)
+      const launch = await launchWith({ supports }, undefined, command)
       const asked = supports.mock.calls[0]?.[1]
       expect(asked).toMatchObject({ command, cwd: '/repos/workspace-1' })
       const segments = (env: Record<string, string> | undefined) =>
@@ -81,6 +84,7 @@ describe('readable Claude thinking', () => {
     const launch = await launchWith(
       { supports: async (flag) => flag === CLAUDE_THINKING_DISPLAY_FLAG },
       undefined,
+      undefined,
       ['--effort', 'high', '--thinking-display', 'omitted']
     )
     expect(launch.options.extraArgs).toEqual({
@@ -88,5 +92,22 @@ describe('readable Claude thinking', () => {
       'replay-user-messages': null,
       'thinking-display': 'summarized'
     })
+  })
+
+  it('still rechecks an account switch that began while the probe ran', async () => {
+    try {
+      const launch = launchWith(
+        {
+          supports: async () => {
+            beginClaudeAuthSwitch()
+            return false
+          }
+        },
+        10
+      )
+      await expect(launch).rejects.toMatchObject({ reason: 'accountSwitchInProgress' })
+    } finally {
+      endClaudeAuthSwitch()
+    }
   })
 })

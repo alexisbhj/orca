@@ -1,4 +1,6 @@
-// Acquisition and provider preparation share cancellation, including waits outside the lane.
+// Acquisition and provider preparation share cancellation, including waits outside the lane: a
+// close, a Stop admitted now, quit, or the startup limit aborts them instead of waiting behind a
+// provider that may never answer.
 
 export class StructuredAgentSessionAcquireAborts {
   private readonly inFlight = new Map<string, Set<AbortController>>()
@@ -26,9 +28,10 @@ export class StructuredAgentSessionAcquireAborts {
   }
 
   /** A no-op when the session has nothing in flight. */
-  abort(sessionId: string, reason: string): void {
+  abort(sessionId: string, reason: string | Error): void {
+    const error = typeof reason === 'string' ? new Error(reason) : reason
     for (const controller of this.inFlight.get(sessionId) ?? []) {
-      controller.abort(new Error(reason))
+      controller.abort(error)
     }
   }
 

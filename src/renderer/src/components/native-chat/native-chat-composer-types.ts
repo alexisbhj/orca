@@ -4,7 +4,10 @@ import type { AgentSessionConversationCommand } from '../../../../shared/agent-s
 import type { StructuredAgentContextUsage } from '../../../../shared/structured-agent-session-context-usage'
 import type { AgentSessionSlashCommand } from '../../../../shared/agent-session-wire'
 import type { AgentType } from '../../../../shared/agent-status-types'
-import type { StructuredAgentSessionCommandOutcome } from '../../../../shared/structured-agent-session-composer'
+import type {
+  StructuredAgentSessionCommandOutcome,
+  StructuredAgentSessionCommandRefusalCause
+} from '../../../../shared/structured-agent-session-composer'
 import type { SessionOptionDescriptor } from '../../../../shared/native-chat-session-options'
 import type { NativeChatLaunchDraft } from '@/lib/native-chat-launch-prompt'
 import type { NativeChatComposerImageAttachment } from './NativeChatComposerField'
@@ -12,6 +15,13 @@ import type { NativeChatAfterStopSend } from './native-chat-composer-target'
 import type { NativeChatLocalCommandAnswer } from './use-native-chat-local-command-answer'
 import type { NativeChatRecallSource } from './native-chat-sent-prompt-history'
 import type { StructuredSessionOptionsSurface } from './native-chat-permission-mode-labels'
+
+export type NativeChatComposerErrorDetail = {
+  /** Error text Orca did not write, shown apart and copyable. */
+  errorText?: string
+  /** A refused command's cause: its line is said only while that still holds. */
+  refusedWhile?: StructuredAgentSessionCommandRefusalCause
+}
 
 export type NativeChatOptionPickerRequest = {
   id: string
@@ -48,8 +58,7 @@ export type NativeChatStructuredComposerTransport = {
   worktreeId?: string
   /** Present only where the host can set this session's goal. */
   threadGoal?: { setObjective: (objective: string) => Promise<boolean> }
-  /** `errorText` is error text Orca did not write, shown apart and copyable. */
-  onError: (message: string | null, errorText?: string) => void
+  onError: (message: string | null, detail?: NativeChatComposerErrorDetail) => void
   /** A local send: brings the latest into view at the press, not when the host answers. */
   onSubmitted?: () => void
   runtime: 'local' | 'remote'
