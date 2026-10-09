@@ -1,6 +1,7 @@
 // The one workspace tab layout model the runtime holds, per execution-host partition. Pure data:
 // per-view selection, content facts (live titles, page state, scrollback) and drafts live beside it
-// (workspace-layout-beside.ts), never in it.
+// (workspace-layout-beside.ts), never in it. Each layout fact has exactly one field here; the
+// table in workspace-layout-fact-locations.test.ts lists them and fails on a second home.
 
 import type { SleepingAgentSessionRecord } from '../agent-session-resume'
 import type { AgentType } from '../agent-status-types'
@@ -26,8 +27,8 @@ type LayoutTabFields = {
   /** Tab-bar id. Terminal pane keys, layouts and records use `entityId`. */
   id: string
   entityId: string
-  worktreeId: string
-  executionHostId?: ExecutionHostId
+  /** The tab names its execution host (the model's `hostId`) on disk, as the window's tab opens do. */
+  namesExecutionHost?: true
   createdAt: number
   customTitle: string | null
   generatedTitle?: string | null
@@ -43,7 +44,6 @@ type LayoutTabFields = {
 /** Creation fields only a terminal tab carries. */
 export type LayoutTerminalCreation = Pick<
   TerminalTab,
-  | 'worktreeId'
   | 'defaultTitle'
   | 'shellOverride'
   | 'forceHostRuntime'
@@ -57,30 +57,34 @@ export type LayoutTerminalTab = LayoutTabFields & {
   terminal: LayoutTerminalCreation
   /** Null for a legacy row saved before pane layouts existed. */
   panes: LayoutTerminalPanes | null
+  /** Such a legacy row's one terminal; a tab with panes binds its terminals there instead. */
+  legacyPtyId?: string
 }
 
 export type LayoutContentTab = LayoutTabFields & { kind: Exclude<TabContentType, 'terminal'> }
 
 export type LayoutTab = LayoutTerminalTab | LayoutContentTab
 
-export type LayoutGroup = { id: string; worktreeId: string; tabOrder: string[] }
+export type LayoutGroup = { id: string; tabOrder: string[] }
 
-/** An open editor file minus its unsaved draft, which belongs to the view that holds it. */
+/** An open editor file minus its unsaved draft (the view's) and what its tab and workspace hold. */
 export type LayoutEditorFile = Omit<
   PersistedOpenFile,
-  'dirtyDraftContent' | 'lastKnownDiskSignature'
+  'dirtyDraftContent' | 'lastKnownDiskSignature' | 'isPreview' | 'worktreeId'
 >
 
 /** A browser tab minus the live page state its host view reports. */
 export type LayoutBrowserTab = Pick<
   BrowserWorkspace,
-  'id' | 'worktreeId' | 'label' | 'sessionProfileId' | 'sessionPartition' | 'pageIds' | 'createdAt'
+  'id' | 'label' | 'sessionProfileId' | 'sessionPartition' | 'pageIds' | 'createdAt'
 >
 
 export type WorkspaceLayout = {
+  /** The worktree or folder id every record of this workspace names on disk. */
+  worktreeId: string
   /** Every tab of the workspace, all kinds. The order of this list is storage only. */
   tabs: LayoutTab[]
-  /** `tabOrder` here is the one tab order. */
+  /** `tabOrder` here is the one tab order. A group never stays empty: an empty one is closed. */
   groups: LayoutGroup[]
   groupLayout?: TabGroupLayoutNode
   editorFiles?: LayoutEditorFile[]

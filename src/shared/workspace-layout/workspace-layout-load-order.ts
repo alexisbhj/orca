@@ -23,7 +23,6 @@ function compareUnplaced(left: OrderCandidate, right: OrderCandidate): number {
 
 export function resolveGroupOrder(args: {
   workspaceKey: string
-  worktreeId: string
   storedGroups: readonly TabGroup[]
   candidates: readonly OrderCandidate[]
   mintId: () => string
@@ -53,13 +52,13 @@ export function resolveGroupOrder(args: {
       placed.add(tabId)
       tabOrder.push(tabId)
     }
-    groups.push({ id: stored.id, worktreeId: stored.worktreeId, tabOrder })
+    groups.push({ id: stored.id, tabOrder })
   }
   const unplaced = args.candidates.filter((candidate) => !placed.has(candidate.id))
   for (const candidate of [...unplaced].sort(compareUnplaced)) {
     let group = groups.find((entry) => entry.id === candidate.groupId) ?? groups[0]
     if (!group) {
-      group = { id: args.mintId(), worktreeId: args.worktreeId, tabOrder: [] }
+      group = { id: args.mintId(), tabOrder: [] }
       groups.push(group)
       normalizations.push({ rule: 'group_minted', workspaceKey, ids: [group.id] })
     }
@@ -70,5 +69,11 @@ export function resolveGroupOrder(args: {
       ids: [group.id, candidate.id]
     })
   }
-  return groups
+  const kept = groups.filter((group) => group.tabOrder.length > 0)
+  for (const group of groups) {
+    if (group.tabOrder.length === 0) {
+      normalizations.push({ rule: 'empty_group_dropped', workspaceKey, ids: [group.id] })
+    }
+  }
+  return kept
 }

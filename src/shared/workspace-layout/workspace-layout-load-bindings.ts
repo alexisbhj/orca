@@ -1,14 +1,86 @@
+// Loader rules for panes and bindings that stored data repeats across tabs.
+
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
+import { withoutKey } from './stored-record-fields'
 import { isSameTerminal } from './terminal-owner-invariants'
 import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
-import type { LayoutContentFacts } from './workspace-layout-beside'
-import type { LayoutLoadNormalization } from './workspace-layout-load-types'
-import { paneKeyOf, tabsInOrder, type WorkspaceLayoutModel } from './workspace-layout-model'
+import type {
+  LayoutLoadNormalization,
+  WorkspaceLayoutLoadContext
+} from './workspace-layout-load-types'
 import {
-  advanceTopologyRevision,
-  findTerminalTab,
-  retireExitedSurface
-} from './workspace-layout-removal'
+  paneKeyOf,
+  tabsInOrder,
+  type LayoutTerminalPanes,
+  type WorkspaceLayoutModel
+} from './workspace-layout-model'
+import { advanceTopologyRevision, retireExitedSurface } from './workspace-layout-removal'
+
+function terminalTabsInOrder(model: WorkspaceLayoutModel) {
+  return Object.entries(model.workspaces).flatMap(([workspaceKey, workspace]) =>
+    tabsInOrder(workspace).flatMap((tab) =>
+      tab.kind === 'terminal' && tab.panes ? [{ workspaceKey, tab, panes: tab.panes }] : []
+    )
+  )
+}
+
+function renameLeaf(panes: LayoutTerminalPanes, from: string, to: string): LayoutTerminalPanes {
+  const rename = (node: LayoutTerminalPanes['root']): LayoutTerminalPanes['root'] => {
+    if (!node) {
+      return node
+    }
+    if (node.type === 'leaf') {
+      return node.leafId === from ? { type: 'leaf', leafId: to } : node
+    }
+    return { ...node, first: rename(node.first)!, second: rename(node.second)! }
+  }
+  const title = panes.titlesByLeafId?.[from]
+  const next: LayoutTerminalPanes = {
+    ...panes,
+    root: rename(panes.root),
+    ptyIdsByLeafId: withoutKey(panes.ptyIdsByLeafId, from),
+    titlesByLeafId: withoutKey(panes.titlesByLeafId, from)
+  }
+  if (title !== undefined) {
+    next.titlesByLeafId = { ...next.titlesByLeafId, [to]: title }
+  }
+  if (panes.chatLeafId === from) {
+    next.chatLeafId = to
+  }
+  return next
+}
+
+/**
+ * One pane id in two tabs: the tab first in tab order keeps it; the other gets a new, unbound
+ * pane in the same place. Kept apart so the owner's choice of which tab keeps it is one edit.
+ */
+export function reassignPanesInTwoTabs(
+  model: WorkspaceLayoutModel,
+  context: WorkspaceLayoutLoadContext,
+  normalizations: LayoutLoadNormalization[]
+): void {
+  const owners = new Map<string, string>()
+  for (const { workspaceKey, tab, panes } of terminalTabsInOrder(model)) {
+    let next = panes
+    for (const leafId of collectLayoutLeafIdsInOrder(panes.root)) {
+      const owner = owners.get(leafId)
+      if (owner === undefined || owner === tab.entityId) {
+        owners.set(leafId, tab.entityId)
+        continue
+      }
+      const fresh = context.mintLeafId()
+      next = renameLeaf(next, leafId, fresh)
+      owners.set(fresh, tab.entityId)
+      normalizations.push({
+        rule: 'pane_in_two_tabs_reassigned',
+        workspaceKey,
+        ids: [leafId, owner, tab.entityId, fresh]
+      })
+    }
+    // Loaded objects are fresh copies, so replacing panes in place touches no stored data.
+    tab.panes = next
+  }
+}
 
 /** One terminal bound in two panes: the first pane in tab order keeps it, the other is unbound. */
 export function unbindDuplicateTerminals(
@@ -16,34 +88,29 @@ export function unbindDuplicateTerminals(
   normalizations: LayoutLoadNormalization[]
 ): void {
   const owners: { ptyId: string; incarnationId?: string; paneKey: string }[] = []
-  for (const [workspaceKey, workspace] of Object.entries(model.workspaces)) {
-    for (const tab of tabsInOrder(workspace)) {
-      if (tab.kind !== 'terminal' || !tab.panes?.ptyIdsByLeafId) {
+  for (const { workspaceKey, tab, panes } of terminalTabsInOrder(model)) {
+    const bindings = panes.ptyIdsByLeafId
+    if (!bindings) {
+      continue
+    }
+    for (const leafId of collectLayoutLeafIdsInOrder(panes.root)) {
+      const ptyId = bindings[leafId]
+      if (ptyId === undefined) {
         continue
       }
-      for (const leafId of collectLayoutLeafIdsInOrder(tab.panes.root)) {
-        const ptyId = tab.panes.ptyIdsByLeafId[leafId]
-        if (ptyId === undefined) {
-          continue
-        }
-        const paneKey = paneKeyOf(tab.entityId, leafId)
-        const binding = {
-          ptyId,
-          incarnationId: model.records.incarnationsByPaneKey?.[paneKey],
-          paneKey
-        }
-        const owner = owners.find((candidate) => isSameTerminal(candidate, binding))
-        if (owner) {
-          // Loaded objects are fresh copies, so unbinding in place touches no stored data.
-          delete tab.panes.ptyIdsByLeafId[leafId]
-          normalizations.push({
-            rule: 'terminal_in_two_panes_unbound',
-            workspaceKey,
-            ids: [ptyId, owner.paneKey, paneKey]
-          })
-        } else {
-          owners.push(binding)
-        }
+      const paneKey = paneKeyOf(tab.entityId, leafId)
+      const incarnationId = model.records.incarnationsByPaneKey?.[paneKey]
+      const binding = { ptyId, incarnationId, paneKey }
+      const owner = owners.find((candidate) => isSameTerminal(candidate, binding))
+      if (owner) {
+        delete bindings[leafId]
+        normalizations.push({
+          rule: 'terminal_in_two_panes_unbound',
+          workspaceKey,
+          ids: [ptyId, owner.paneKey, paneKey]
+        })
+      } else {
+        owners.push(binding)
       }
     }
   }
@@ -53,7 +120,6 @@ export function unbindDuplicateTerminals(
 export function applyLegacySurfaceTombstones(
   model: WorkspaceLayoutModel,
   session: WorkspaceSessionState,
-  facts: LayoutContentFacts,
   normalizations: LayoutLoadNormalization[]
 ): WorkspaceLayoutModel {
   let next = model
@@ -63,24 +129,7 @@ export function applyLegacySurfaceTombstones(
     normalizations.push({ rule: 'legacy_tombstone_applied', ids: [paneKey] })
     // Clearing a tombstone must not drop the authority it gave older builds' save merge.
     next = { ...next, records: advanceTopologyRevision(next.records, tombstone.worktreeId) }
-    const row = facts.terminalRows[tombstone.parentTabId]
-    const exited = retireExitedSurface(
-      next,
-      { ...tombstone, terminalTabId: tombstone.parentTabId },
-      row?.ptyId
-    )
-    next = exited.model
-    if (!exited.retired) {
-      continue
-    }
-    const remaining = findTerminalTab(next, tombstone.parentTabId)?.tab.panes
-    if (row && remaining) {
-      const activeLeafId = session.terminalLayoutsByTabId?.[tombstone.parentTabId]?.activeLeafId
-      row.ptyId =
-        remaining.ptyIdsByLeafId?.[activeLeafId ?? ''] ??
-        Object.values(remaining.ptyIdsByLeafId ?? {})[0] ??
-        null
-    }
+    next = retireExitedSurface(next, { ...tombstone, terminalTabId: tombstone.parentTabId }).model
   }
   return next
 }

@@ -16,6 +16,7 @@ import {
 import { pickStoredFields } from './stored-record-fields'
 import {
   applyLegacySurfaceTombstones,
+  reassignPanesInTwoTabs,
   unbindDuplicateTerminals
 } from './workspace-layout-load-bindings'
 import type {
@@ -37,6 +38,27 @@ function workspaceKeys(session: WorkspaceSessionState): string[] {
       ...Object.keys(session.browserTabsByWorktree ?? {})
     ])
   ]
+}
+
+/**
+ * A terminal row stored in two workspaces is kept where the tab bar or a group also names it,
+ * else in the first; the other copies are dropped and reported by the workspace load.
+ */
+function resolveTerminalHomes(session: WorkspaceSessionState): Map<string, string> {
+  const homes = new Map<string, string>()
+  const namedByTabBar = (key: string, tabId: string): boolean =>
+    (session.unifiedTabs?.[key] ?? []).some(
+      (entry) => entry.contentType === 'terminal' && entry.entityId === tabId
+    ) || (session.tabGroups?.[key] ?? []).some((group) => group.tabOrder.includes(tabId))
+  for (const [key, rows] of Object.entries(session.tabsByWorktree ?? {})) {
+    for (const row of rows) {
+      const home = homes.get(row.id)
+      if (home === undefined || (!namedByTabBar(home, row.id) && namedByTabBar(key, row.id))) {
+        homes.set(row.id, key)
+      }
+    }
+  }
+  return homes
 }
 
 function loadRecords(session: WorkspaceSessionState): WorkspaceLayoutRecords {
@@ -84,12 +106,13 @@ export function loadWorkspaceLayout(
     browserTabs: {}
   }
   let layout: WorkspaceLayoutModel = { hostId, workspaces: {}, records: loadRecords(session) }
-  const claimedTerminalIds = new Set<string>()
+  const terminalHomes = resolveTerminalHomes(session)
   for (const key of workspaceKeys(session)) {
     layout.workspaces[key] = loadWorkspace({
       session,
+      hostId,
       key,
-      claimedTerminalIds,
+      terminalHomes,
       context,
       view: desktopView,
       facts,
@@ -100,11 +123,12 @@ export function loadWorkspaceLayout(
     ...pickStoredFields(session, CARRIED_SESSION_FIELDS),
     unownedTerminalLayouts: Object.fromEntries(
       Object.entries(session.terminalLayoutsByTabId ?? {}).filter(
-        ([tabId]) => !claimedTerminalIds.has(tabId)
+        ([tabId]) => !terminalHomes.has(tabId)
       )
     )
   }
+  reassignPanesInTwoTabs(layout, context, normalizations)
   unbindDuplicateTerminals(layout, normalizations)
-  layout = applyLegacySurfaceTombstones(layout, session, facts, normalizations)
+  layout = applyLegacySurfaceTombstones(layout, session, normalizations)
   return { layout, desktopView, facts, carried, normalizations }
 }

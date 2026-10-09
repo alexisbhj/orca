@@ -1,48 +1,28 @@
 import type { Tab } from '../tab-types'
 import type { TerminalTab } from '../terminal-tab-types'
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
-import {
-  BROWSER_TAB_LAYOUT_FIELDS,
-  EDITOR_DRAFT_FIELDS,
-  type DesktopLayoutView,
-  type LayoutContentFacts
-} from './workspace-layout-beside'
-import { omitStoredFields, pickStoredFields } from './stored-record-fields'
+import { childRecord, pickStoredFields } from './stored-record-fields'
 import { resolveGroupOrder, type OrderCandidate } from './workspace-layout-load-order'
-import { loadContentTab, loadTerminalTab } from './workspace-layout-load-tabs'
-import type {
-  LayoutLoadNormalization,
-  WorkspaceLayoutLoadContext
-} from './workspace-layout-load-types'
+import {
+  loadBrowserTabs,
+  loadEditorFiles,
+  resolveWorktreeId
+} from './workspace-layout-load-records'
+import { loadContentTab, loadTerminalTab, type TabLoadReport } from './workspace-layout-load-tabs'
+import type { WorkspaceLoadArgs } from './workspace-layout-load-types'
 import type { LayoutTab, LayoutTerminalTab, WorkspaceLayout } from './workspace-layout-model'
+import { pruneGroupLayout } from '../workspace-session-terminal-tab-close'
 
-type WorkspaceLoadArgs = {
-  session: WorkspaceSessionState
-  key: string
-  /** Terminal tab ids an earlier workspace of this partition already holds. */
-  claimedTerminalIds: Set<string>
-  context: WorkspaceLayoutLoadContext
-  view: DesktopLayoutView
-  facts: LayoutContentFacts
-  normalizations: LayoutLoadNormalization[]
-}
-
-function entryFor<T>(record: Record<string, Record<string, T>>, key: string): Record<string, T> {
-  record[key] ??= {}
-  return record[key]
-}
-
-function takeRows({ session, key, claimedTerminalIds, normalizations }: WorkspaceLoadArgs) {
+function takeRows({ session, key, terminalHomes, normalizations }: WorkspaceLoadArgs) {
   const rows: TerminalTab[] = []
   const local = new Set<string>()
   for (const row of session.tabsByWorktree?.[key] ?? []) {
-    if (local.has(row.id) || claimedTerminalIds.has(row.id)) {
+    if (local.has(row.id) || terminalHomes.get(row.id) !== key) {
       const rule = local.has(row.id) ? 'duplicate_tab_dropped' : 'tab_in_two_workspaces_dropped'
       normalizations.push({ rule, workspaceKey: key, ids: [row.id] })
       continue
     }
     local.add(row.id)
-    claimedTerminalIds.add(row.id)
     rows.push(row)
   }
   return rows
@@ -50,12 +30,13 @@ function takeRows({ session, key, claimedTerminalIds, normalizations }: Workspac
 
 function loadPanes(
   session: WorkspaceSessionState,
+  row: TerminalTab,
   tab: Omit<LayoutTerminalTab, 'panes'>,
   args: WorkspaceLoadArgs
 ): LayoutTerminalTab {
   const layout = session.terminalLayoutsByTabId?.[tab.entityId]
   if (!layout) {
-    return { ...tab, panes: null }
+    return { ...tab, panes: null, ...(row.ptyId ? { legacyPtyId: row.ptyId } : {}) }
   }
   args.view.panes[tab.entityId] = {
     activeLeafId: layout.activeLeafId,
@@ -74,8 +55,23 @@ function loadPanes(
   }
 }
 
+function reporterFor(args: WorkspaceLoadArgs, tabId: string): TabLoadReport {
+  const workspaceKey = args.key
+  return {
+    disagree: (field) =>
+      args.normalizations.push({
+        rule: 'row_and_tab_bar_disagree',
+        workspaceKey,
+        ids: [tabId],
+        field
+      }),
+    foreignHost: () =>
+      args.normalizations.push({ rule: 'execution_host_disagrees', workspaceKey, ids: [tabId] })
+  }
+}
+
 function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: OrderCandidate[] } {
-  const { session, key, normalizations } = args
+  const { session, key, normalizations, hostId } = args
   const rows = takeRows(args)
   const rowByEntity = new Map(rows.map((row) => [row.id, row]))
   const merged = new Set<string>()
@@ -83,16 +79,18 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
   const candidates: OrderCandidate[] = []
   const tabIds = new Set<string>()
   const addTerminal = (row: TerminalTab, entry: Tab | undefined): void => {
-    const tab = loadPanes(session, loadTerminalTab(row, entry), args)
+    const loaded = loadTerminalTab(row, entry, hostId, reporterFor(args, entry?.id ?? row.id))
+    const tab = loadPanes(session, row, loaded, args)
     if (tabIds.has(tab.id)) {
-      tab.id = args.context.mintId()
+      const reminted = args.context.mintId()
+      normalizations.push({ rule: 'tab_id_reminted', workspaceKey: key, ids: [tab.id, reminted] })
+      tab.id = reminted
     }
     merged.add(row.id)
     tabIds.add(tab.id)
     tabs.push(tab)
     args.facts.terminalRows[row.id] = {
       title: row.title,
-      ptyId: row.ptyId,
       ...pickStoredFields(row, ['generation'])
     }
     candidates.push({
@@ -121,7 +119,7 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
       addTerminal(row, entry)
     } else {
       const contentType = entry.contentType
-      tabs.push(loadContentTab({ ...entry, contentType }))
+      tabs.push(loadContentTab({ ...entry, contentType }, hostId, reporterFor(args, entry.id)))
       tabIds.add(entry.id)
       candidates.push({
         id: entry.id,
@@ -130,9 +128,9 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
         createdAt: entry.createdAt
       })
     }
-    entryFor(args.facts.tabLabels, key)[entry.id] = entry.label
+    childRecord(args.facts.tabLabels, key)[entry.id] = entry.label
     if (entry.lastFocusedAt !== undefined) {
-      entryFor(args.view.lastFocusedAt, key)[entry.id] = entry.lastFocusedAt
+      childRecord(args.view.lastFocusedAt, key)[entry.id] = entry.lastFocusedAt
     }
   }
   for (const row of rows) {
@@ -144,53 +142,44 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
 }
 
 export function loadWorkspace(args: WorkspaceLoadArgs): WorkspaceLayout {
-  const { session, key, view, facts } = args
+  const { session, key, view } = args
+  const worktreeId = resolveWorktreeId(args)
   const { tabs, candidates } = loadTabs(args)
   const storedGroups = session.tabGroups?.[key] ?? []
   for (const group of storedGroups) {
-    entryFor(view.groups, key)[group.id] ??= {
+    childRecord(view.groups, key)[group.id] ??= {
       activeTabId: group.activeTabId,
       ...pickStoredFields(group, ['recentTabIds'])
     }
   }
   const groups = resolveGroupOrder({
     workspaceKey: key,
-    worktreeId: storedGroups[0]?.worktreeId ?? tabs[0]?.worktreeId ?? key,
     storedGroups,
     candidates,
     mintId: args.context.mintId,
     normalizations: args.normalizations
   })
   const workspace: WorkspaceLayout = {
+    worktreeId,
     tabs,
     groups,
     keepsEmptyTerminalRows: Object.hasOwn(session.tabsByWorktree ?? {}, key)
   }
-  const groupLayout = session.tabGroupLayouts?.[key]
+  const storedTree = session.tabGroupLayouts?.[key]
+  const groupLayout = pruneGroupLayout(storedTree, new Set(groups.map((group) => group.id)))
+  if (JSON.stringify(groupLayout) !== JSON.stringify(storedTree) && groups.length > 0) {
+    args.normalizations.push({ rule: 'group_tree_pruned', workspaceKey: key, ids: [] })
+  }
   if (groupLayout) {
     workspace.groupLayout = groupLayout
   }
-  const files = session.openFilesByWorktree?.[key]
-  if (files) {
-    workspace.editorFiles = files.map((file) => {
-      const draft = pickStoredFields(file, EDITOR_DRAFT_FIELDS)
-      if (Object.keys(draft).length > 0) {
-        entryFor(view.editorDrafts, key)[file.filePath] = draft
-      }
-      return omitStoredFields(file, EDITOR_DRAFT_FIELDS)
-    })
+  const editorFiles = loadEditorFiles(args, tabs)
+  if (editorFiles) {
+    workspace.editorFiles = editorFiles
   }
-  const browserTabs = session.browserTabsByWorktree?.[key]
+  const browserTabs = loadBrowserTabs(args)
   if (browserTabs) {
-    workspace.browserTabs = browserTabs.map((tab) => {
-      entryFor(facts.browserTabs, key)[tab.id] = omitStoredFields(tab, BROWSER_TAB_LAYOUT_FIELDS)
-      return {
-        id: tab.id,
-        worktreeId: tab.worktreeId,
-        createdAt: tab.createdAt,
-        ...pickStoredFields(tab, ['label', 'sessionProfileId', 'sessionPartition', 'pageIds'])
-      }
-    })
+    workspace.browserTabs = browserTabs
   }
   return workspace
 }
