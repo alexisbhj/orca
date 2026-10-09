@@ -486,7 +486,7 @@ describe('FloatingTerminalPanel close behavior', () => {
   })
 })
 
-describe('FloatingTerminalPanel close behavior', () => {
+describe('FloatingTerminalPanel empty state', () => {
   beforeEach(setupFloatingTerminalPanelTest)
 
   afterEach(() => {
@@ -661,7 +661,7 @@ describe('FloatingTerminalPanel close behavior', () => {
   })
 })
 
-describe('FloatingTerminalPanel close behavior', () => {
+describe('FloatingTerminalPanel markdown editor', () => {
   beforeEach(setupFloatingTerminalPanelTest)
 
   afterEach(() => {
