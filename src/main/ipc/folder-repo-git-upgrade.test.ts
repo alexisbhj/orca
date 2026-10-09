@@ -22,7 +22,7 @@ vi.mock('../git/repo', async (importOriginal) => {
   const actual = await importOriginal<typeof GitRepo>()
   return {
     ...actual,
-    isGitRepo: (path: string) => {
+    isGitRepoAsync: (path: string) => {
       gitProbes.push(path)
       return actual.isGitRepo(path)
     }
