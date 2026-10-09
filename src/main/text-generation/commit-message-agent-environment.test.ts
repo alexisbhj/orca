@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { prepareLocalCommitMessageAgentEnv } from './commit-message-agent-environment'
 import { ManagedCodexHomeTemporarilyUnavailableError } from '../codex-accounts/host-codex-managed-home-ownership'
 
@@ -213,5 +213,116 @@ describe('prepareLocalCommitMessageAgentEnv', () => {
     })
 
     expect(result).toEqual({ ok: true })
+  })
+
+  describe('login-shell base environment', () => {
+    const envOf = (
+      result: Awaited<ReturnType<typeof prepareLocalCommitMessageAgentEnv>>
+    ): NodeJS.ProcessEnv | undefined => (result.ok ? result.env : undefined)
+    const shellBase = {
+      PATH: '/shell/bin',
+      ANTHROPIC_BASE_URL: 'https://proxy.example',
+      ANTHROPIC_AUTH_TOKEN: 'shell-token'
+    }
+
+    it('gives Claude the shell-exported variables Orca was launched without', async () => {
+      delete process.env.ANTHROPIC_BASE_URL
+      delete process.env.ANTHROPIC_AUTH_TOKEN
+
+      const result = await prepareLocalCommitMessageAgentEnv('claude', {
+        resolveBaseEnvironment: async () => shellBase,
+        prepareForClaudeLaunch: async () => ({
+          configDir: '/home/me/.claude',
+          envPatch: {},
+          stripAuthEnv: false,
+          provenance: 'system'
+        })
+      })
+
+      expect(result).toEqual({ ok: true, env: shellBase })
+    })
+
+    it('lets the selected Claude account override the shell environment', async () => {
+      const result = await prepareLocalCommitMessageAgentEnv('claude', {
+        resolveBaseEnvironment: async () => shellBase,
+        prepareForClaudeLaunch: async () => ({
+          configDir: '/managed/claude',
+          envPatch: { CLAUDE_CONFIG_DIR: '/managed/claude' },
+          stripAuthEnv: true,
+          provenance: 'managed:account-1'
+        })
+      })
+
+      const env = envOf(result)
+      expect(env?.CLAUDE_CONFIG_DIR).toBe('/managed/claude')
+      expect(env?.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+      expect(env?.PATH).toBe('/shell/bin')
+    })
+
+    it('lets the managed Codex home override a shell CODEX_HOME', async () => {
+      const result = await prepareLocalCommitMessageAgentEnv('codex', {
+        resolveBaseEnvironment: async () => ({ ...shellBase, CODEX_HOME: '/shell/codex' }),
+        prepareForCodexLaunch: () => '/managed/codex-home'
+      })
+
+      expect(result).toEqual({
+        ok: true,
+        env: { ...shellBase, CODEX_HOME: '/managed/codex-home' }
+      })
+    })
+
+    it('gives agents without an account resolver the shell environment', async () => {
+      makeHome()
+      delete process.env.OPENCODE_CONFIG_DIR
+
+      await expect(
+        prepareLocalCommitMessageAgentEnv('cursor', {
+          resolveBaseEnvironment: async () => shellBase
+        })
+      ).resolves.toEqual({ ok: true, env: shellBase })
+      await expect(
+        prepareLocalCommitMessageAgentEnv('opencode', {
+          resolveBaseEnvironment: async () => shellBase
+        })
+      ).resolves.toEqual({ ok: true, env: shellBase })
+    })
+
+    it('keeps Orca env for WSL-local generation instead of the host shell', async () => {
+      delete process.env.ANTHROPIC_BASE_URL
+      const resolveBaseEnvironment = vi.fn(async () => shellBase)
+
+      const codex = await prepareLocalCommitMessageAgentEnv(
+        'codex',
+        { resolveBaseEnvironment, prepareForCodexLaunch: () => null },
+        { runtime: 'wsl', wslDistro: 'Ubuntu' }
+      )
+      const cursor = await prepareLocalCommitMessageAgentEnv(
+        'cursor',
+        { resolveBaseEnvironment },
+        { runtime: 'wsl', wslDistro: 'Ubuntu' }
+      )
+
+      expect(resolveBaseEnvironment).not.toHaveBeenCalled()
+      expect(envOf(codex)?.ANTHROPIC_BASE_URL).toBeUndefined()
+      expect(cursor).toEqual({ ok: true })
+    })
+
+    it('falls back to Orca env when the shell environment cannot be read', async () => {
+      process.env.ORCA_COMMIT_ENV_MARKER = 'process'
+
+      const result = await prepareLocalCommitMessageAgentEnv('codex', {
+        resolveBaseEnvironment: async () => {
+          throw new Error('settings unavailable')
+        },
+        prepareForCodexLaunch: () => '/managed/codex-home'
+      })
+
+      expect(envOf(result)).toEqual(
+        expect.objectContaining({
+          ORCA_COMMIT_ENV_MARKER: 'process',
+          CODEX_HOME: '/managed/codex-home'
+        })
+      )
+    })
   })
 })
