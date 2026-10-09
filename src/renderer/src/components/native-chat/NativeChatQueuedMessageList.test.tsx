@@ -735,7 +735,7 @@ describe('NativeChatQueuedMessageList', () => {
     const rerender = (cards: QueuedMessageCard[]): void =>
       view.rerender(
         <TooltipProvider delayDuration={0}>
-          <NativeChatQueuedMessageList controller={controller(cards)} />
+          <NativeChatQueuedMessageList chatWorktreeId={null} controller={controller(cards)} />
         </TooltipProvider>
       )
     rerender([...first, card({ messageId: 'mail', position: 3, from })])
@@ -757,6 +757,7 @@ describe('NativeChatQueuedMessageList', () => {
     view.rerender(
       <TooltipProvider delayDuration={0}>
         <NativeChatQueuedMessageList
+          chatWorktreeId={null}
           controller={controller([
             card({ messageId: 'a', position: 1 }),
             card({ messageId: 'b', position: 2 })

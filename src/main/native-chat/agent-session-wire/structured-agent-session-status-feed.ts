@@ -1,20 +1,4 @@
-import type {
-  StatusFeedSession,
-  StructuredAgentSessionStatusFeedDeps,
-  StructuredAgentSessionStatusPublication,
-  StructuredAgentSessionStatusSubscriber
-} from './structured-agent-session-status-feed-types'
-export type {
-  StructuredAgentSessionStatusFeedDeps,
-  StructuredAgentSessionStatusSubscriber
-} from './structured-agent-session-status-feed-types'
-import {
-  projectStructuredOrchestrationSessionId,
-  publishCommittedStructuredOrchestrationOwnership,
-  refreshStructuredOrchestrationPublications,
-  createStructuredOrchestrationProjection,
-  type StructuredOrchestrationProjection
-} from './structured-agent-session-orchestration-projection'
+import type { StructuredAgentSessionStatusObserverOptions } from './structured-agent-session-status-observation'
 // The host's answer to "what is every structured session doing", fanned out to session lists.
 //
 // A client used to learn whether a turn was running by replaying the journal through its own
@@ -35,6 +19,7 @@ import type {
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
+import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
 import { structuredAgentSessionStatusSummary } from './structured-agent-session-status-summary'
 import { structuredStatusChildWork } from './structured-agent-session-status-child-work'
 import {
@@ -42,11 +27,48 @@ import {
   type StructuredAgentSessionJournalProjection
 } from './structured-agent-session-status-journal-projection'
 import { structuredStatusSummariesEqual } from './structured-agent-session-status-summary-equality'
-import { StructuredAgentSessionStatusOwnership } from './structured-agent-session-status-ownership'
+import type { StructuredAgentSessionLogger } from './structured-agent-session-logger'
+import {
+  StructuredAgentSessionStatusOwnership,
+  type StructuredAgentSessionStatusSink
+} from './structured-agent-session-status-ownership'
 
 export type { StructuredAgentSessionStatusSink } from './structured-agent-session-status-ownership'
 
 export type { StructuredAgentSessionStatusState } from './structured-agent-session-status-journal-projection'
+
+export type StructuredAgentSessionStatusSubscriber = {
+  id: string
+  emit: (event: AgentSessionStatusEvent) => void
+}
+
+type StatusFeedSession = {
+  journal: AgentSessionJournal
+  params: { location: AgentSessionRecord['location']; provider: AgentSessionRecord['provider'] }
+  child?: Pick<StructuredAgentSessionProviderChild, 'phase' | 'generation' | 'fence'> | null
+  restartResume?: AgentSessionStatusSummary['restartResume']
+}
+
+export type StructuredAgentSessionStatusFeedDeps = {
+  sessions: ReadonlyMap<string, StatusFeedSession>
+  getRecord: (sessionId: string) => AgentSessionRecord | null
+  now: () => number
+  /** Where a failing sink or observer is reported; neither may cost subscribers their event. */
+  logger: StructuredAgentSessionLogger
+  /** Every projection change, whether or not anyone is subscribed. `replay` marks a re-projection
+   *  of state the host already knew (restore, an arriving subscriber) rather than a journal edge. */
+  onStatusChanged?: (
+    summary: AgentSessionStatusSummary,
+    options: StructuredAgentSessionStatusObserverOptions
+  ) => void
+  /** Resolved on every call: the host builds this feed in a field initializer, before its own
+   *  deps are assigned. The sink holds the session's child records; the summary reads them there. */
+  statusSink?: () => StructuredAgentSessionStatusSink | undefined
+  /** The session's child records changed, so every other reader of them republishes. */
+  onChildWorkChanged?: (sessionId: string) => void
+  /** The session's agent proved a start: its row's phase became `ready`. */
+  onAgentStarted?: (sessionId: string) => void
+}
 
 export class StructuredAgentSessionStatusFeed {
   private readonly ownership = new StructuredAgentSessionStatusOwnership(() =>
@@ -54,7 +76,13 @@ export class StructuredAgentSessionStatusFeed {
   )
   private readonly subscribers = new Map<string, StructuredAgentSessionStatusSubscriber>()
   // Never evicted: chats are named only while in here, and AI Vault reads closed ones' names here.
-  private readonly published = new Map<string, StructuredAgentSessionStatusPublication>()
+  private readonly published = new Map<
+    string,
+    {
+      summary: AgentSessionStatusSummary
+      firstInputSubmissionKey: string | null
+    }
+  >()
   /** The user's newest accepted send each session was last projected with; a new one retires
    *  settled children. */
   private readonly acceptedSends = new Map<string, string>()
@@ -68,18 +96,11 @@ export class StructuredAgentSessionStatusFeed {
 
   /** Opens with every session this host has projected, live ones re-read, then only changes. */
   subscribe(subscriber: StructuredAgentSessionStatusSubscriber): () => void {
-    const project = createStructuredOrchestrationProjection(this.deps)
     // Re-project before registering: a change found here has to reach the subscribers that
     // already read the old value, and the arriving one carries it in its snapshot instead.
     for (const [sessionId] of this.deps.sessions) {
-      this.publish(sessionId, undefined, { replay: true, project })
+      this.publish(sessionId, undefined, { replay: true })
     }
-    refreshStructuredOrchestrationPublications(
-      this.published,
-      this.deps,
-      (session) => this.broadcast({ type: 'status', session }),
-      project
-    )
     this.subscribers.set(subscriber.id, subscriber)
     this.emit(subscriber, {
       type: 'snapshot',
@@ -158,15 +179,6 @@ export class StructuredAgentSessionStatusFeed {
     })
   }
 
-  /** A committed record command can move ownership without a journal write or an open handle. */
-  publishConversationCommand = (sessionId: string): void =>
-    publishCommittedStructuredOrchestrationOwnership(
-      sessionId,
-      this.published,
-      this.deps,
-      (session) => this.broadcast({ type: 'status', session })
-    )
-
   /** The record's name changed outside the journal. A closed chat's retained row follows it too,
    *  so every list still showing that conversation learns the name without a tab. */
   publishConversationName(sessionId: string): void {
@@ -201,11 +213,7 @@ export class StructuredAgentSessionStatusFeed {
   }
 
   /** Re-projects one session after its journal changed; equal projections are not re-sent. */
-  publish(
-    sessionId: string,
-    journal?: AgentSessionJournal,
-    options?: { replay?: boolean; project?: StructuredOrchestrationProjection }
-  ): void {
+  publish(sessionId: string, journal?: AgentSessionJournal, options?: { replay?: boolean }): void {
     const session = this.deps.sessions.get(sessionId)
     if (!session) {
       return
@@ -214,7 +222,7 @@ export class StructuredAgentSessionStatusFeed {
     const record = this.deps.getRecord(sessionId)
     const projection = this.projections.read(source, record)
     this.retireSettledChildrenOnNewTurn(sessionId, session, projection.acceptedSendKey)
-    const projectedSummary = structuredAgentSessionStatusSummary({
+    const summary = structuredAgentSessionStatusSummary({
       sessionId,
       session,
       journal: source,
@@ -224,12 +232,6 @@ export class StructuredAgentSessionStatusFeed {
       childWork: this.childWorkFields(sessionId, session.params.provider),
       now: this.deps.now
     })
-    const priorRoot = this.published.get(sessionId)?.summary.orchestrationSessionId
-    const root = options?.project
-      ? options.project(sessionId, priorRoot)
-      : projectStructuredOrchestrationSessionId(sessionId, this.deps, priorRoot)
-    const summary =
-      root === undefined ? projectedSummary : { ...projectedSummary, orchestrationSessionId: root }
     const publication = this.published.get(sessionId)
     const previous = publication?.summary
     const summaryChanged = !previous || !structuredStatusSummariesEqual(previous, summary)

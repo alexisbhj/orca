@@ -25,7 +25,6 @@ const transport = vi.hoisted(() => ({
   focusRenderer: vi.fn(() => false),
   subscriptions: new Map<string, (event: AgentSessionStatusEvent) => void>(),
   unsupported: false,
-  failed: false,
   olderLookup: false
 }))
 vi.mock('@/runtime/structured-agent-session-client', () => ({
@@ -67,7 +66,6 @@ import {
 
 const WORKSPACE = 'shared-workspace'
 const ROOT = testOrcaSessionId('root-chat')
-const CURRENT = 'current-chat'
 const initial = useAppStore.getInitialState()
 const previousApi = Object.getOwnPropertyDescriptor(window, 'api')
 import { installNativeChatMessageListTestViewport } from './native-chat-message-list-test-viewport'
@@ -143,8 +141,8 @@ function seed(duplicate = false, terminal = false): void {
             ...tab('recipient', 'recipient-chat', 'Recipient', 'runtime:server-1'),
             agentSessionAgent: 'claude'
           },
-          tab('remote-sender', CURRENT, 'Remote rename', 'runtime:server-1'),
-          tab('local-sender', duplicate ? CURRENT : 'local-chat', 'Wrong local name', 'local')
+          tab('remote-sender', ROOT, 'Remote rename', 'runtime:server-1'),
+          tab('local-sender', duplicate ? ROOT : 'local-chat', 'Wrong local name', 'local')
         ]
       },
       groupsByWorktree: {
@@ -168,7 +166,7 @@ async function mount(): Promise<ReturnType<typeof render>> {
   })
   return view!
 }
-function publish(host: string, sessionId = CURRENT, root: string | null = ROOT): void {
+function publish(host: string, sessionId: string = ROOT): void {
   transport.subscriptions.get(host)?.({
     type: 'snapshot',
     sessions: [
@@ -178,8 +176,7 @@ function publish(host: string, sessionId = CURRENT, root: string | null = ROOT):
         agent: 'claude',
         status: null,
         latestPrompt: '',
-        updatedAt: 1,
-        orchestrationSessionId: root
+        updatedAt: 1
       }
     ]
   })
@@ -193,7 +190,6 @@ beforeEach(() => {
   transport.subscribe.mockReset()
   transport.focusRenderer.mockClear()
   transport.unsupported = false
-  transport.failed = false
   transport.olderLookup = false
   transport.subscribe.mockImplementation(
     async (target: RuntimeClientTarget, emit: (event: AgentSessionStatusEvent) => void) => {
@@ -205,9 +201,6 @@ beforeEach(() => {
   transport.bridge.mockReset()
   transport.bridge.mockImplementation(
     async ({ method, params }: { method: string; params?: { address?: string } }) => {
-      if (method === 'status.get' && transport.failed) {
-        throw new Error('host unreachable')
-      }
       if (method === 'orchestration.partyLocation' && transport.olderLookup) {
         return {
           id: 'reply',
@@ -232,7 +225,7 @@ beforeEach(() => {
                 location:
                   params?.address === 'term-sender'
                     ? { kind: 'terminal', handle: 'term-current' }
-                    : { kind: 'chat', sessionId: CURRENT, worktreeId: WORKSPACE }
+                    : { kind: 'chat', sessionId: ROOT, worktreeId: WORKSPACE }
               }
             : { ok: true }
       return { id: 'reply', ok: true, result, _meta: { runtimeId: 'remote' } }
@@ -266,7 +259,7 @@ it.each([false, true])(
     const stopLocal = getStructuredAgentSessionStatusFeed({ kind: 'local' }).activate()
     await mount()
     act(() => {
-      publish('local', duplicate ? CURRENT : 'local-chat')
+      publish('local', duplicate ? ROOT : 'local-chat')
       publish('server-1')
     })
     expect(screen.getAllByRole('button', { name: 'Remote rename' })).toHaveLength(2)
@@ -314,46 +307,6 @@ it('keeps recorded CLI labels and focuses the exact remote pane from both surfac
   }
 })
 
-it('uses confirmed unsupported-feed direct-root names and re-probes support after remount', async () => {
-  seed()
-  transport.unsupported = true
-  useAppStore.setState({
-    activeWorkspaceExecutionHostId: 'runtime:server-1',
-    unifiedTabsByWorktree: {
-      [WORKSPACE]: [
-        useAppStore.getState().unifiedTabsByWorktree[WORKSPACE]![0]!,
-        tab('remote-sender', ROOT, 'Legacy rename', 'runtime:server-1')
-      ]
-    }
-  })
-  const view = await mount()
-  expect(screen.getAllByRole('button', { name: 'Legacy rename' })).toHaveLength(2)
-  expect(transport.subscribe).not.toHaveBeenCalled()
-  view.unmount()
-  transport.unsupported = false
-  await mount()
-  expect(screen.getAllByRole('button', { name: 'Recorded sender' })).toHaveLength(2)
-  act(() => publish('server-1', ROOT))
-  expect(screen.getAllByRole('button', { name: 'Legacy rename' })).toHaveLength(2)
-})
-
-it('does not mistake a failed capability probe for a known unsupported host', async () => {
-  seed()
-  transport.failed = true
-  useAppStore.setState({
-    activeWorkspaceExecutionHostId: 'runtime:server-1',
-    unifiedTabsByWorktree: {
-      [WORKSPACE]: [
-        useAppStore.getState().unifiedTabsByWorktree[WORKSPACE]![0]!,
-        tab('remote-sender', ROOT, 'Unverified rename', 'runtime:server-1')
-      ]
-    }
-  })
-  await mount()
-  expect(screen.getAllByRole('button', { name: 'Recorded sender' })).toHaveLength(2)
-  expect(transport.subscribe).not.toHaveBeenCalled()
-})
-
 it('keeps older-host direct-root names and both clicks on the stamped host when the workspace is local', async () => {
   seed()
   transport.unsupported = true
@@ -377,40 +330,4 @@ it('keeps older-host direct-root names and both clicks on the stamped host when 
       expect.objectContaining({ selector: 'server-1', method: 'session.tabs.activate' })
     )
   }
-})
-
-it('withdraws unsupported-root names during reconnect and waits for the newly supported feed on both surfaces', async () => {
-  seed()
-  transport.unsupported = true
-  useAppStore.setState({
-    unifiedTabsByWorktree: {
-      [WORKSPACE]: [
-        useAppStore.getState().unifiedTabsByWorktree[WORKSPACE]![0]!,
-        tab('remote-sender', ROOT, 'Legacy remote rename', 'runtime:server-1')
-      ]
-    }
-  })
-  await mount()
-  expect(screen.getAllByRole('button', { name: 'Legacy remote rename' })).toHaveLength(2)
-  transport.unsupported = false
-  act(() =>
-    useAppStore.setState({
-      runtimeStatusByEnvironmentId: new Map([
-        [
-          'server-1',
-          {
-            status: null,
-            checkedAt: 1,
-            hostContactEpoch: 1,
-            connectionGeneration: 1
-          }
-        ]
-      ])
-    })
-  )
-  expect(screen.getAllByRole('button', { name: 'Recorded sender' })).toHaveLength(2)
-  await act(async () => vi.waitFor(() => expect(transport.subscribe).toHaveBeenCalledOnce()))
-  expect(screen.getAllByRole('button', { name: 'Recorded sender' })).toHaveLength(2)
-  act(() => publish('server-1', ROOT))
-  expect(screen.getAllByRole('button', { name: 'Legacy remote rename' })).toHaveLength(2)
 })

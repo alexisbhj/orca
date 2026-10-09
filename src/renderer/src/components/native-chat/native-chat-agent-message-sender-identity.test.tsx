@@ -33,7 +33,6 @@ vi.mock('@/runtime/structured-agent-session-status-feed', () => ({
         }
       },
       getSnapshot: () => feed.snapshot,
-      getCapability: () => 'supported',
       getSessionObservation: () => (feed.live ? 'live' : 'unverifiable'),
       subscribe: (listener: () => void) => {
         feed.listeners.add(listener)
@@ -54,15 +53,14 @@ const PANE = 'terminal:11111111-1111-4111-8111-111111111111'
 const initial = useAppStore.getInitialState()
 const providerA = { key: 'session_id' as const, id: 'provider-a' }
 
-function summary(sessionId: string, root: string | null = ROOT): AgentSessionStatusSummary {
+function summary(sessionId: string): AgentSessionStatusSummary {
   return {
     sessionId,
     workspaceId: SENDER,
     agent: 'claude',
     status: null,
     latestPrompt: '',
-    updatedAt: 1,
-    orchestrationSessionId: root
+    updatedAt: 1
   }
 }
 function tab(sessionId: string, name: string, host: 'local' | 'runtime:remote' = 'local'): Tab {
@@ -139,58 +137,23 @@ afterEach(() => {
   feeds.clear()
 })
 
-it.each([false, true])(
-  'updates the %s queued sender through multiple clears and ignores reopened history',
-  (queued) => {
-    useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab(ROOT, 'Original sender')] } })
-    render(
-      <NativeChatAgentMessageSenders from={source()} chatWorktreeId={RECIPIENT} queued={queued} />
-    )
-    act(() => {
-      publish('local', [summary(ROOT, null), summary('clear-one')])
-      useAppStore.setState({
-        unifiedTabsByWorktree: {
-          [SENDER]: [tab(ROOT, 'History'), tab('clear-one', 'First rename')]
-        }
-      })
-    })
-    expect(screen.getByRole('button', { name: 'First rename' })).toBeInTheDocument()
-    act(() => {
-      publish('local', [summary(ROOT, null), summary('clear-one', null), summary('clear-two')])
-      useAppStore.setState({
-        unifiedTabsByWorktree: {
-          [SENDER]: [tab(ROOT, 'History'), tab('clear-two', 'Second rename')]
-        }
-      })
-    })
-    expect(screen.getByRole('button', { name: 'Second rename' })).toBeInTheDocument()
-    act(() => useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab(ROOT, 'History')] } }))
-    expect(screen.getByRole('button', { name: 'Original sender' })).toBeInTheDocument()
-  }
-)
-
 it('uses the recipient host when identical session text is published by two hosts', () => {
-  publish('local', [summary('clear-shared')])
-  publish('remote', [summary('clear-shared')])
+  publish('local', [summary(ROOT)])
+  publish('remote', [summary(ROOT)])
   useAppStore.setState({
     activeWorkspaceExecutionHostId: 'runtime:remote',
     unifiedTabsByWorktree: {
-      [SENDER]: [
-        tab('clear-shared', 'Remote sender', 'runtime:remote'),
-        tab('clear-shared', 'Wrong host')
-      ]
+      [SENDER]: [tab(ROOT, 'Remote sender', 'runtime:remote'), tab(ROOT, 'Wrong host')]
     }
   })
   render(<NativeChatAgentMessageSenders from={source()} chatWorktreeId={RECIPIENT} />)
   expect(screen.getByRole('button', { name: 'Remote sender' })).toBeInTheDocument()
 })
 
-it('preserves direct-root rename behavior when an older host omits lineage identity', () => {
-  const { orchestrationSessionId: _root, ...older } = summary(ROOT)
-  publish('local', [older])
-  useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab(ROOT, 'Legacy root rename')] } })
+it('shows a chat sender by its current rename', () => {
+  useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab(ROOT, 'Renamed sender')] } })
   render(<NativeChatAgentMessageSenders from={source()} chatWorktreeId={RECIPIENT} />)
-  expect(screen.getByRole('button', { name: 'Legacy root rename' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Renamed sender' })).toBeInTheDocument()
 })
 
 it.each([false, true])(
@@ -226,34 +189,3 @@ it.each([false, true])(
     expect(feeds.get('local')!.activations).toBe(0)
   }
 )
-
-it('falls back during disconnect, resumes live names after reconnect, and releases shared feed readers', () => {
-  useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab(ROOT, 'Current sender')] } })
-  const view = render(<NativeChatAgentMessageSenders from={source()} chatWorktreeId={RECIPIENT} />)
-  const feed = feeds.get('local')!
-  expect(screen.getByRole('button', { name: 'Current sender' })).toBeInTheDocument()
-  expect(feed.activations).toBe(2)
-  act(() => {
-    feed.live = false
-    publish('local', [summary(ROOT)])
-  })
-  expect(screen.getByRole('button', { name: 'Original sender' })).toBeInTheDocument()
-  act(() => {
-    feed.live = true
-    publish('local', [summary(ROOT, null), summary('clear-new')])
-    useAppStore.setState({
-      unifiedTabsByWorktree: { [SENDER]: [tab('clear-new', 'Reconnected sender')] }
-    })
-  })
-  expect(screen.getByRole('button', { name: 'Reconnected sender' })).toBeInTheDocument()
-  view.unmount()
-  expect(feed.activations).toBe(0)
-  expect(feed.listeners.size).toBe(0)
-})
-
-it('keeps the recorded name when newer-host summaries disagree about the current root owner', () => {
-  publish('local', [summary('clear-one'), summary('clear-two')])
-  useAppStore.setState({ unifiedTabsByWorktree: { [SENDER]: [tab('clear-one', 'Wrong owner')] } })
-  render(<NativeChatAgentMessageSenders from={source()} chatWorktreeId={RECIPIENT} />)
-  expect(screen.getByRole('button', { name: 'Original sender' })).toBeInTheDocument()
-})

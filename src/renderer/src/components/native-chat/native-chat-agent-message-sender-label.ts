@@ -2,10 +2,7 @@ import { translate } from '@/i18n/i18n'
 import { useAppStore } from '@/store'
 import type { AppState } from '@/store/types'
 import { structuredChatTabBySessionId } from '@/lib/structured-chat-tab-index'
-import {
-  useStructuredChatTabConversationName,
-  useStructuredOrchestrationSessionId
-} from '@/runtime/structured-conversation-name'
+import { useStructuredChatTabConversationName } from '@/runtime/structured-conversation-name'
 import {
   structuredAgentSessionOwnerForTab,
   resolveStructuredAgentSessionOwner,
@@ -52,7 +49,7 @@ function findChatTab(
   return undefined
 }
 
-/** Live chat names follow the host's current clear lineage; CLI names stay as recorded. */
+/** Live chat names follow the sender's chat on the receiving chat's host; CLI names stay as recorded. */
 export function useAgentMessageSenderLabel(
   sender: AgentMessageSender,
   chatWorktreeId: string | null,
@@ -67,9 +64,8 @@ export function useAgentMessageSenderLabel(
         ? resolveStructuredAgentSessionOwner(state, chatWorktreeId)
         : null
   )
-  const sessionId = useStructuredOrchestrationSessionId(owner, local ? orcaSessionId : null)
   const chatTab = useAppStore((state) =>
-    local && sessionId ? findChatTab(state, sessionId, owner) : undefined
+    local && orcaSessionId ? findChatTab(state, orcaSessionId, owner) : undefined
   )
   const conversationName = useStructuredChatTabConversationName(chatTab)
   const ownName = chatTab ? chatTab.customLabel?.trim() || conversationName : null
