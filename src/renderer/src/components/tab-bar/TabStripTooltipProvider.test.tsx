@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useContext } from 'react'
+import { StrictMode, useContext } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TabCloseTooltip } from './TabCloseTooltip'
@@ -157,5 +157,22 @@ describe('TabStripTooltipProvider', () => {
     act(() => screen.getByRole('button', { name: 'close' }).parentElement?.focus())
     expect(container.ownerDocument.querySelector('[data-tab-hover-card]')).not.toBeNull()
     expect(container.ownerDocument.querySelector('[data-tab-close-tooltip]')).toBeNull()
+  })
+
+  it('keeps the strip warm while a card is open in StrictMode', () => {
+    render(
+      <StrictMode>
+        <TabStripTooltipProvider>
+          <CardEvents id="probe" />
+          <TabHoverCard title="Build" icon={<span />} programName="Terminal">
+            <button>tab</button>
+          </TabHoverCard>
+        </TabStripTooltipProvider>
+      </StrictMode>
+    )
+    act(() => screen.getByRole('button', { name: 'tab' }).focus())
+    expect(screen.getByLabelText('probe delay').textContent).toBe('immediate')
+    act(() => vi.advanceTimersByTime(TAB_TOOLTIP_SKIP_DELAY_MS + 1))
+    expect(screen.getByLabelText('probe delay').textContent).toBe('immediate')
   })
 })

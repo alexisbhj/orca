@@ -42,7 +42,10 @@ export function TabHoverCard({
   const setContentElement = useCallback(
     (element: HTMLDivElement | null) => {
       const previous = content.current
-      if (!element && previous) {
+      if (element) {
+        // StrictMode reattaches refs without closing the tooltip.
+        notifyOpenChange?.(cardId, true)
+      } else if (previous) {
         notifyOpenChange?.(cardId, false)
         captureClosedPlacement(previous)
       }
