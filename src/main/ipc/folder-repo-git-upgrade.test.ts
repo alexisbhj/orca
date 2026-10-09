@@ -143,7 +143,7 @@ describe('folder repo git upgrade watch', () => {
     vi.clearAllMocks()
     root = realpathSync(await mkdtemp(join(tmpdir(), 'folder-repo-upgrade-')))
     symlinkedRoot = `${root}-link`
-    await symlink(root, symlinkedRoot, 'dir')
+    await symlink(root, symlinkedRoot, process.platform === 'win32' ? 'junction' : 'dir')
     statCalls.length = 0
     gitProbes.length = 0
   })
