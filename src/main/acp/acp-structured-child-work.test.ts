@@ -358,9 +358,9 @@ describe('Grok roster evidence through the existing host child store', () => {
     }
   })
 
-  // Grok's own refusal is quiet; a reply about another subagent proves nothing, so it is unknown.
+  // Grok's own refusal means it did nothing; a reply about another subagent proves nothing, so it is unknown.
   it.each([
-    ['rpc-error', { ok: true, value: { cancelled: false } }],
+    ['rpc-error', { ok: false, refusal: { code: 'agent_session_operation_invalid' } }],
     ['mismatched-id', { ok: false, refusal: { code: 'agent_session_operation_unknown' } }]
   ] as const)(
     'does not settle or cancel the parent after a targeted %s',

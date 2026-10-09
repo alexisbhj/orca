@@ -35,20 +35,22 @@ export async function stopAcpChildren(
   fence: number,
   taskIds: readonly string[],
   at: () => number
-): Promise<{ cancelled: boolean }> {
+): Promise<{ cancelled: boolean; stillRunning?: true }> {
   const control = session.spec.dialect.subagentStop
   if (!control || !session.subagentStopSupported || session.fence !== fence) {
     throw new Error('ACP child cancellation is unavailable')
   }
   let cancelled = false
+  let stillRunning = false
   for (const id of taskIds) {
     const request = control.request(session.lane.translator.providerSessionId, id)
     let value: unknown
     try {
       value = await session.connection.requestExtension(request.method, request.params)
     } catch (error) {
-      // The agent's own refusal usually means the subagent already ended; anything else leaves the effect unknown.
+      // Grok answers an ended or unknown subagent normally, so its refusal means it did nothing; anything else leaves the effect unknown.
       if (error instanceof AcpAgentError) {
+        stillRunning = true
         continue
       }
       throw error
@@ -59,5 +61,5 @@ export async function stopAcpChildren(
     }
     cancelled ||= result.cancelled
   }
-  return { cancelled }
+  return { cancelled, ...(stillRunning ? { stillRunning: true as const } : {}) }
 }
