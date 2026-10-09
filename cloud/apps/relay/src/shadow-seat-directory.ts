@@ -20,6 +20,8 @@ const RECENTLY_LEFT_PER_HOST = 4
 // Google identity tokens live an hour; one per poll would be 26 metadata reads a second.
 const IDENTITY_TOKEN_REUSE_MS = 10 * 60_000
 const SUMMARY_INTERVAL_MS = 60_000
+// A drain backlog drains over a few polls rather than holding one slot indefinitely.
+const MAX_PAGES_PER_POLL = 5
 
 // Lenient on purpose: a newer cell may add fields or change kinds.
 const SeatChangeSchema = z.object({
@@ -29,6 +31,7 @@ const SeatChangeSchema = z.object({
   relayHostId: z.string(),
   epoch: z.number().int(),
   generation: z.number().int(),
+  state: z.string().optional(),
   closeCode: z.number().int().optional(),
   at: z.number()
 })
@@ -52,6 +55,8 @@ const SeatFeedSchema = z.object({
     .object({ generation: z.union([z.string(), z.number()]), flags: z.record(z.unknown()) })
     .optional(),
   changes: z.array(SeatChangeSchema).optional(),
+  // The cell cut the page (2,000 changes); poll again at once.
+  more: z.boolean().optional(),
   full: z.array(SeatSchema).optional()
 })
 export type SeatFeedResponse = z.infer<typeof SeatFeedSchema>
@@ -248,19 +253,20 @@ export class ShadowSeatDirectory {
       if (change.seq !== seq + 1) return null
       seq = change.seq
       const key = hostKey(change.userId, change.relayHostId)
+      const seat = cursor.seats.get(key)
+      // A superseded generation's leave can arrive after its successor's join.
+      if (seat && change.generation < seat.generation) continue
       if (change.kind === 'join') {
         this.seat(cursor, key, {
           cellId: cursor.cellId,
           epoch: change.epoch,
           generation: change.generation,
-          state: 'active',
+          state: change.state ?? 'active',
           joinedAt: change.at,
           observedAt: now
         })
       } else if (change.kind === 'leave') {
-        const seat = cursor.seats.get(key)
-        // A newer generation may have joined before the old one closed.
-        if (seat && seat.generation === change.generation) {
+        if (seat) {
           this.unseat(cursor, key)
           this.rememberLeft(key, {
             cellId: cursor.cellId,
@@ -271,8 +277,7 @@ export class ShadowSeatDirectory {
           })
         }
       } else if (change.kind === 'drain-only') {
-        const seat = cursor.seats.get(key)
-        if (seat && seat.generation === change.generation) {
+        if (seat) {
           seat.state = 'drain-only'
           seat.observedAt = now
         }
@@ -448,34 +453,41 @@ export function startShadowSeatPoller(
     }
   }
 
+  // Returns true when the cell cut the page and the next one should follow at once.
+  const fetchPage = async (cell: SeatFeedCell): Promise<boolean> => {
+    const url = new URL('/v1/admin/cell-seats', cell.cellUrl)
+    const since = directory.since(cell.cellId)
+    if (since !== undefined) url.searchParams.set('since', since)
+    const response = await fetchImpl(url, {
+      headers: { authorization: `Bearer ${await identity()}` },
+      signal: AbortSignal.timeout(SHADOW_SEAT_POLL_TIMEOUT_MS)
+    })
+    if (stopped) return false
+    if (response.status === 404) {
+      await response.body?.cancel().catch(() => undefined)
+      directory.markNoFeed(cell.cellId, now())
+      return false
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined)
+      directory.fail(cell.cellId, `status_${response.status}`)
+      return false
+    }
+    const body = SeatFeedSchema.safeParse(await response.json().catch(() => null))
+    if (!body.success) {
+      directory.fail(cell.cellId, 'malformed')
+      return false
+    }
+    directory.apply(cell.cellId, body.data, now())
+    return body.data.more === true && directory.cellState(cell.cellId)?.status === 'live'
+  }
+
   const poll = async (cell: SeatFeedCell): Promise<void> => {
     if (inFlight.has(cell.cellId)) return
     inFlight.add(cell.cellId)
     try {
-      const url = new URL('/v1/admin/cell-seats', cell.cellUrl)
-      const since = directory.since(cell.cellId)
-      if (since !== undefined) url.searchParams.set('since', since)
-      const response = await fetchImpl(url, {
-        headers: { authorization: `Bearer ${await identity()}` },
-        signal: AbortSignal.timeout(SHADOW_SEAT_POLL_TIMEOUT_MS)
-      })
-      if (stopped) return
-      if (response.status === 404) {
-        await response.body?.cancel().catch(() => undefined)
-        directory.markNoFeed(cell.cellId, now())
-        return
-      }
-      if (!response.ok) {
-        await response.body?.cancel().catch(() => undefined)
-        directory.fail(cell.cellId, `status_${response.status}`)
-        return
-      }
-      const body = SeatFeedSchema.safeParse(await response.json().catch(() => null))
-      if (!body.success) {
-        directory.fail(cell.cellId, 'malformed')
-        return
-      }
-      directory.apply(cell.cellId, body.data, now())
+      let page = 1
+      while ((await fetchPage(cell)) && page < MAX_PAGES_PER_POLL) page += 1
     } catch (error) {
       directory.fail(
         cell.cellId,

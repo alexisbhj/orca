@@ -176,7 +176,7 @@ describe('startShadowSeatPoller', () => {
     expect(cell.requests[2]?.searchParams.has('since')).toBe(false)
   })
 
-  it('resumes a short page from its last change and resyncs on an empty page behind the head', () => {
+  it('resumes a short page from its last change; an empty page behind the head resyncs', () => {
     const directory = new ShadowSeatDirectory()
     directory.setCells(['cell-a'])
     directory.apply('cell-a', feed({ seq: 2, full: [] }), 10)
@@ -197,6 +197,56 @@ describe('startShadowSeatPoller', () => {
     directory.apply('cell-a', feed({ seq: 1, full: [seat('host-1', 2)] }), 10)
     directory.apply('cell-a', feed({ seq: 2, changes: [change(2, 'leave', 'host-1', 1)] }), 11)
     expect(directory.seatsOf('user-a', 'host-1')).toMatchObject([{ generation: 2 }])
+  })
+
+  it('applies a change only at or above the seat generation', () => {
+    const directory = new ShadowSeatDirectory()
+    directory.setCells(['cell-a'])
+    directory.apply('cell-a', feed({ seq: 1, full: [seat('host-1', 2)] }), 10)
+    directory.apply(
+      'cell-a',
+      feed({
+        seq: 3,
+        changes: [change(2, 'join', 'host-1', 1), change(3, 'drain-only', 'host-1', 1)]
+      }),
+      11
+    )
+    expect(directory.seatsOf('user-a', 'host-1')).toMatchObject([
+      { generation: 2, state: 'active' }
+    ])
+    directory.apply(
+      'cell-a',
+      feed({
+        seq: 5,
+        changes: [change(4, 'drain-only', 'host-9'), change(5, 'leave', 'host-1', 3)]
+      }),
+      12
+    )
+    expect(directory.seatsOf('user-a', 'host-1')).toEqual([])
+    expect(directory.seatsOf('user-a', 'host-9')).toEqual([])
+  })
+
+  it('follows a cut page at once within the same poll', async () => {
+    let call = 0
+    const cell = poller(
+      {
+        'cell-a': () => {
+          call += 1
+          if (call === 1) return json(feed({ seq: 0, full: [] }))
+          if (call === 2) {
+            return json(feed({ seq: 1, more: true, changes: [change(1, 'join', 'host-1')] }))
+          }
+          return json(feed({ seq: 2, changes: [change(2, 'join', 'host-2')] }))
+        }
+      },
+      ['cell-a']
+    )
+    await cell.tick()
+    await cell.tick()
+    cell.stop()
+    expect(call).toBe(3)
+    expect(cell.requests[2]?.searchParams.get('since')).toBe(`${INCARNATION}:1`)
+    expect(cell.directory.seatsOf('user-a', 'host-2')).toHaveLength(1)
   })
 
   it('keeps seats as unverifiable through timeouts and errors, never as gone', async () => {
