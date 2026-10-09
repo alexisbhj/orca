@@ -242,6 +242,36 @@ describe('Codex roster retention through the real sink and journal', () => {
     }
   )
 
+  it('suppresses both settled executions after same-group reuse, eviction and execution-cache churn', async () => {
+    const s = await session()
+    s.spawn('old-a')
+    s.spawn('old-b')
+    s.turn('old-a', 'completed')
+    s.announce('old-a', 'interacted')
+    s.turn('old-a', 'working', 'second-execution')
+    s.turn('old-a', 'completed', 'second-execution')
+    s.turn('old-b', 'completed')
+    const original = await s.original()
+    await laterGroups(s, true, 270)
+    expect(s.roster.executions.find('old-a')).toBeUndefined()
+    expect(s.roster.retentionSizes().settledIdentities).toBeLessThan(2048)
+    const before = await s.rows()
+    s.parent('current')
+    for (const turnId of ['execution:old-a', 'second-execution']) {
+      s.turn('old-a', 'working', turnId)
+      s.announce('old-a')
+      s.turn('old-a', 'completed', turnId)
+      s.announce('old-a', 'completed')
+    }
+    expect(await s.rows()).toEqual(before)
+    s.announce('old-a', 'interacted')
+    s.turn('old-a', 'working', 'third-execution')
+    const current = (await s.rows()).find(({ group }) => group.groupId === `${THREAD}:current`)
+    expect(states(current)).toEqual([{ id: 'old-a', state: 'working' }])
+    s.turn('old-a', 'completed', 'third-execution')
+    expect(await s.original()).toEqual(original)
+  })
+
   it.each(['append', 'publish'] as const)(
     'retains final retry ownership after %s refuses settlement under group pressure',
     async (refuse) => {

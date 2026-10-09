@@ -29,6 +29,11 @@ export class SubagentRosterRetention<Group extends RetainedRosterGroup> {
     return this.settledIdentities.has(identity)
   }
 
+  /** Superseded executions share the evicted history's single bounded budget. */
+  rememberSettled(identity: string): void {
+    this.settledIdentities.set(identity, true)
+  }
+
   trim(changed: Iterable<Group>): void {
     for (const group of changed) {
       if (
@@ -47,7 +52,7 @@ export class SubagentRosterRetention<Group extends RetainedRosterGroup> {
       const group = this.groups.get(groupId)
       if (group) {
         for (const identity of this.options.identities(group)) {
-          this.settledIdentities.set(identity, true)
+          this.rememberSettled(identity)
         }
         this.options.onEvict?.(group)
       }

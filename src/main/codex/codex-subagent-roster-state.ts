@@ -5,6 +5,7 @@ import type {
   AgentJournalTurnScope
 } from '../../shared/agent-session-journal-types'
 import type { NativeChatSubagentEntry } from '../../shared/native-chat-types'
+import { isTerminalSubagentState } from '../../shared/native-chat-subagent-summary'
 import { SubagentRosterRetention } from '../native-chat/subagent-roster-retention'
 import {
   MAX_CODEX_SUBAGENT_GROUPS,
@@ -30,6 +31,24 @@ export type RosterGroup = {
 /** A reused child thread starts a new execution only when its turn id changes. */
 export function codexSubagentExecutionIdentity(threadId: string, turnId: string): string {
   return JSON.stringify([threadId, turnId])
+}
+
+export function retainSupersededCodexExecution(
+  group: RosterGroup,
+  threadId: string,
+  nextTurnId: string | null,
+  retention: SubagentRosterRetention<RosterGroup>
+): void {
+  const previousTurnId = group.executionTurns.get(threadId)
+  const previous = group.entries.get(threadId)
+  if (
+    typeof previousTurnId === 'string' &&
+    previousTurnId !== nextTurnId &&
+    previous &&
+    isTerminalSubagentState(previous.state)
+  ) {
+    retention.rememberSettled(codexSubagentExecutionIdentity(threadId, previousTurnId))
+  }
 }
 
 export function createCodexSubagentRosterRetention(groups: Map<string, RosterGroup>) {

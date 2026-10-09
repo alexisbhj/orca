@@ -25,6 +25,29 @@ function group(groupId: string, state: NativeChatSubagentState, children = 64): 
 }
 
 describe('host subagent roster settled retention', () => {
+  it('shares one bound between superseded executions and evicted group identities', () => {
+    const groups = new Map<string, Group>()
+    const retention = new SubagentRosterRetention(groups, {
+      maxGroups: 1,
+      maxSettledIdentities: 2048,
+      identities: (roster) => roster.entries.keys()
+    })
+    const live = group('live', 'working', 1)
+    groups.set(live.groupId, live)
+    for (let index = 0; index < 2100; index++) {
+      retention.rememberSettled(`superseded-${index}`)
+    }
+    const settled = group('settled', 'completed', 1)
+    groups.set(settled.groupId, settled)
+    retention.trim([settled])
+    expect(retention.sizes()).toEqual({ groups: 1, settledIdentities: 2048 })
+    expect(retention.hasSettled('superseded-52')).toBe(false)
+    expect(retention.hasSettled('superseded-2099')).toBe(true)
+    expect(retention.hasSettled('settled:0')).toBe(true)
+    retention.clear()
+    expect(retention.sizes().settledIdentities).toBe(0)
+  })
+
   it('bounds settled groups and recent identities while retaining every live group', () => {
     const groups = new Map<string, Group>()
     const retention = new SubagentRosterRetention(groups, {

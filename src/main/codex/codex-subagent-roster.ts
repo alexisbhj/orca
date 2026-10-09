@@ -41,6 +41,7 @@ import {
   codexSubagentGroupIdentity,
   codexSubagentExecutionIdentity as executionIdentity,
   createCodexSubagentRosterRetention,
+  retainSupersededCodexExecution,
   type RosterGroup
 } from './codex-subagent-roster-state'
 import type { CodexThreadItem } from './codex-structured-item-translation'
@@ -240,10 +241,7 @@ export class CodexSubagentRoster {
     return this.retention.sizes()
   }
 
-  private sweep(group: RosterGroup | undefined): StructuredAgentSessionSinkAdmission {
-    if (!group) {
-      return ADMITTED
-    }
+  private sweep(group: RosterGroup): StructuredAgentSessionSinkAdmission {
     let changed = false
     for (const [id, entry] of group.entries) {
       if (isTerminalSubagentState(entry.state)) {
@@ -310,6 +308,7 @@ export class CodexSubagentRoster {
       return
     }
     const now = this.now()
+    retainSupersededCodexExecution(group, child.agentThreadId, turnId, this.retention)
     group.executionTurns.set(child.agentThreadId, turnId)
     group.entries.set(child.agentThreadId, {
       id: child.agentThreadId,
