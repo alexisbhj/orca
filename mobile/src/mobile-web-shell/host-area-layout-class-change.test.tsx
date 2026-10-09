@@ -12,15 +12,25 @@ import type { MobileWebBundleManifestRead } from '../transport/mobile-web-bundle
 import type { GenerationStore } from './generation-store'
 import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
 
-const doubles = vi.hoisted(() => ({
-  routes: [] as MobileWebBundleManifestRead['routes'],
-  gates: {
-    statusPending: false,
-    statusReadable: true,
-    hostCapabilities: [] as string[],
-    hostProtocolWindow: { protocolVersion: 10, minCompatibleMobileVersion: 1 }
-  }
-}))
+const doubles = vi.hoisted(
+  (): {
+    routes: MobileWebBundleManifestRead['routes']
+    gates: {
+      statusPending: boolean
+      statusReadable: boolean
+      hostCapabilities: string[]
+      hostProtocolWindow: { protocolVersion: number; minCompatibleMobileVersion: number }
+    }
+  } => ({
+    routes: [],
+    gates: {
+      statusPending: false,
+      statusReadable: true,
+      hostCapabilities: [],
+      hostProtocolWindow: { protocolVersion: 10, minCompatibleMobileVersion: 1 }
+    }
+  })
+)
 
 vi.mock('expo-crypto', () => ({ getRandomBytes: (length: number) => new Uint8Array(length) }))
 vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, Paths: { cache: '' } }))
