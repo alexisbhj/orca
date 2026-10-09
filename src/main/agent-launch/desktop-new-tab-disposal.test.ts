@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { executeAgentLaunch, type AgentLaunchExecution } from './agent-launch-executor'
+import { executeAgentLaunch } from './agent-launch-executor'
+import type { AgentLaunchSurfaceExecution } from './agent-launch-execution'
 import {
   deliverTerminalLaunchPrompt,
   promptReceipt,
@@ -16,7 +17,7 @@ const prompt: AgentLaunchPrompt = {
 function execution(
   deliver: NonNullable<AgentLaunchSurfaceFactory['deliverTerminalPrompt']>,
   launchPrompt = prompt
-): AgentLaunchExecution {
+): AgentLaunchSurfaceExecution {
   return {
     runtime: {
       getClientSettings: () => {
