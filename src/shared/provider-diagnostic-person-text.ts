@@ -4,6 +4,8 @@ const TECHNICAL_TEXT = [
   /^\s*[a-zA-Z][a-zA-Z0-9]*_[a-zA-Z0-9_]+\s*$/,
   /\b(?:[A-Za-z]*Error|Exception)\s*:/,
   /\bE[A-Z][A-Z0-9]{2,}\b/,
+  // Upper-case snake codes with a digit (ERR_42); digit-free setting names (ANTHROPIC_API_KEY) stay.
+  /\b(?=[A-Z0-9_]*\d)[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/,
   /\b(?:HTTP\/\d|(?:HTTP|RPC|JSON-RPC)\s+(?:[-+]?\d+|error|response))/i,
   /(?:^|\n)\s*(?:at\s+\S+|Caused by:|Traceback\s*\()/,
   /[[{]\s*"[^"\n]+"\s*:/,

@@ -2,9 +2,11 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import type * as I18nModule from '@/i18n/i18n'
 import { NativeChatQueuedMessageCard } from './NativeChatQueuedMessageCard'
 
-vi.mock('@/i18n/i18n', () => ({
+vi.mock('@/i18n/i18n', async (importOriginal) => ({
+  ...(await importOriginal<typeof I18nModule>()),
   translate: (_key: string, fallback: string, values?: Record<string, string>) =>
     fallback.replace(/\{\{(\w+)\}\}/g, (placeholder, name: string) => values?.[name] ?? placeholder)
 }))
@@ -16,6 +18,7 @@ describe('the known chat agent on returned cards', () => {
       <TooltipProvider>
         <NativeChatQueuedMessageCard
           agentName={agentName}
+          chatWorktreeId={null}
           card={{
             messageId: 'returned',
             position: 1,

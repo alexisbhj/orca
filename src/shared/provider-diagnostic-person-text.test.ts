@@ -8,6 +8,8 @@ describe('provider explanations a person can read', () => {
     'Not enough messages to compact.',
     'Too many requests',
     'Reconnecting... 2/5',
+    'Set ANTHROPIC_API_KEY, then try again.',
+    'GPT4 is not available on this plan.',
     'Uses {{agent}} $t(key) <b>&</b>'
   ])('keeps readable words: %s', (text) => {
     expect(isProviderDiagnosticPersonText(text)).toBe(true)
@@ -24,6 +26,8 @@ describe('provider explanations a person can read', () => {
     'API Error: Request was aborted.',
     'TypeError: Cannot read properties of undefined',
     'write EPIPE',
+    'Internal error: CAPTURE_PROVIDER_400',
+    'The request failed with ERR_42.',
     'The configured provider has no API key.',
     'The Provider did not accept this message.',
     'The providers did not accept this message.',

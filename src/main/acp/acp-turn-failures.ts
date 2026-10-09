@@ -22,9 +22,21 @@ function acpStopReasonFailed(stopReason: string): boolean {
   return FAILED_STOP_REASONS.includes(stopReason)
 }
 
-/** The provider's words in its error answer to `session/prompt`. */
+/** The provider's words in its error answer to `session/prompt`. Agents often answer a generic
+ *  message ("Internal error") and keep their own words in `data`. */
 export function acpPromptErrorDetail(dialect: AcpDialect, error: AcpAgentError): string {
-  return dialect.promptErrorDetail?.(error) ?? error.message
+  return dialect.promptErrorDetail?.(error) ?? acpErrorDataWords(error.data) ?? error.message
+}
+
+// Other structured data is metadata (service, error class names), not words for a person.
+function acpErrorDataWords(data: unknown): string | undefined {
+  const words =
+    typeof data === 'string'
+      ? data
+      : typeof data === 'object' && data !== null && 'details' in data
+        ? data.details
+        : undefined
+  return typeof words === 'string' && words.trim() ? words : undefined
 }
 
 export function acpAuthenticationRequired(dialect: AcpDialect, error: unknown): boolean {
@@ -48,6 +60,15 @@ export function acpSignInRequiredRefusal(
   )
 }
 
+/** Whose turns these are: the provider session, and the agent its rows and Details name. */
+export type AcpTurnFailureSource = {
+  sessionId: string
+  /** The agent's id, naming whose words a failed turn's Details hold. */
+  agent?: string
+  /** The agent's display name, for a failed turn the provider gave no words for. */
+  agentName?: string
+}
+
 /** One error row per failed turn, named and quoting the agent's reason only when a person can read
  *  it, as a Codex turn-ending error reads: the message was accepted and the turn ran, so it is no
  *  refusal. The reason itself rides the row's Details. Providers send that reason several times
@@ -61,10 +82,8 @@ export class AcpTurnFailures {
   >({ maxEntries: 128 })
 
   constructor(
-    private readonly sessionId: string,
     private readonly dialect: AcpDialect,
-    private readonly agentName: string | undefined,
-    private readonly agent = 'acp'
+    private readonly source: AcpTurnFailureSource
   ) {}
 
   has(turn: string): boolean {
@@ -100,6 +119,7 @@ export class AcpTurnFailures {
     }
     const diagnostic =
       detail ?? (written?.text ? providerDiagnostic(written.text, 'person') : undefined)
+    const agent = this.source.agent ?? 'acp'
     const state = {
       text: diagnostic?.text ?? '',
       notSignedIn: notSignedIn || written?.notSignedIn === true,
@@ -108,7 +128,7 @@ export class AcpTurnFailures {
     this.rows.set(turn, state)
     if (detail && detail.text !== written?.text) {
       console.warn(
-        `[acp] ${this.agentName ?? this.agent} turn failed (${stopReason}):`,
+        `[acp] ${this.source.agentName ?? agent} turn failed (${stopReason}):`,
         detail.text
       )
     }
@@ -123,14 +143,14 @@ export class AcpTurnFailures {
           ...(diagnostic
             ? {
                 providerFrame: {
-                  provider: this.agent,
+                  provider: agent,
                   kind: 'turn:failed',
                   payload: boundPayload(diagnostic.text, DEFAULT_JOURNAL_PAYLOAD_LIMITS)
                 }
               }
             : {})
         },
-        join: { thread: this.sessionId, turn }
+        join: { thread: this.source.sessionId, turn }
       }
     ]
   }
@@ -144,14 +164,14 @@ export class AcpTurnFailures {
       return {
         text:
           this.dialect.failedTurnText?.(rateLimited ? 'rate_limit' : 'error') ??
-          `${this.agentName ?? 'The agent'} ended this turn with an error.`
+          `${this.source.agentName ?? 'The agent'} ended this turn with an error.`
       }
     }
     return agentSessionFailureWords(
       agentSessionFailureFact(notSignedIn ? 'notSignedIn' : 'providerError', {
         detail: diagnostic
       }),
-      { agentName: this.agentName, surface: 'row' }
+      { agentName: this.source.agentName, surface: 'row' }
     )
   }
 }
