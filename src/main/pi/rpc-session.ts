@@ -19,6 +19,10 @@ import { PiRpcTurns } from './rpc-turns'
 import { PiRpcDialogCallbacks } from './rpc-dialog-callbacks'
 import { piRpcStateSchema } from './rpc-protocol'
 import { applyPiRpcSessionOption, readPiRpcCommands, readPiRpcSessionOptions } from './rpc-options'
+import {
+  unpickedSessionConfiguredChoice,
+  withLiveCatalogListing
+} from '../native-chat/agent-model-catalog/agent-model-catalog-entry'
 
 export type PiRpcConnection = Pick<
   JsonlRpcAgentConnection,
@@ -57,6 +61,8 @@ export class PiRpcSession {
   readonly turns: PiRpcTurns
   readonly dialogs: PiRpcDialogCallbacks
   readonly selected = new Map<string, string>()
+  /** Option keys a restore or a pick sent this child, whether or not Pi took them. */
+  readonly picked = new Set<string>()
   readonly skipped: string[] = []
   commands?: AgentSessionSlashCommand[]
   options?: AgentSessionOptionsResult
@@ -70,7 +76,9 @@ export class PiRpcSession {
     readonly input: StructuredAgentSessionAcquireInput,
     readonly generation: string,
     launch: ProviderProcessLaunch,
-    private readonly deps: PiRpcSessionDeps
+    private readonly deps: PiRpcSessionDeps,
+    /** A new Pi session starts on its config's model; a resumed or forked one keeps its own. */
+    readonly resolvesConfig = false
   ) {
     const sink = input.events && providerTimelineSink(input.events)
     if (!sink) {
@@ -147,6 +155,7 @@ export class PiRpcSession {
         this.skipped.push(key)
         continue
       }
+      this.picked.add(key)
       try {
         await applyPiRpcSessionOption(this.connection, this.selected, key, value)
       } catch (error) {
@@ -170,6 +179,20 @@ export class PiRpcSession {
       })
     }
     return state.sessionFile
+  }
+
+  /** What the child reports now, with what a new start no one picked a model for says of its
+   *  config's default. */
+  async readOptions() {
+    const options = await readPiRpcSessionOptions(this.connection)
+    return withLiveCatalogListing(
+      options,
+      unpickedSessionConfiguredChoice({
+        resolvesConfig: this.resolvesConfig,
+        picked: this.picked,
+        ...options
+      })
+    )
   }
 
   async close(requested = true): ReturnType<PiRpcConnection['close']> {
