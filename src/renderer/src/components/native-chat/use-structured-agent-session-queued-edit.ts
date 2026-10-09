@@ -4,7 +4,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { translate } from '@/i18n/i18n'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
 import { structuredAgentSessionHostKey } from '@/runtime/structured-agent-session-host-capability'
 import type {
@@ -18,6 +17,7 @@ import {
   queuedMessageWithEditedText
 } from '../../../../shared/queued-message-text-edit'
 import { appendNativeChatDraftCache } from './native-chat-draft-cache'
+import { queuedEditNotice } from './queued-message-edit-notices'
 import { structuredSessionOperationId } from './structured-agent-session-operation-id'
 import {
   startQueuedEditLease,
@@ -61,39 +61,6 @@ type Edit = {
   lease: QueuedEditLease
 }
 
-/** A question or approval holds the chat box's place, so the text there is out of sight until then. */
-function editNotice(
-  key: 'editChanged' | 'editChangedPrompt' | 'editFailed' | 'editGone' | 'editGonePrompt'
-): string {
-  switch (key) {
-    case 'editChanged':
-      return translate(
-        'components.native-chat.queuedMessages.editChanged',
-        'This message changed while you were editing. Your edit is in the chat box.'
-      )
-    case 'editChangedPrompt':
-      return translate(
-        'components.native-chat.queuedMessages.editChangedPrompt',
-        'This message changed while you were editing. Your edit will be in the chat box after you answer the agent.'
-      )
-    case 'editGone':
-      return translate(
-        'components.native-chat.queuedMessages.editGone',
-        'This message was already sent or removed. Your edit is in the chat box.'
-      )
-    case 'editGonePrompt':
-      return translate(
-        'components.native-chat.queuedMessages.editGonePrompt',
-        'This message was already sent or removed. Your edit will be in the chat box after you answer the agent.'
-      )
-    case 'editFailed':
-      return translate(
-        'components.native-chat.queuedMessages.editFailed',
-        "This message can't be edited."
-      )
-  }
-}
-
 export function useStructuredAgentSessionQueuedEdit(args: {
   transport: QueuedEditTransport
   /** The host's published cards, for each card's full body. */
@@ -135,7 +102,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
       }
       if (edit.text !== edit.originalText) {
         appendNativeChatDraftCache(edit.draftKey, edit.text)
-        toast.error(editNotice(latest.current.promptOpen ? 'editGonePrompt' : 'editGone'))
+        toast.error(queuedEditNotice(latest.current.promptOpen ? 'editGonePrompt' : 'editGone'))
       }
       close()
     },
@@ -202,7 +169,7 @@ export function useStructuredAgentSessionQueuedEdit(args: {
         // Sent, removed or edited elsewhere before the edit began: the card shows what happened.
         close()
       } else if (answer?.status === 'not-editable') {
-        toast.error(editNotice('editFailed'))
+        toast.error(queuedEditNotice('editFailed'))
         close()
       } else {
         // An unanswered lease never gates typing: the lease keeps trying, and Save checks the text.
@@ -258,11 +225,13 @@ export function useStructuredAgentSessionQueuedEdit(args: {
         // Someone else's edit landed first: the typing goes to the chat box, and the editor
         // opens again on the newer text.
         appendNativeChatDraftCache(edit.draftKey, edit.text)
-        toast.error(editNotice(latest.current.promptOpen ? 'editChangedPrompt' : 'editChanged'))
+        toast.error(
+          queuedEditNotice(latest.current.promptOpen ? 'editChangedPrompt' : 'editChanged')
+        )
         reopen.current = { scope, messageId: edit.messageId, stale: edit.baseFingerprint }
         close()
       } else {
-        toast.error(editNotice('editFailed'))
+        toast.error(queuedEditNotice('editFailed'))
         render(edit)
       }
       return
