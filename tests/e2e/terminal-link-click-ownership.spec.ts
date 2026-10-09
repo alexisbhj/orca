@@ -102,17 +102,28 @@ async function expectOrcaOwnedMouseOutcome(mouseLogPath: string): Promise<void> 
   expect(childMouseReportCount(mouseLogPath)).toBe(0)
 }
 
+async function openLegacyDisabledLinkSettings(orcaPage: Page): Promise<void> {
+  await orcaPage.evaluate(() => {
+    void window.__store?.getState().updateSettings({ terminalLinkActionPopoverEnabled: false })
+  })
+  await expect
+    .poll(() =>
+      orcaPage.evaluate(() => window.__store?.getState().settings?.terminalLinkActionPopoverEnabled)
+    )
+    .toBe(false)
+  await orcaPage.evaluate(() => {
+    const state = window.__store?.getState()
+    state?.openSettingsPage()
+    state?.openSettingsTarget({ pane: 'browser', repoId: null })
+  })
+}
+
 test.describe('terminal link click ownership', () => {
   test('selecting Actions reenables a legacy-disabled popover and survives renderer reload', async ({
     orcaPage
   }, testInfo) => {
     const { mouseLogPath, ptyId, target } = await startMouseAwareLinkFixture(orcaPage, testInfo)
-    await orcaPage.evaluate(async () => {
-      const state = window.__store?.getState()
-      await state?.updateSettings({ terminalLinkActionPopoverEnabled: false })
-      state?.openSettingsPage()
-      state?.openSettingsTarget({ pane: 'browser', repoId: null })
-    })
+    await openLegacyDisabledLinkSettings(orcaPage)
 
     const choices = orcaPage.getByRole('radiogroup', { name: 'Plain click URL behavior' })
     await expect(choices.getByRole('radio', { name: 'Leave to terminal' })).toHaveAttribute(
@@ -153,12 +164,7 @@ test.describe('terminal link click ownership', () => {
   }, testInfo) => {
     const { mouseLogPath, ptyId, target } = await startMouseAwareLinkFixture(orcaPage, testInfo)
     await startPanelNavigationObserver(electronApp, orcaPage.url())
-    await orcaPage.evaluate(async () => {
-      const state = window.__store?.getState()
-      await state?.updateSettings({ terminalLinkActionPopoverEnabled: false })
-      state?.openSettingsPage()
-      state?.openSettingsTarget({ pane: 'browser', repoId: null })
-    })
+    await openLegacyDisabledLinkSettings(orcaPage)
     const choices = orcaPage.getByRole('radiogroup', { name: 'Plain click URL behavior' })
     await choices.getByRole('radio', { name: 'Open URL', exact: true }).click()
     await expect(choices.getByRole('radio', { name: 'Open URL', exact: true })).toHaveAttribute(
