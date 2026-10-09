@@ -7,7 +7,8 @@ import {
   QUEUED_MESSAGE_PAUSED_SEND_FAILED,
   type AgentSessionQueuedMessage,
   type AgentSessionQueuedMessagePausedReason,
-  type AgentSessionQueuePause
+  type AgentSessionQueuePause,
+  type AgentSessionQueueWait
 } from '../../../shared/agent-session-wire'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import {
@@ -15,11 +16,12 @@ import {
   resumableQueuePause
 } from '../agent-session-journal/queued-message-pause'
 import { structuredQueuePauses } from './structured-agent-session-queued-pause'
-import { nextStructuredQueuedMessage } from './structured-agent-session-queued-messages'
+import {
+  structuredQueueHead,
+  type StructuredQueueGateInput
+} from './structured-agent-session-queued-messages'
 import { structuredAgentSessionConversationFence } from './structured-agent-session-provider-child'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
-import { isQueuedClearCard, queuedClearWaits } from './structured-conversation-clear'
-import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 
 export type QueuePublication = {
@@ -28,25 +30,23 @@ export type QueuePublication = {
   /** The card the drain sends next as soon as nothing runs (`nextStructuredQueuedMessage`), so a
    *  client reads the run as going across a turn's end and that send, which commit apart. */
   nextQueuedMessageId: string | null
+  /** The gate's next card while it waits instead (`structuredQueueHead`): the chat isn't busy, and
+   *  the card runs without a press. */
+  nextQueuedMessageWait: AgentSessionQueueWait | null
 }
 
-/** What the drain's gate reads beyond the journal; resolved per read. `childWork` is read only
- *  when a /clear card is next. */
-export type QueueSendGate = () => {
-  record: AgentSessionRecord | null
-  fence: number
-  childWork?: () => readonly AgentChildWorkView[] | undefined
-}
+/** What the drain's gate reads beyond the journal; resolved per read. */
+export type QueueSendGate = () => Omit<StructuredQueueGateInput, 'journal'>
 
 export function structuredQueueSendGate(
   store: Pick<AgentSessionRecordStore, 'getRecord'>,
   sessionId: string,
-  readChildWork?: (sessionId: string) => readonly AgentChildWorkView[] | undefined
+  readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
 ): QueueSendGate {
   return () => ({
     record: store.getRecord(sessionId),
     fence: structuredAgentSessionConversationFence(store, sessionId),
-    ...(readChildWork ? { childWork: () => readChildWork(sessionId) } : {})
+    childWork: () => readChildWork(sessionId)
   })
 }
 
@@ -144,23 +144,26 @@ export function readQueuePublication(
     resumable && !queuePauseLiftOnItsWay(resumable, journal.submissions()) ? resumable : null
   // The test narrows the type.
   const queuePause = pause?.reason === 'stopped' ? { reason: pause.reason } : null
-  const read = gate()
-  const next = nextStructuredQueuedMessage({ journal, ...read })
-  // A /clear the drain would only find waiting is not the queue's next send: the chat isn't busy.
-  const nextQueuedMessageId =
-    next && !(isQueuedClearCard(next) && queuedClearWaits(read.record, read.childWork?.()))
-      ? next.messageId
-      : null
+  const head = structuredQueueHead({ journal, ...gate() })
+  const nextQueuedMessageId = head && head.waitsFor === null ? head.card.messageId : null
   const previous = publications.get(journal)
+  const wait = head?.waitsFor ? { messageId: head.card.messageId, reason: head.waitsFor } : null
+  // Reference-stable while unchanged, as the list is.
+  const nextQueuedMessageWait =
+    previous?.nextQueuedMessageWait?.messageId === wait?.messageId &&
+    previous?.nextQueuedMessageWait?.reason === wait?.reason
+      ? (previous?.nextQueuedMessageWait ?? null)
+      : wait
   if (
     previous &&
     previous.queuedMessages === queuedMessages &&
     sameQueuePause(previous.queuePause, queuePause) &&
-    previous.nextQueuedMessageId === nextQueuedMessageId
+    previous.nextQueuedMessageId === nextQueuedMessageId &&
+    previous.nextQueuedMessageWait === nextQueuedMessageWait
   ) {
     return previous
   }
-  const publication = { queuedMessages, queuePause, nextQueuedMessageId }
+  const publication = { queuedMessages, queuePause, nextQueuedMessageId, nextQueuedMessageWait }
   publications.set(journal, publication)
   return publication
 }

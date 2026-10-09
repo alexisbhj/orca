@@ -6,6 +6,7 @@ import { agentSessionFailureFact } from '../../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../../shared/agent-session-failure-words'
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
+import type { AgentSessionQueueWait } from '../../../shared/agent-session-wire'
 import { agentChildWorkLiveness } from '../../../shared/agent-status-child-work-liveness'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import {
@@ -95,24 +96,24 @@ export async function clearConversationUnderSerialize(
   return { ok: true, value: command }
 }
 
-/** Refusals that end on their own: the card keeps waiting, and the drain runs it once they end
- *  (it wakes on child work and on a handoff ending), as it waits for a turn. */
-const WAITS_FOR = new Set(['backgroundTasksRunning', 'handoffInFlight'])
-
-/** Whether a /clear card's turn would only find one of those waits, read without running it. */
-export function queuedClearWaits(
+/**
+ * What a /clear card at the head of the queue waits for before it may run: work that ends on its
+ * own, so the card keeps waiting and the drain runs it once that ends (it wakes on child work and on
+ * a handoff ending). The queue's one gate reads it for the drain, publication and admission.
+ */
+export function queuedClearWait(
   record: Pick<AgentSessionRecord, 'lease'> | null,
   childWork: readonly AgentChildWorkView[] | undefined
-): boolean {
-  return (
-    agentChildWorkLiveness(childWork) !== null ||
-    Boolean(record?.lease.handoffStage || record?.lease.handoffOperationId)
-  )
+): AgentSessionQueueWait['reason'] | null {
+  if (record?.lease.handoffStage || record?.lease.handoffOperationId) {
+    return 'handoff'
+  }
+  return agentChildWorkLiveness(childWork) !== null ? 'background-tasks' : null
 }
 
 export type QueuedClearOutcome =
   | { kind: 'cleared' }
-  /** Still waiting, on something that ends on its own; nothing was written. */
+  /** Still waiting, on what `queuedClearWait` names; nothing was written. */
   | { kind: 'waiting'; refusal: AgentSessionWireRefusal }
   | { kind: 'returned' }
 
@@ -146,9 +147,14 @@ export async function runQueuedConversationClear(
     if (cleared.ok) {
       return { kind: 'cleared' }
     }
-    const { details } = cleared.refusal
-    const reason = details && 'reason' in details ? details.reason : undefined
-    if (reason !== undefined && WAITS_FOR.has(reason)) {
+    // Refused while the gate's wait holds (a Send, or work that began after the drain's read): the
+    // card keeps waiting, and a Send hears why.
+    if (
+      queuedClearWait(
+        context.deps.store.getRecord(ctx.sessionId),
+        context.readChildWork(ctx.sessionId)
+      ) !== null
+    ) {
       return { kind: 'waiting', refusal: cleared.refusal }
     }
     fact = agentSessionFailureFact('commandRefused', {

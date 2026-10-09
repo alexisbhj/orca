@@ -14,6 +14,7 @@ import type {
   AgentSessionQueuedMessageDeleteResult,
   AgentSessionQueuedMessagesResumeResult,
   AgentSessionQueuePause,
+  AgentSessionQueueWait,
   AgentSessionSendResult
 } from '../../../../shared/agent-session-wire'
 import { appendNativeChatDraftCache } from './native-chat-draft-cache'
@@ -83,18 +84,26 @@ export function useStructuredAgentSessionQueuedMessages(args: {
   isWorking: boolean
   /** The queue is about to send its next card; nothing runs yet. */
   queueSendsNext?: boolean
-  backgroundTasksRunning?: boolean
+  /** The host's next card, or the /clear it holds while that waits. */
+  nextQueuedMessageId?: string | null
+  nextQueuedMessageWait?: AgentSessionQueueWait | null
+  /** A send now becomes a card (`sendsJoinQueue`). */
+  sendsJoinQueue?: boolean
+  /** The strip offers a Stop for the background tasks a /clear waits on. */
+  backgroundTasksStoppable?: boolean
   /** This pane's sends without a host record yet show as sending cards. */
   sending?: readonly StructuredAgentSessionPendingSend[]
   composerScopeKey: string | undefined
   mutate: StructuredAgentSessionMutate
 }): StructuredAgentSessionQueuedMessagesController {
   const { composerScopeKey, enabled, hasPendingPrompt, mutate, queuedMessages, submissions } = args
-  const { queuePause, backgroundTasksRunning } = args
+  const { queuePause, backgroundTasksStoppable } = args
   const agentWorking = args.isWorking
   const queueSendsNext = args.queueSendsNext === true
-  // The queue's coming send counts as working everywhere but the background-tasks caption.
   const isWorking = agentWorking || queueSendsNext
+  const sendsJoinQueue = args.sendsJoinQueue ?? isWorking
+  const nextQueuedMessageId = args.nextQueuedMessageId ?? null
+  const nextQueuedMessageWait = args.nextQueuedMessageWait ?? null
   const sending = args.sending ?? NO_SENDS
 
   const cards = useMemo(
@@ -104,14 +113,16 @@ export function useStructuredAgentSessionQueuedMessages(args: {
         // A command card offers no send while the agent works.
         agentWorking,
         queueSendsNext,
-        backgroundTasksRunning,
+        nextQueuedMessageId,
+        nextQueuedMessageWait,
+        backgroundTasksStoppable,
         queuePaused: queuePause !== null
       }),
       ...sendingQueuedMessageCards(
         pendingQueueSendsOnTheirWay(
           sending,
           (queuedMessages ?? []).map((message) => message.messageId),
-          isWorking,
+          sendsJoinQueue,
           submissions
         )
       )
@@ -119,9 +130,11 @@ export function useStructuredAgentSessionQueuedMessages(args: {
     [
       hasPendingPrompt,
       agentWorking,
-      isWorking,
+      sendsJoinQueue,
       queueSendsNext,
-      backgroundTasksRunning,
+      nextQueuedMessageId,
+      nextQueuedMessageWait,
+      backgroundTasksStoppable,
       sending,
       queuePause,
       queuedMessages,

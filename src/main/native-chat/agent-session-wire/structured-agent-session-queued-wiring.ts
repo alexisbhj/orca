@@ -8,7 +8,7 @@ import type {
   StructuredAgentSessionHostSession
 } from './structured-agent-session-host-types'
 import { structuredAgentSessionConversationFence } from './structured-agent-session-provider-child'
-import { StructuredAgentSessionQueuedMessageDrain } from './structured-agent-session-queued-messages'
+import { StructuredAgentSessionQueuedMessageDrain } from './structured-agent-session-queued-drain'
 import {
   deleteQueuedStructuredAgentMessage,
   resumeStructuredAgentQueue,
@@ -40,6 +40,7 @@ export function wireStructuredAgentSessionQueuedMessages(
     wakeDelivery: (sessionId) => context().wakeDelivery(sessionId),
     // Read lazily, like the rest of this wiring: the host's deps are not assigned yet.
     logger: deferredStructuredAgentSessionLogger(() => context().deps.logger),
+    readChildWork: (sessionId) => context().readChildWork(sessionId),
     runClear: (sessionId, card) => {
       const { store, adapter } = context().deps
       return runQueuedConversationClear(

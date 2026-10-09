@@ -50,10 +50,8 @@ export function structuredConversationCommandHold(input: {
   backgroundTasksRunning: boolean
   /** This chat's one message request has not settled yet. */
   sendPending: boolean
-  /** A queued /clear waits for background tasks on its host. */
-  waitsOutBackgroundTasks?: boolean
 }): StructuredConversationCommandHold | null {
-  if (input.backgroundTasksRunning && !input.waitsOutBackgroundTasks) {
+  if (input.backgroundTasksRunning) {
     return 'background'
   }
   if (input.waitsInLine) {
@@ -228,11 +226,12 @@ export function structuredConversationCommandRunner(args: {
         waitsInLine,
         agentWorking,
         promptPending,
-        // A rewind on its way holds a command as background work does, in the same words.
+        // A /clear that waits in line waits out background tasks as a card on the host. A rewind on
+        // its way holds any command as background work does, in the same words.
         backgroundTasksRunning:
-          args.chat.backgroundTasks.isMonitoring || args.rewindInFlight.current,
-        sendPending,
-        waitsOutBackgroundTasks: command === 'clear' && waitsInLine
+          (args.chat.backgroundTasks.isMonitoring && !(command === 'clear' && waitsInLine)) ||
+          args.rewindInFlight.current,
+        sendPending
       }),
       causes,
       startFailures: () => structuredAgentSessionStartFailureFacts(args.items()),

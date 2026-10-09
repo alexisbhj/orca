@@ -226,26 +226,6 @@ describe('a /compact the host holds in line', () => {
     )
   })
 
-  it('a /clear the host holds is not refused here for background tasks: the host waits them out', () => {
-    expect(
-      structuredConversationCommandHold({
-        ...idle,
-        waitsInLine: true,
-        agentWorking: true,
-        backgroundTasksRunning: true,
-        waitsOutBackgroundTasks: true
-      })
-    ).toBeNull()
-    // A host that can't hold a /clear still gets the check here.
-    expect(
-      structuredConversationCommandHold({
-        ...idle,
-        agentWorking: true,
-        backgroundTasksRunning: true
-      })
-    ).toBe('background')
-  })
-
   it('against a host that cannot hold it, and for /clear, keeps every check in true words', () => {
     expect(structuredConversationCommandHold(idle)).toBeNull()
     expect(structuredConversationCommandHold({ ...idle, agentWorking: true })).toBe('working')
@@ -403,7 +383,20 @@ describe('a refusal names what it waits on only while the chat shows it', () => 
 })
 
 describe('a /clear the host runs from the queue', () => {
-  function runner(clearWaits: boolean, backgroundTasks = { isMonitoring: false, show: false }) {
+  const idleWithTasks = {
+    turnId: null,
+    isWorking: false,
+    backgroundTasks: { isMonitoring: true, show: true }
+  }
+  function runner(
+    clearWaits: boolean,
+    chat: Partial<{
+      turnId: string | null
+      isWorking: boolean
+      backgroundTasks: { isMonitoring: boolean; show: boolean }
+    }> = {},
+    rewindInFlight = false
+  ) {
     const send = vi.fn(async () => ({
       kind: 'done' as const,
       value: {
@@ -421,11 +414,12 @@ describe('a /clear the host runs from the queue', () => {
         turnId: 'turn-1',
         isWorking: true,
         queueSendsNext: false,
-        backgroundTasks,
-        submissions: []
+        backgroundTasks: { isMonitoring: false, show: false },
+        submissions: [],
+        ...chat
       },
       prompts: [],
-      rewindInFlight: { current: false },
+      rewindInFlight: { current: rewindInFlight },
       sends: [],
       items: () => [],
       send
@@ -439,15 +433,24 @@ describe('a /clear the host runs from the queue', () => {
     expect(send).toHaveBeenCalledWith('clear', 'queue-if-active')
   })
 
-  it('asks to wait past background tasks too: the host holds the card until they end', async () => {
-    const { run, send } = runner(true, { isMonitoring: true, show: true })
+  it('asks to wait past background tasks with the agent idle: the host holds the card until they end', async () => {
+    const { run, send } = runner(true, idleWithTasks)
     expect(await run()).toEqual({ accepted: true, error: null })
     expect(send).toHaveBeenCalledWith('clear', 'queue-if-active')
+  })
+
+  it('is still held here by a rewind on its way, in the background-work words', async () => {
+    const { run, send } = runner(true, { turnId: null, isWorking: false }, true)
+    expect(await run()).toMatchObject({ accepted: false })
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('against a host that cannot hold it, is refused here as before and nothing is sent', async () => {
     const { run, send } = runner(false)
     expect(await run()).toMatchObject({ accepted: false, refusedWhile: 'working' })
     expect(send).not.toHaveBeenCalled()
+    const idle = runner(false, idleWithTasks)
+    expect(await idle.run()).toMatchObject({ accepted: false, refusedWhile: 'background' })
+    expect(idle.send).not.toHaveBeenCalled()
   })
 })

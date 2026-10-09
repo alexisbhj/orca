@@ -68,81 +68,79 @@ const clearCard = (id: string, position: number) =>
     }
   })
 
-describe('a /clear card waiting on background tasks', () => {
-  const tasks = { hasPendingPrompt: false, backgroundTasksRunning: true }
-
-  it('skips an individually held card when clear is next to act, respecting barriers', () => {
-    const held = draft('held', 1, { paused: true, pausedReason: 'send_failed' })
-    for (const facts of [tasks, IDLE]) {
-      expect(projectQueuedMessageCards([held, clearCard('clear', 2)], [], facts)[1]).toMatchObject({
-        runsOnItsOwn: true,
-        hold: facts === tasks ? 'background-tasks' : 'turn'
-      })
-    }
-    for (const barrier of [draft('returned', 1, { state: 'returned' }), draft('paused', 1)]) {
-      expect(
-        projectQueuedMessageCards([barrier, clearCard('clear', 2)], [], {
-          ...tasks,
-          queuePaused: barrier.messageId === 'paused'
-        })[1]?.runsOnItsOwn
-      ).toBeUndefined()
-    }
+describe('a /clear card the host holds while a wait ends', () => {
+  const waits = (
+    messageId: string,
+    reason: 'background-tasks' | 'handoff' = 'background-tasks'
+  ) => ({
+    hasPendingPrompt: false,
+    nextQueuedMessageWait: { messageId, reason }
   })
 
-  it('says so, next in line with the agent idle, and only then', () => {
-    const [first, second] = projectQueuedMessageCards([clearCard('c', 1), draft('m', 2)], [], tasks)
-    expect(first?.hold).toBe('background-tasks')
-    expect(second?.hold).toBe('turn')
-    // Behind a turn, the turn is what it waits on; with no tasks, nothing to say.
+  it("says it waits for background tasks and offers no Send; the strip's Stop is named when offered", () => {
+    expect(projectQueuedMessageCards([clearCard('c', 1)], [], waits('c'))[0]).toMatchObject({
+      hold: 'background-tasks',
+      runsOnItsOwn: true
+    })
     expect(
-      projectQueuedMessageCards([clearCard('c', 1)], [], { ...tasks, agentWorking: true })[0]?.hold
-    ).toBe('turn')
-    expect(projectQueuedMessageCards([clearCard('c', 1)], [], IDLE)[0]?.hold).toBe('turn')
-    // The queue's coming send is not the agent working: the tasks still hold it, and no Send shows.
+      projectQueuedMessageCards([clearCard('c', 1)], [], {
+        ...waits('c'),
+        backgroundTasksStoppable: true
+      })[0]?.hold
+    ).toBe('background-tasks-stoppable')
+  })
+
+  it('a handoff wait offers no Send and says nothing more', () => {
     expect(
-      projectQueuedMessageCards([clearCard('c', 1)], [], { ...tasks, queueSendsNext: true })[0]
-    ).toMatchObject({ hold: 'background-tasks', waitsForAgent: true, runsOnItsOwn: true })
-    // A /clear behind another card waits its turn.
-    expect(projectQueuedMessageCards([draft('m', 1), clearCard('c', 2)], [], tasks)[1]?.hold).toBe(
-      'turn'
+      projectQueuedMessageCards([clearCard('c', 1)], [], waits('c', 'handoff'))[0]
+    ).toMatchObject({
+      hold: 'turn',
+      runsOnItsOwn: true
+    })
+  })
+
+  it('only the card the host names: the one behind it waits its turn and keeps its own controls', () => {
+    const [first, second] = projectQueuedMessageCards(
+      [clearCard('c', 1), clearCard('d', 2)],
+      [],
+      waits('c')
     )
+    expect(first?.hold).toBe('background-tasks')
+    expect(second).toMatchObject({ hold: 'turn' })
+    expect(second?.runsOnItsOwn).toBeUndefined()
   })
 })
 
-describe('a /clear card the queue is about to run', () => {
+describe('a /clear card the host runs next', () => {
   const runsOnItsOwn = (cards: ReturnType<typeof projectQueuedMessageCards>, index = 0): boolean =>
     cards[index]?.runsOnItsOwn === true
 
-  it('next in line with nothing holding it offers no Send, so none flashes as it runs', () => {
-    expect(runsOnItsOwn(projectQueuedMessageCards([clearCard('c', 1)], [], IDLE))).toBe(true)
+  it('named by the host as next offers no Send, so none flashes as it runs', () => {
+    expect(
+      runsOnItsOwn(
+        projectQueuedMessageCards([clearCard('c', 1)], [], { ...IDLE, nextQueuedMessageId: 'c' })
+      )
+    ).toBe(true)
   })
 
-  it('keeps Send whenever something the person must act on holds it', () => {
-    const kept = draft('c', 1, {
-      body: clearCard('c', 1).body,
-      paused: true,
-      pausedReason: 'send_failed'
+  it('held with nothing published (a reopen holds it until the next turn) keeps Send, as /compact does', () => {
+    expect(runsOnItsOwn(projectQueuedMessageCards([clearCard('c', 1)], [], IDLE))).toBe(false)
+    expect(projectQueuedMessageCards([clearCard('c', 1)], [], IDLE)[0]).toMatchObject({
+      hold: 'turn',
+      command: true
     })
-    for (const cards of [
-      projectQueuedMessageCards([clearCard('c', 1)], [], { ...IDLE, queuePaused: true }),
-      projectQueuedMessageCards([clearCard('c', 1)], [], { hasPendingPrompt: true }),
-      projectQueuedMessageCards([kept], [], IDLE),
-      projectQueuedMessageCards(
-        [draft('c', 1, { ...clearCard('c', 1), state: 'returned' })],
-        [],
-        IDLE
-      )
-    ]) {
-      expect(runsOnItsOwn(cards)).toBe(false)
-    }
-    // Behind another card, or a /compact: the turn it waits for is not its own run.
     expect(
-      runsOnItsOwn(projectQueuedMessageCards([draft('m', 1), clearCard('c', 2)], [], IDLE), 1)
-    ).toBe(false)
+      projectQueuedMessageCards([clearCard('c', 1)], [], IDLE)[0]?.waitsForAgent
+    ).toBeUndefined()
+  })
+
+  it('a /compact the host names next is held by the coming send, not this rule', () => {
     const compact = draft('k', 1, {
       body: { ...clearCard('k', 1).body, command: { name: 'compact' } }
     })
-    expect(runsOnItsOwn(projectQueuedMessageCards([compact], [], IDLE))).toBe(false)
+    expect(
+      runsOnItsOwn(projectQueuedMessageCards([compact], [], { ...IDLE, nextQueuedMessageId: 'k' }))
+    ).toBe(false)
   })
 })
 

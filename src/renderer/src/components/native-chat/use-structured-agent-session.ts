@@ -37,6 +37,7 @@ import {
 import { hostStatesTurnScopes } from '../../../../shared/native-chat-turn-membership'
 import { pendingPromptsAllUnanswerableHere } from '../../../../shared/agent-session-approval-subject'
 import { withNativeChatCutTurnNotices } from '../../../../shared/native-chat-cut-turn-notice'
+import { structuredSessionBackgroundTasksOfferStop } from '../../../../shared/structured-session-background-tasks-view'
 import { useStructuredAgentSessionRewind } from './use-structured-agent-session-rewind'
 import type { NativeChatRewindHost } from './use-native-chat-rewind'
 
@@ -188,11 +189,12 @@ export function useStructuredAgentSession(args: {
     blocked: conversationBusy || commandPending.current || queuedMessageIds.length > 0,
     write
   })
-  // A queued send is a card, never a transcript bubble.
   const isWorking = transportState.isWorking || transportState.queueSendsNext
+  // A queued send is a card, never a transcript bubble.
+  const { sendsJoinQueue } = transportState
   const transcriptPending = useMemo(
-    () => pendingSendsOutsideQueuedCards(pending, queuedMessageIds, isWorking),
-    [isWorking, pending, queuedMessageIds]
+    () => pendingSendsOutsideQueuedCards(pending, queuedMessageIds, sendsJoinQueue),
+    [sendsJoinQueue, pending, queuedMessageIds]
   )
   // What the transcript reads: the journal plus the one notice a cut turn with no row gets.
   const transcriptItems = useMemo(
@@ -212,7 +214,9 @@ export function useStructuredAgentSession(args: {
     ...transportState,
     enabled: queueCapability === 'supported' && transportState.fence !== null,
     hasPendingPrompt: prompts.length > 0,
-    backgroundTasksRunning: transportState.backgroundTasks.isMonitoring,
+    backgroundTasksStoppable: structuredSessionBackgroundTasksOfferStop(
+      transportState.backgroundTasks
+    ),
     // Hidden from the transcript, a queue send on its way reads as sending among the cards.
     sending: pending,
     composerScopeKey,

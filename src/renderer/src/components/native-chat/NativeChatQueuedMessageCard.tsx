@@ -91,6 +91,11 @@ export function queuedMessageCardCaption(
         'components.native-chat.queuedMessages.waitingForBackgroundTasks',
         'Waiting for background tasks to finish'
       )
+    case 'background-tasks-stoppable':
+      return translate(
+        'components.native-chat.queuedMessages.waitingForBackgroundTasksStop',
+        'Waiting for background tasks to finish. Stop them to clear now.'
+      )
     case 'awaiting-answer':
       return translate(
         'components.native-chat.queuedMessages.awaitingAnswerHold',
@@ -193,7 +198,7 @@ export function NativeChatQueuedMessageCard({
       {card.hold === 'sending' ? null : (
         <>
           {/* A command never steers: its Send shows only while the agent is idle, and never on
-              a /clear the queue is about to run. */}
+              a /clear the host runs by itself. */}
           {card.waitsForAgent || card.runsOnItsOwn ? null : (
             <Tooltip>
               <TooltipTrigger asChild>

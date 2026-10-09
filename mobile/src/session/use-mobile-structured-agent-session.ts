@@ -39,6 +39,7 @@ import {
 import type { MobileNativeChatSendErrorReporter } from './use-mobile-native-chat-send-error'
 import { useMobileStructuredQueuedMessageControls } from './use-mobile-structured-queued-message-controls'
 import { useMobileStructuredBackgroundTasks } from './use-mobile-structured-background-tasks'
+import { structuredSessionBackgroundTasksOfferStop } from '../../../src/shared/structured-session-background-tasks-view'
 
 export function useMobileStructuredAgentSession(args: {
   client: RpcClient | null
@@ -223,7 +224,9 @@ export function useMobileStructuredAgentSession(args: {
     submissions: state.submissions,
     pendingPrompt: approvalPrompt !== null || questionPrompt !== null,
     agentWorking: isStructuredAgentSessionMainAgentWorking(turnId, state.submissions, state.fence),
-    backgroundTasksRunning: backgroundTasks.view.isMonitoring,
+    nextQueuedMessageId: state.nextQueuedMessageId ?? null,
+    nextQueuedMessageWait: state.nextQueuedMessageWait ?? null,
+    backgroundTasksStoppable: structuredSessionBackgroundTasksOfferStop(backgroundTasks.view),
     mutate,
     appendComposerText,
     onSendError,

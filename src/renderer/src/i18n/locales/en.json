@@ -18622,6 +18622,7 @@
       "queuedMessages": {
         "behindReturnedHold": "Waiting — a message ahead needs attention",
         "waitingForBackgroundTasks": "Waiting for background tasks to finish",
+        "waitingForBackgroundTasksStop": "Waiting for background tasks to finish. Stop them to clear now.",
         "awaitingAnswerHold": "Waiting for your answer",
         "steer": "Steer",
         "send": "Send",

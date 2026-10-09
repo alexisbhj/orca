@@ -175,7 +175,7 @@ describe('mobile structured session background tasks', () => {
     clock.mockRestore()
   })
 
-  it('a /clear next in line once the turn ended says it waits on the tasks, with no Send', async () => {
+  it('a /clear the host holds on the tasks once the turn ended says so, with no Send', async () => {
     const card = (messageId: string, text: string, position: number) => ({
       messageId,
       position,
@@ -187,11 +187,23 @@ describe('mobile structured session background tasks', () => {
         ...(text === '/clear' ? { command: { name: 'clear' as const } } : {})
       }
     })
-    await mount(withChildren(undefined, [card('clear-1', '/clear', 1), card('after', 'After', 2)]))
+    const opening = withChildren(undefined, [
+      card('clear-1', '/clear', 1),
+      card('after', 'After', 2)
+    ])
+    await mount(
+      opening.type === 'snapshot'
+        ? {
+            ...opening,
+            nextQueuedMessageWait: { messageId: 'clear-1', reason: 'background-tasks' }
+          }
+        : opening
+    )
     expect(hook?.isWorking).toBe(false)
+    // The strip offers each child its own Stop, so the caption names it.
     expect(hook?.queued.cards[0]).toMatchObject({
       messageId: 'clear-1',
-      caption: 'Waiting for background tasks to finish',
+      caption: 'Waiting for background tasks to finish. Stop them to clear now.',
       runsOnItsOwn: true
     })
     expect(hook?.queued.cards[1]?.caption).toBeNull()

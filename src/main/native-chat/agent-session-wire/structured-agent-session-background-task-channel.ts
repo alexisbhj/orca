@@ -68,7 +68,8 @@ export class StructuredAgentSessionBackgroundTaskChannel {
           ? {
               queuedMessages: queue.queuedMessages,
               queuePause: queue.queuePause,
-              nextQueuedMessageId: queue.nextQueuedMessageId
+              nextQueuedMessageId: queue.nextQueuedMessageId,
+              nextQueuedMessageWait: queue.nextQueuedMessageWait
             }
           : {}),
         backgroundTasks

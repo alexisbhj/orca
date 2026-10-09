@@ -9,8 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
 import type {
   AgentSessionBackgroundTaskState,
-  AgentSessionQueuedMessage
+  AgentSessionQueuedMessage,
+  AgentSessionQueueWait
 } from '../../../../shared/agent-session-wire'
+import type { StructuredAgentSessionPendingSend } from './structured-agent-session-pending-sends'
 
 const mocks = vi.hoisted(() => ({
   call: vi.fn(),
@@ -20,6 +22,8 @@ const mocks = vi.hoisted(() => ({
 let items: AgentJournalRenderItem[] = []
 let queuedMessages: AgentSessionQueuedMessage[] | undefined
 let nextQueuedMessageId: string | null = null
+let nextQueuedMessageWait: AgentSessionQueueWait | null = null
+let pending: StructuredAgentSessionPendingSend[] = []
 let backgroundTasks: AgentSessionBackgroundTaskState | null = null
 
 vi.mock('@/runtime/structured-agent-session-client', () => ({
@@ -38,6 +42,7 @@ vi.mock('./use-structured-agent-session-read', () => ({
       hasOlder: false,
       ...(queuedMessages !== undefined ? { queuedMessages } : {}),
       nextQueuedMessageId,
+      nextQueuedMessageWait,
       backgroundTasks
     },
     loadingOlder: false,
@@ -48,7 +53,7 @@ vi.mock('./use-structured-agent-session-read', () => ({
 vi.mock('./use-structured-agent-session-sends', () => ({
   useStructuredAgentSessionSends: (args: { queue?: { capability: string; enabled: boolean } }) => {
     mocks.sendArgs.push(args)
-    return { pending: [], error: null, send: vi.fn(), stopSends: vi.fn() }
+    return { pending, error: null, send: vi.fn(), stopSends: vi.fn() }
   }
 }))
 
@@ -115,6 +120,8 @@ beforeEach(() => {
   items = [RUNNING_TURN]
   queuedMessages = undefined
   nextQueuedMessageId = null
+  nextQueuedMessageWait = null
+  pending = []
   backgroundTasks = null
   localStorage.clear()
   clearNativeChatDraftCacheForTests()
@@ -191,7 +198,7 @@ describe('a /clear against a host that runs it from the queue', () => {
     expect(mocks.sendArgs.at(-1)?.queue).toEqual({ capability: 'supported', enabled })
   })
 
-  it('next in line once the turn ended, held only by background tasks: says so and offers no Send', () => {
+  it('held by the host on background tasks once the turn ended: says so, offers no Send, chat idle', () => {
     setLocalRuntimeCapabilitiesForTests(CLEAR_WAITS)
     items = []
     backgroundTasks = { state: 'monitoring', tasks: [{ id: 'task-1', kind: 'command' }] }
@@ -199,14 +206,54 @@ describe('a /clear against a host that runs it from the queue', () => {
       { ...draft('clear-1'), body: { ...draft('clear-1').body, command: { name: 'clear' } } },
       { ...draft('after-1'), position: 2 }
     ]
-    // The host names the /clear as its next send; it runs only once the tasks end.
-    nextQueuedMessageId = 'clear-1'
+    // The host publishes the wait, not a next send: nothing runs, so the chat is not busy.
+    nextQueuedMessageWait = { messageId: 'clear-1', reason: 'background-tasks' }
     const { result } = render()
+    // The strip offers its stop-all for these tasks, so the caption names it.
     expect(result.current.queuedMessages.cards[0]).toMatchObject({
       messageId: 'clear-1',
-      hold: 'background-tasks',
+      hold: 'background-tasks-stoppable',
       runsOnItsOwn: true
     })
+    expect(result.current.isWorking).toBe(false)
+  })
+
+  it('a message sent while it waits is a sending card at once, never a transcript bubble', () => {
+    setLocalRuntimeCapabilitiesForTests(CLEAR_WAITS)
+    items = []
+    queuedMessages = [
+      { ...draft('clear-1'), body: { ...draft('clear-1').body, command: { name: 'clear' } } }
+    ]
+    nextQueuedMessageWait = { messageId: 'clear-1', reason: 'background-tasks' }
+    pending = [
+      {
+        clientMessageId: 'sent-1',
+        sessionId: 'session-1',
+        body: { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'after' }] },
+        previewUris: [],
+        queuedAt: 1,
+        delivery: 'queue-if-active',
+        phase: 'sending',
+        issued: true
+      }
+    ]
+    const { result } = render()
+    expect(JSON.stringify(result.current.messages)).not.toContain('sent-1')
+    expect(result.current.queuedMessages.cards.at(-1)).toMatchObject({
+      messageId: 'sent-1',
+      hold: 'sending'
+    })
+  })
+
+  it('held with nothing published (after a reopen) keeps Send, as /compact does', () => {
+    setLocalRuntimeCapabilitiesForTests(CLEAR_WAITS)
+    items = []
+    queuedMessages = [
+      { ...draft('clear-1'), body: { ...draft('clear-1').body, command: { name: 'clear' } } }
+    ]
+    const { result } = render()
+    expect(result.current.queuedMessages.cards[0]?.runsOnItsOwn).toBeUndefined()
+    expect(result.current.queuedMessages.cards[0]?.waitsForAgent).toBeUndefined()
   })
 
   it('without the queue lit, keeps the refusal even when the host could hold it', async () => {

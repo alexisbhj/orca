@@ -205,7 +205,77 @@ describe('a /clear that waits in line', () => {
   })
 })
 
+/** A turn that ended leaving background tasks running, the agent idle. */
+async function withBackgroundTasks(): Promise<{ set: (next: AgentChildWorkView[]) => void }> {
+  let tasks: AgentChildWorkView[] = []
+  Object.assign(rig.host.deps, {
+    statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
+  })
+  const working = await rig.workingSend()
+  tasks = [BACKGROUND_TASK]
+  await rig.settleAccepted(working, 'a')
+  return { set: (next) => (tasks = next) }
+}
+
+const SETTLED_TASK: AgentChildWorkView = {
+  ...BACKGROUND_TASK,
+  state: 'done',
+  membership: 'settled',
+  outcome: 'succeeded'
+}
+
 describe('a /clear card the queue cannot run yet', () => {
+  it('typed while idle with background tasks running, waits as a card too, then runs', async () => {
+    const tasks = await withBackgroundTasks()
+    const clearId = await queuedClear()
+    expect(await dividers()).toBe(0)
+    const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
+    expect(page.ok && page.page.nextQueuedMessageWait).toEqual({
+      messageId: clearId,
+      reason: 'background-tasks'
+    })
+    // A message sent now joins the queue behind it, for the cleared chat.
+    const after = await queuedSend('after the clear')
+    tasks.set([SETTLED_TASK])
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await eventually(async () => expect(await rig.handoff(after)).toBeDefined())
+    expect(await dividers()).toBe(1)
+  })
+
+  it('child-work updates while it waits run no drain step', async () => {
+    let tasks: AgentChildWorkView[] = []
+    Object.assign(rig.host.deps, {
+      statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
+    })
+    const working = await rig.workingSend()
+    await queuedClear()
+    tasks = [BACKGROUND_TASK]
+    await rig.settleAccepted(working, 'a')
+    await settleMs()
+    const snapshot = vi.spyOn(journal(), 'snapshot')
+    for (let tick = 0; tick < 5; tick += 1) {
+      rig.host.publishChildWorkEvidence(SESSION, [])
+    }
+    await settleMs()
+    expect(snapshot).not.toHaveBeenCalled()
+    expect(await dividers()).toBe(0)
+  })
+
+  it('held by a reopen, publishes no next card and no wait, and its Send runs it', async () => {
+    await rig.workingSend()
+    const clearId = await queuedClear()
+    await rig.quitRestartHostProcess()
+    const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
+    expect(page.ok && page.page.nextQueuedMessageId).toBeNull()
+    expect(page.ok && page.page.nextQueuedMessageWait).toBeNull()
+    expect(await rig.drafts()).toEqual([{ messageId: clearId, state: 'waiting' }])
+    expect(await rig.sendNow(clearId)).toMatchObject({
+      ok: true,
+      value: { queued: { messageId: clearId, state: 'withdrawn' } }
+    })
+    expect(await dividers()).toBe(1)
+  })
+
   it('waits out background tasks, then runs when they end; the cards behind it wait too', async () => {
     let tasks: AgentChildWorkView[] = []
     Object.assign(rig.host.deps, {
@@ -222,9 +292,14 @@ describe('a /clear card the queue cannot run yet', () => {
       { messageId: after, state: 'waiting' }
     ])
     expect(await dividers()).toBe(0)
-    // Not named as the queue's next send while it waits, so no client reads the chat as busy.
+    // Not named as the queue's next send while it waits, so no client reads the chat as busy; the
+    // wait is published instead, so clients read it rather than guess.
     const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
     expect(page.ok && page.page.nextQueuedMessageId).toBeNull()
+    expect(page.ok && page.page.nextQueuedMessageWait).toEqual({
+      messageId: clearId,
+      reason: 'background-tasks'
+    })
     // Its Send says why it waits, and changes nothing on the card.
     expect(await rig.sendNow(clearId)).toMatchObject({
       ok: false,
