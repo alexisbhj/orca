@@ -118,7 +118,7 @@ it.each(['claude', 'codex'] as const)(
         await act(async () => {
           expect(await read().structured.permissionPicker?.setMode('auto')).toBe(true)
         })
-        expect(host.sendRequest).toHaveBeenCalledWith(
+        expect(host.handleRequest).toHaveBeenCalledWith(
           'agentSession.setOption',
           expect.objectContaining({
             envelope: expect.objectContaining({ expectedRuntimeFence: update.seed.fence })

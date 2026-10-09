@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 import type { AgentSessionPermissionSeed } from '../../../src/shared/agent-chat-permission-mode'
 import type { AgentSessionSubscribeEvent } from '../../../src/shared/agent-session-wire'
 import type { RpcClient } from '../transport/rpc-client'
+import { createFakeRpcClient } from '../mobile-web-shell/bridge-host-test-fakes'
 import type { RpcResponse } from '../transport/types'
 import { useMobileStructuredAgentSession } from './use-mobile-structured-agent-session'
 import { useMobileNativeChatSessionOptionController } from './use-mobile-native-chat-session-option-controller'
@@ -13,14 +14,12 @@ function success(result: unknown): RpcResponse {
 export function permissionHost() {
   const replies: ((reply: RpcResponse) => void)[] = []
   const failures: ((error: Error) => void)[] = []
-  let stream: (event: unknown) => void = () => {
-    throw new Error('No subscription')
-  }
   let hold: (reply: RpcResponse) => void = () => {}
   const holdReply = new Promise<RpcResponse>((resolve) => {
     hold = resolve
   })
-  const sendRequest = vi.fn(async (method: string, params: unknown) => {
+  // The host's answer to every request, by method; a vi.fn so tests can assert on or replace it.
+  const handleRequest = vi.fn(async (method: string, params?: unknown) => {
     if (method === 'agentSession.options') {
       return new Promise<RpcResponse>((resolve, reject) => {
         replies.push(resolve)
@@ -39,27 +38,21 @@ export function permissionHost() {
     }
     return success({})
   })
-  const client: RpcClient = {
-    sendRequest,
-    subscribe: (_method, _params, callback) => {
-      stream = callback
-      return () => {}
-    },
-    updateTerminalSubscriptionViewport: () => {},
-    getState: () => 'connected',
-    getReconnectAttempt: () => 0,
-    getLastConnectedAt: () => null,
-    onStateChange: () => () => {},
-    notifyForeground: () => {},
-    close: () => {}
+  const client = createFakeRpcClient({}, handleRequest)
+  const publish = (event: AgentSessionSubscribeEvent): void => {
+    const stream = client.streams.findLast((open) => open.method === 'agentSession.subscribe')
+    if (!stream) {
+      throw new Error('No subscription')
+    }
+    stream.emit(event)
   }
   return {
     client,
-    sendRequest,
+    handleRequest,
     replies,
     failures,
     attach: () => hold(success({})),
-    publish: (event: AgentSessionSubscribeEvent) => stream(event),
+    publish,
     failReads: () => failures.forEach((reject) => reject(new Error('Host unavailable')))
   }
 }

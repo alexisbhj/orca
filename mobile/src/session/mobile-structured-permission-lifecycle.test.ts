@@ -57,7 +57,7 @@ it.each(['claude', 'codex'])(
       expect(await read().structured.permissionPicker?.setMode('auto')).toBe(true)
     })
     expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('auto')
-    expect(host.sendRequest).toHaveBeenCalledWith(
+    expect(host.handleRequest).toHaveBeenCalledWith(
       'agentSession.setOption',
       expect.objectContaining({ envelope: expect.objectContaining({ expectedRuntimeFence: 7 }) }),
       expect.anything()

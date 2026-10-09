@@ -105,7 +105,7 @@ it.each(['claude', 'codex'] as const)(
       expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe(seed.mode)
       await act(async () => host.failReads())
       expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe(seed.mode)
-      host.sendRequest.mockImplementation(async (method) =>
+      host.handleRequest.mockImplementation(async (method) =>
         method === 'agentSession.setOption'
           ? {
               id: 'r',
@@ -125,7 +125,7 @@ it.each(['claude', 'codex'] as const)(
         expect(await read().structured.permissionPicker?.setMode('bypass')).toBe(true)
       })
       expect(read().nativeChatSessionOptions?.permissionPicker?.current).toBe('bypass')
-      expect(host.sendRequest).toHaveBeenCalledWith(
+      expect(host.handleRequest).toHaveBeenCalledWith(
         'agentSession.setOption',
         expect.objectContaining({
           envelope: expect.objectContaining({ expectedRuntimeFence: seed.fence })
