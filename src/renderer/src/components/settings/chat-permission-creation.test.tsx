@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import type { AppState } from '../../store/types'
 import type {
@@ -31,6 +31,13 @@ import {
   resetStructuredAgentSessionStatusFeedsForTests
 } from '../../runtime/structured-agent-session-status-feed'
 import { hydrateNativeChatComposerDrafts } from '../native-chat/native-chat-composer-draft-store'
+import { useNativeChatProvisionalLaunch } from '../native-chat/use-native-chat-provisional-launch'
+import { useStructuredAgentSessionOptions } from '../native-chat/use-structured-agent-session-options'
+import type { SessionPermissionPublication } from '../../../../shared/agent-session-permission-reducer'
+import {
+  EMPTY_STRUCTURED_AGENT_SESSION,
+  reduceStructuredAgentSession
+} from '../../../../shared/structured-agent-session-reducer'
 import {
   createMemoryNativeChatComposerDraftStorage,
   setNativeChatComposerDraftStorageForTests
@@ -223,7 +230,7 @@ async function openClient(
   client: (typeof CLIENTS)[number],
   agent: TuiAgent,
   initial: AgentChatPermissionMode,
-  options: { withoutAuto?: boolean } = {}
+  options: { withoutAuto?: boolean; heldStart?: boolean } = {}
 ): Promise<{ executionHostId: ExecutionHostId; target: RuntimeClientTarget }> {
   state.host = await fixture.openChatPermissionCreationHost(initial, options)
   state.store = createTestStore()
@@ -367,4 +374,119 @@ for (const client of CLIENTS) {
       expect(host().starts()).toBe(1)
     }
   )
+}
+
+/** The chat composer's permission pill, wired as the chat view wires it: the launch view while
+ *  the chat starts, then what the host publishes. */
+function useComposerPermissionPill(
+  agent: TuiAgent,
+  sessionId: string,
+  target: RuntimeClientTarget,
+  publication?: SessionPermissionPublication & { fence: number }
+) {
+  const provisional = useNativeChatProvisionalLaunch('workspace-1', sessionId)
+  return useStructuredAgentSessionOptions({
+    agent,
+    sessionId,
+    target,
+    transportEnabled: provisional.transportEnabled,
+    isVisible: false,
+    providerVisible: false,
+    fence: publication?.fence ?? null,
+    turnId: null,
+    ...(publication ? { permissionPublication: publication } : {}),
+    unloadedTurnRevisions: undefined,
+    mutate: async () => {
+      throw new Error('No sends in this scenario')
+    },
+    ...(provisional.launch ? { launch: provisional.launch } : {})
+  }).optionSurface.permissionPicker
+}
+
+function chatTabSessionId(agent: TuiAgent): string | undefined {
+  return store()
+    .getState()
+    .unifiedTabsByWorktree['workspace-1']?.find(
+      (tab) => tab.contentType === 'agent-session' && tab.agentSessionAgent === agent
+    )?.entityId
+}
+
+for (const client of CLIENTS) {
+  // Codex opens its thread before the chat publishes, so the launch alone must carry the pill.
+  it(`${client}: a new Codex chat shows a usable permission pill before its thread opens`, async () => {
+    const { executionHostId, target } = await openClient(client, 'codex', 'ask', {
+      heldStart: true
+    })
+    const launch = launchAgentInNewTab({
+      agent: 'codex',
+      worktreeId: 'workspace-1',
+      agentSessionLaunchPlan: adoptAgentSessionLaunchVerdict({
+        route: 'structured-native-chat',
+        requestId: `held-start-${++requestSequence}`,
+        agent: 'codex',
+        executionHostId,
+        worktreeId: 'workspace-1'
+      })
+    })
+    let sessionId: string | undefined
+    await vi.waitFor(() => expect((sessionId = chatTabSessionId('codex'))).toBeDefined())
+    if (!sessionId) {
+      throw new Error('No chat tab')
+    }
+    const chat = sessionId
+    const { result, unmount } = renderHook(() => useComposerPermissionPill('codex', chat, target))
+    try {
+      await vi.waitFor(() =>
+        expect(result.current).toMatchObject({
+          current: 'ask',
+          supported: ['ask', 'auto', 'bypass'],
+          disabled: false
+        })
+      )
+      expect(host().starts()).toBe(1)
+      await act(async () => {
+        await result.current?.setMode('bypass')
+      })
+      expect(result.current?.current).toBe('bypass')
+
+      host().releaseStart()
+      expect(await launch?.structuredSettlement).toEqual({ kind: 'structured', sessionId: chat })
+      await vi.waitFor(async () => expect(await host().savedMode(chat)).toBe('bypass'))
+    } finally {
+      unmount()
+      host().releaseStart()
+    }
+  })
+
+  // Claude publishes at once and initializes later: the host's snapshot carries the pill.
+  it(`${client}: a new Claude chat shows its permission pill while Claude starts`, async () => {
+    const { executionHostId, target } = await openClient(client, 'claude', 'ask', {
+      heldStart: true
+    })
+    const sessionId = await newTab('claude', executionHostId)
+    const event = await host().snapshot(sessionId)
+    const { permissionPublication } = reduceStructuredAgentSession(EMPTY_STRUCTURED_AGENT_SESSION, {
+      type: 'event',
+      event
+    })
+    const fence = event.type === 'snapshot' ? event.fence : null
+    if (!permissionPublication || fence === null) {
+      throw new Error(`No permission publication in ${JSON.stringify(event).slice(0, 300)}`)
+    }
+    // One object, as the transport's state holds it between renders.
+    const publication = { ...permissionPublication, fence }
+    const { result, unmount } = renderHook(() =>
+      useComposerPermissionPill('claude', sessionId, target, publication)
+    )
+    try {
+      expect(result.current).toMatchObject({
+        current: 'ask',
+        supported: ['ask', 'accept-edits', 'auto', 'bypass'],
+        disabled: false
+      })
+    } finally {
+      unmount()
+      host().releaseStart()
+    }
+  })
 }

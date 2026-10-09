@@ -5,6 +5,7 @@ import { vi } from 'vitest'
 import { getDefaultPersistedState } from '../../shared/constants'
 import type { AgentChatPermissionMode } from '../../shared/agent-chat-permission-mode'
 import type { ChatPermissionCreationHost } from '../../shared/chat-permission-creation.test-fixture'
+import type { AgentSessionSubscribeEvent } from '../../shared/agent-session-wire'
 import { STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
 import { Store } from '../persistence'
 import { ProfileStateSqliteAuthority } from '../persistence/profile-state/profile-state-sqlite-authority'
@@ -57,9 +58,34 @@ function providersWithoutAuto() {
   }
 }
 
+/** Holds each provider's start answer, Codex's `thread/start` and Claude's initialize, until
+ *  `release`: the agent is still starting while the chat is already open. */
+function holdStarts(providers: ReturnType<typeof providersWithoutAuto>) {
+  let release = (): void => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const codexStart = providers.codex.routes['thread/start']
+  providers.codex.routes['thread/start'] = async (params) => {
+    await gate
+    return codexStart?.(params)
+  }
+  const openClaude = providers.claude.openConnection
+  const openConnection: typeof openClaude = async (...args) => {
+    const connection = await openClaude(...args)
+    const initialize = connection.initializationResult
+    connection.initializationResult = async () => {
+      await gate
+      return initialize()
+    }
+    return connection
+  }
+  return { claude: { ...providers.claude, openConnection }, codex: providers.codex, release }
+}
+
 export async function openChatPermissionCreationHost(
   initial: AgentChatPermissionMode,
-  options: { withoutAuto?: boolean } = {}
+  options: { withoutAuto?: boolean; heldStart?: boolean } = {}
 ): Promise<ChatPermissionCreationHost> {
   const root = await mkdtemp(join(tmpdir(), 'orca-chat-default-creation-'))
   const state = getDefaultPersistedState(root)
@@ -91,9 +117,12 @@ export async function openChatPermissionCreationHost(
     }),
     resolveRuntimeFileTarget: async () => ({ worktree: { id: 'workspace-1', path: root } })
   })
-  const { claude, codex } = options.withoutAuto
+  const providers = options.withoutAuto
     ? providersWithoutAuto()
     : { claude: fakeClaude({ initProof: 'none', replayUuid: null }), codex: fakeCodex() }
+  const { claude, codex, release } = options.heldStart
+    ? holdStarts(providers)
+    : { ...providers, release: () => {} }
   vi.spyOn(runtime, 'ensureStructuredAgentSessionHost').mockImplementation(async () => {
     await ensureStructuredAgentSessionHost({
       stateDirectory: root,
@@ -118,6 +147,25 @@ export async function openChatPermissionCreationHost(
   return {
     settings: () => store.getSettings(),
     starts: () => claude.connections.length + codex.connections.length,
+    releaseStart: release,
+    snapshot: async (sessionId) => {
+      const host = getStructuredAgentSessionHost()
+      if (!host) {
+        throw new Error('No structured host')
+      }
+      const frames: AgentSessionSubscribeEvent[] = []
+      await host.subscribe({
+        id: 'snapshot-reader',
+        sessionId,
+        emit: (event) => frames.push(event)
+      })
+      host.unsubscribe(sessionId, 'snapshot-reader')
+      const frame = frames.find((event) => event.type === 'snapshot')
+      if (!frame) {
+        throw new Error('No snapshot')
+      }
+      return frame
+    },
     inventory: async () => [await runtime.listMobileSessionTabs('id:workspace-1')],
     subscribeStatus: async (emit) => {
       await runtime.ensureStructuredAgentSessionHost()
