@@ -24,6 +24,7 @@ import {
 } from '../native-chat/agent-session-wire/structured-agent-session-child-exit'
 import type { StructuredAgentSessionEndedEvent } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { pendingPromptExists } from '../native-chat/agent-session-wire/structured-agent-session-queued-messages'
+import { NO_STORE_RECEIPTS } from '../native-chat/agent-session-wire/structured-agent-session-settlement-double.test-fixture'
 import { createCodexJournalTranslator } from './codex-structured-journal-translation'
 import { handleCodexSessionExit } from './codex-structured-session-close'
 import type { CodexSession, CodexStructuredSessionEvent } from './codex-structured-session-state'
@@ -46,15 +47,16 @@ afterEach(async () => {
   }
 })
 
-function userVisible(journal: AgentSessionJournal) {
+/** What the chat shows at the lease's `fence`: 7 while the child runs, 8 once its exit released it. */
+function userVisible(journal: AgentSessionJournal, fence: number) {
   const items = journal.snapshot().items
   return {
     working: isStructuredAgentSessionMainAgentWorking(
-      journal.activeTurnId(),
+      journal.activeTurnId(fence),
       journal.submissions(),
-      8
+      fence
     ),
-    prompt: pendingPromptExists(journal),
+    prompt: pendingPromptExists(journal, fence),
     turnStates: items.flatMap((item) => readAgentJournalTurn(item.body)?.state ?? []),
     runningCalls: items.filter(
       (item) => item.body.kind === 'tool-call' && item.body.state === 'running'
@@ -149,7 +151,7 @@ it('settles a refused Codex exit through the host in one commit, then permits a 
   ).toEqual({ accepted: true })
   await expect(deferred.drained()).resolves.toEqual({ ok: true })
   expect(deferred.state().queuedBytes).toBe(0)
-  expect(userVisible(journal)).toEqual({
+  expect(userVisible(journal, 7)).toEqual({
     working: true,
     prompt: true,
     turnStates: ['running'],
@@ -230,7 +232,8 @@ it('settles a refused Codex exit through the host in one commit, then permits a 
         transitionHandoff: async (
           _sessionId: string,
           transition: (current: AgentSessionRecord) => AgentSessionRecord
-        ) => (record = transition(record))
+        ) => (record = transition(record)),
+        conversationReceipts: NO_STORE_RECEIPTS
       },
       sessions: new Map([[SESSION, hostSession]]),
       flushLifecycle: () => deferred.lifecycleBarrier(),
@@ -240,7 +243,7 @@ it('settles a refused Codex exit through the host in one commit, then permits a 
     },
     event
   )
-  expect(userVisible(journal)).toEqual({
+  expect(userVisible(journal, 8)).toEqual({
     working: false,
     prompt: false,
     turnStates: ['interrupted'],

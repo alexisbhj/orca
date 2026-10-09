@@ -38,7 +38,7 @@ export function isMainAgentWorking(
   ctx: Pick<AgentSessionTurnContext, 'journal' | 'fence'>
 ): boolean {
   return isStructuredAgentSessionMainAgentWorking(
-    ctx.journal.activeTurnId(),
+    ctx.journal.activeTurnId(ctx.fence),
     ctx.journal.submissions(),
     ctx.fence
   )
@@ -57,7 +57,7 @@ function stillRunsStoppedTurn(
     return false
   }
   // Working with no turn open after the Stop's turn is a later send whose turn has not opened.
-  return stoppedTurnId === null || ctx.journal.activeTurnId() === stoppedTurnId
+  return stoppedTurnId === null || ctx.journal.activeTurnId(ctx.fence) === stoppedTurnId
 }
 
 /** Whether the Stop took back every send it found in flight, none of them having run
@@ -147,6 +147,8 @@ type PerformCancelInput = {
   childWork?: () => readonly AgentChildWorkView[] | undefined
   /** The latest Stop event is this press's own, or the in-force one it repeats: its settle binds. */
   opensSettle?: true
+  /** The fence the note is written at: a child end this Stop caused moved it past `ctx.fence`. */
+  noteFence?: () => number
 }
 
 async function cancelAndNote(
@@ -168,7 +170,7 @@ async function cancelAndNote(
   // Only the provider's end or the child's ends a command. A command the provider has not opened a
   // turn for, would not interrupt, or was already asked to stop, ends with its child; that child's
   // dead-generation settlement writes the command's verdict.
-  const liveTurnId = ctx.journal.activeTurnId()
+  const liveTurnId = ctx.journal.activeTurnId(ctx.fence)
   // Read with the live turn, before the cancel settles it: the note is keyed by this turn.
   const stoppedTurnId = structuredAgentSessionStoppedTurnId(ctx.journal, input.turnId)
   const namesTurnNotLive = structuredAgentSessionStopNamesTurnNotLive(input.turnId, liveTurnId)
@@ -212,7 +214,7 @@ async function cancelAndNote(
             ...(input.turnId !== undefined ? { turnId: input.turnId } : {}),
             fence: ctx.fence,
             // The journal is what the client read to name a turn, so it is what judges the request.
-            resolveLiveTurnId: () => ctx.journal.activeTurnId(),
+            resolveLiveTurnId: () => ctx.journal.activeTurnId(ctx.fence),
             ...(dispatchStatus ? { dispatchStatus } : {}),
             ...(input.prompt ? { prompt: { itemId: input.prompt.itemId } } : {})
           })
@@ -309,7 +311,7 @@ async function cancelAndNote(
     binding.turnId = stoppedTurn ?? stoppedTurnId ?? undefined
   } else if (interruptFailed) {
     // A Stop that failed reads "Stopping…" through the turn it could not stop; its end stays its own.
-    binding.failedOn = structuredAgentSessionFailedStopMark(ctx.journal)
+    binding.failedOn = structuredAgentSessionFailedStopMark(ctx.journal, ctx.fence)
   }
   if (taken === true && stoppedTurn !== undefined && !binding.closedByWindDown && !input.scope) {
     const opened = await settleTakenStop(ctx, stoppedTurn)
@@ -328,6 +330,7 @@ async function cancelAndNote(
     (stoppedTurn !== undefined
       ? structuredAgentSessionNamedTurnScope(ctx.journal, stoppedTurn)
       : null) ?? turnScope
-  await ctx.journal.appendItem(noteIdentity, note, { fence: ctx.fence, turnScope: noteScope })
+  const fence = Math.max(ctx.fence, input.noteFence?.() ?? ctx.fence)
+  await ctx.journal.appendItem(noteIdentity, note, { fence, turnScope: noteScope })
   return { ok: true, value }
 }

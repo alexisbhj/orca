@@ -136,7 +136,8 @@ export class StructuredAgentSessionHost {
       // Site 10: cannot overwrite a live entry — the restorer returns early on
       // `hasSession` inside the same serialized step as this `set`.
       onReadable: this.conversationDelivery.adoptOpened,
-      onUnopened: (sessionId) => this.tabs.markUnopened(sessionId)
+      onUnopened: (sessionId) => this.tabs.markUnopened(sessionId),
+      startup: { sessions: this.sessions, tasks: this.tasks }
     })
     this.eventRecovery = new StructuredAgentSessionEventRecovery({
       deps,
@@ -234,6 +235,8 @@ export class StructuredAgentSessionHost {
   onSessionsHeld = (listener: () => void): (() => void) => this.deps.store.onFirstRecord(listener)
 
   reconcileRestartLeases = (): Promise<void> => this.restore.reconcileRestartLeases()
+  /** Once the settlement the last startup reconcile began has run for every chat. */
+  startupSettled = (): Promise<void> => this.restore.startupSettled()
 
   restoreReadableSessions = (sessionIds?: readonly string[]): Promise<void> =>
     this.restore.restoreReadableSessions(sessionIds)

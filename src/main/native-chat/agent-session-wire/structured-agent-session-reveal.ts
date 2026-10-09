@@ -23,6 +23,12 @@ import type {
   StructuredAgentSessionHostDeps,
   StructuredAgentSessionReveal
 } from './structured-agent-session-host-types'
+import {
+  settleOneAtStartup,
+  settleStructuredAgentSessionsAtStartup,
+  type StructuredAgentSessionStartupSettlementContext
+} from './structured-agent-session-startup-settlement'
+import type { StructuredAgentSessionTaskQueue } from './structured-agent-session-task-queue'
 
 /** Throws its refusal as the code itself. */
 export async function revealStructuredAgentSession(
@@ -52,27 +58,46 @@ export async function revealStructuredAgentSession(
   }
 }
 
-/** The host's startup readable-restore sweep: reconcile, resolve, then open each chat's journal.
+/** The host's startup: reconcile, then settle what the earlier process left (in the background:
+ *  no chat's tab waits on it), and the readable-restore sweep that resolves and opens each chat.
  *  Its lease bookkeeping is a reader's, which never fails a read or startup; startup shares it. */
 export function createStructuredAgentSessionHostRestore(
   deps: StructuredAgentSessionHostDeps,
   wiring: Omit<
     ConstructorParameters<typeof StructuredAgentSessionReadableRestorer>[0],
-    'openDeps' | 'reconcile' | 'resolveRecovery'
+    'openDeps' | 'reconcile' | 'resolveRecovery' | 'afterReadable'
   > & {
     reconcileLeases: (sessionId: string) => Promise<AgentSessionWireRefusal | null>
     resolveRecovery: (sessionId: string) => Promise<unknown>
+    startup: Pick<StructuredAgentSessionStartupSettlementContext, 'sessions'> & {
+      tasks: Pick<StructuredAgentSessionTaskQueue, 'trackAttach'>
+    }
   }
 ): {
   reconcileRestartLeases: () => Promise<void>
+  /** The startup settlement the last reconcile began; resolved once every chat's share ran. */
+  startupSettled: () => Promise<void>
   restoreReadableSessions: (sessionIds?: readonly string[]) => Promise<void>
 } {
-  const { reconcileLeases, resolveRecovery, ...rest } = wiring
+  const { reconcileLeases, resolveRecovery, startup, ...rest } = wiring
   const failures = reportEachFailureOnce(deps.logger)
   const reconcile = createReaderReconcile(reconcileLeases, failures)
+  const settlement: StructuredAgentSessionStartupSettlementContext = {
+    deps,
+    sessions: startup.sessions,
+    serialize: rest.serialize,
+    adopt: async (sessionId, opened) => {
+      await rest.onReadable(sessionId, opened)
+    },
+    now: () => deps.now?.() ?? Date.now(),
+    sharesDone: new WeakSet()
+  }
+  let startupSettled: Promise<void> = Promise.resolve()
   const restorer = new StructuredAgentSessionReadableRestorer({
     openDeps: deps,
     reconcile,
+    // A recovery the restore resolved can end a generation the startup pass found still owned.
+    afterReadable: (sessionId, opened) => settleOneAtStartup(settlement, sessionId, opened),
     // The next attach or send resolves recovery again, strictly, before it acts.
     resolveRecovery: (sessionId) =>
       resolveRecovery(sessionId).then(
@@ -88,7 +113,10 @@ export function createStructuredAgentSessionHostRestore(
   return {
     reconcileRestartLeases: async () => {
       await reconcile('startup')
+      // Tracked like a start, so a quit waits for it before it closes what it writes to.
+      startupSettled = startup.tasks.trackAttach(settleStructuredAgentSessionsAtStartup(settlement))
     },
+    startupSettled: () => startupSettled,
     restoreReadableSessions: (sessionIds) => gate.run(() => restorer.restore(sessionIds))
   }
 }

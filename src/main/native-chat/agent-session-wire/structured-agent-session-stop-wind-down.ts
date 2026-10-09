@@ -51,7 +51,7 @@ export async function endStoppedStructuredAgentSession(
     await stopChild()
   } catch (error) {
     onError(error)
-    failedOn = structuredAgentSessionFailedStopMark(ctx.journal)
+    failedOn = structuredAgentSessionFailedStopMark(ctx.journal, ctx.fence)
     await reviseStopNoteUnconfirmed(ctx, windDown.stopNote).catch(onError)
   } finally {
     windDown.settled?.(failedOn)
@@ -85,7 +85,7 @@ async function reviseStopNoteUnconfirmed(
   // Stop of that turn writes it: its proven end finds it there. A row keeps the scope it was created
   // with, so a note a Stop wrote before the turn showed is re-keyed, in one batch. Known limit: with
   // no turn open yet, the note keeps its key and scope, and no turn's end revises it.
-  const running = ctx.journal.activeTurnId()
+  const running = ctx.journal.activeTurnId(ctx.fence)
   const turnScope =
     running !== null ? structuredAgentSessionNamedTurnScope(ctx.journal, running) : null
   const onTurn = running !== null ? structuredAgentSessionStopNoteIdentity(running) : identity

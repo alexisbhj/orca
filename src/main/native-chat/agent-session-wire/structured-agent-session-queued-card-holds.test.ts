@@ -231,7 +231,7 @@ describe('after a restart, nothing sends by itself', () => {
     await rig.workingSend()
     const first = await queuedDraft('A')
     const second = await queuedDraft('B')
-    rig.crashRestartHostProcess()
+    await rig.crashRestartHostProcess()
     // The new host opens the chat for its first reader.
     await published()
     return { first, second }
@@ -391,7 +391,7 @@ describe('after a restart, nothing sends by itself', () => {
     await eventually(async () => expect(await rig.handoff(first)).toBeDefined())
     const cutShort = await rig.handoffId(first)
     expect((await rig.handoff(first))?.handedOverAt).toBeUndefined()
-    rig.crashRestartHostProcess()
+    await rig.crashRestartHostProcess()
     release()
     await published()
     // The new host refuses the leftover hand-off, and A waits again in its own place.

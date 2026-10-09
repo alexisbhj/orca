@@ -19,7 +19,10 @@ import { queuedSendAnswer } from './structured-agent-session-queued-send-answer'
 import { structuredAgentSessionSendBlock } from './structured-agent-session-send-preparation'
 import { queuedMessagesPublishedBytesRefusal } from './structured-agent-session-queued-published-bytes'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
-import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
+import {
+  isStructuredAgentSessionEndedGenerationWork,
+  isStructuredAgentSessionMainAgentWorking
+} from '../../../shared/structured-agent-session-main-agent-working'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { AgentSessionTurnContext } from './structured-agent-session-turns'
 import { QueuedMessageNotConsumableError } from '../agent-session-journal/journal-queued-messages'
@@ -40,14 +43,19 @@ export function queuedMessageBodyIsTextOnly(body: AgentJournalMessageItem): bool
 }
 
 /** Walks the reduced items in place: the gate runs on every admission and
- *  drain step, so it must not render a snapshot of the whole journal. */
-export function pendingPromptExists(journal: Pick<AgentSessionJournal, 'visitItems'>): boolean {
+ *  drain step, so it must not render a snapshot of the whole journal. Only a prompt a generation
+ *  at `fence` raised: an ended one's can take no answer (`isStructuredAgentSessionEndedGenerationWork`). */
+export function pendingPromptExists(
+  journal: Pick<AgentSessionJournal, 'visitItems' | 'itemFence'>,
+  fence: number
+): boolean {
   let pending = false
-  journal.visitItems((_itemId, _sequence, body) => {
+  journal.visitItems((itemId, _sequence, body) => {
     if (
       !pending &&
       (body.kind === 'approval' || body.kind === 'question') &&
-      body.resolution.state === 'pending'
+      body.resolution.state === 'pending' &&
+      !isStructuredAgentSessionEndedGenerationWork(journal.itemFence(itemId), fence)
     ) {
       pending = true
     }
@@ -102,12 +110,12 @@ export function structuredQueueHold(input: {
   const { journal } = input
   // `prompt` outranks `working`: it is the one wait Send-now may not override,
   // so a prompt raised mid-turn must not read as merely `working`.
-  if (pendingPromptExists(journal)) {
+  if (pendingPromptExists(journal, input.fence)) {
     return 'prompt'
   }
   if (
     isStructuredAgentSessionMainAgentWorking(
-      journal.activeTurnId(),
+      journal.activeTurnId(input.fence),
       journal.submissions(),
       input.fence
     )
@@ -131,7 +139,11 @@ export function nextStructuredQueuedMessage(input: {
   // prompt check walks the whole fold.
   if (
     next === null ||
-    isStructuredAgentSessionMainAgentWorking(journal.activeTurnId(), journal.submissions(), fence)
+    isStructuredAgentSessionMainAgentWorking(
+      journal.activeTurnId(fence),
+      journal.submissions(),
+      fence
+    )
   ) {
     return null
   }
@@ -291,7 +303,7 @@ export class StructuredAgentSessionQueuedMessageDrain {
         !journal.queuedMessages.settlementOwed() &&
         (oldestActionableQueuedMessage(journal) === null ||
           isStructuredAgentSessionMainAgentWorking(
-            journal.activeTurnId(),
+            journal.activeTurnId(this.deps.conversationFence(sessionId)),
             journal.submissions(),
             this.deps.conversationFence(sessionId)
           ))

@@ -617,10 +617,13 @@ describe('a quit with a message still queued', () => {
     surface: 'rejection'
   })
 
-  /** Read by the next launch, through the same open any reader takes. */
+  /** Read after the next launch's startup: its reconcile and settlement, then the restore of the
+   *  chat's tab, whose share holds what the quit left unsent. */
   async function afterRelaunch(id: string): Promise<AgentJournalSubmission | undefined> {
     startHost()
-    await host.revealSession(SESSION)
+    await host.reconcileRestartLeases()
+    await host.startupSettled()
+    await host.restoreReadableSessions([SESSION])
     return await submission(id)
   }
 

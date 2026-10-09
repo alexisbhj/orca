@@ -21,7 +21,7 @@ import { currentAgentSessionThreadGoalBySequence } from '../../../shared/agent-s
 import type { AgentSessionContextUsage } from '../../../shared/agent-session-context-usage'
 import { latestStructuredAgentContextFacts } from '../../../shared/structured-agent-session-context-usage'
 import {
-  activeStructuredAgentSessionTurnIdBySequence,
+  currentStructuredAgentSessionTurnId,
   liveStructuredAgentSessionTurnScope,
   newestStructuredAgentSessionTurnBySequence
 } from '../../../shared/structured-agent-session-live-turn'
@@ -48,6 +48,7 @@ import type {
   JournalItemAppendOptions,
   JournalItemLinkageVisitor,
   JournalLifecycleBatchInput,
+  JournalPlannedLifecycleBatchInput,
   JournalReadSince,
   JournalSubmissionConsume,
   JournalSubmissionInput,
@@ -223,9 +224,9 @@ export class AgentSessionJournal {
   }
 
   /** The turn this journal has published as running — the same read a client's snapshot gives,
-   *  without materialising one. */
-  activeTurnId = (): string | null =>
-    activeStructuredAgentSessionTurnIdBySequence(this.state.items.values())
+   *  without materialising one. Given the lease's fence, only one a current generation opened. */
+  activeTurnId = (currentFence?: number | null): string | null =>
+    currentStructuredAgentSessionTurnId(this.state.items.values(), this.itemFence, currentFence)
 
   /** Where a row written now belongs: the running turn, or the conversation. */
   liveTurnScope = (): AgentJournalTurnScope =>
@@ -329,6 +330,13 @@ export class AgentSessionJournal {
   appendLifecycleBatch(input: JournalLifecycleBatchInput): Promise<AgentJournalCursor> {
     return this.lifecycleBatchAppender.append(input)
   }
+
+  /** A lifecycle batch planned at its own turn in the queue (`JournalPlannedLifecycleBatchInput`). */
+  appendPlannedLifecycleBatch = (input: JournalPlannedLifecycleBatchInput) =>
+    this.lifecycleBatchAppender.appendPlanned(input)
+
+  /** An acquisition's write of a chat's first epoch (`JournalRowWriter.found`). */
+  foundEpoch = (): Promise<void> => this.rowWriter.found()
 
   /** Several writes as one turn in the queue; see `JournalStepWriter`. */
   appendSteps: JournalStepWriter['append'] = (steps) => this.stepWriter.append(steps)

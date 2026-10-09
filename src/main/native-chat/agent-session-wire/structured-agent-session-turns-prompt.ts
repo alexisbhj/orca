@@ -24,6 +24,7 @@ import {
   AgentSessionPromptUnavailableError
 } from './structured-agent-session-adapter'
 import { settledPrompt, validatePendingPrompt } from './structured-agent-session-prompt-state'
+import { isStructuredAgentSessionEndedGenerationWork } from '../../../shared/structured-agent-session-main-agent-working'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
 
 export type AgentSessionPromptRequest = {
@@ -97,6 +98,10 @@ export async function performPrompt(
     return held ? { ok: true, value: held } : validated
   }
   const { prompt } = validated
+  if (isStructuredAgentSessionEndedGenerationWork(ctx.journal.itemFence(input.itemId), ctx.fence)) {
+    // The agent that asked has ended: an answer would reach whichever agent runs now.
+    return invalid('promptGone', `Item ${input.itemId} was raised by an agent that has ended.`)
+  }
   const choice = readPromptChoice(prompt, input)
   if (!choice) {
     return invalid(

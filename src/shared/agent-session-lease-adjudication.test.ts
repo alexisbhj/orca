@@ -34,6 +34,7 @@ function lease(overrides: Partial<AgentSessionLease> = {}): AgentSessionLease {
     claimStatus: 'live',
     unreconciled: false,
     deathEvidence: null,
+    leftoverSettledAt: null,
     ...overrides
   }
 }

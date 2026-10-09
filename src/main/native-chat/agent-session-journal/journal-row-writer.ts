@@ -5,6 +5,7 @@ import type { AgentJournalCursor } from '../../../shared/agent-session-journal-t
 import type { JournalRow } from './journal-row-schema'
 import { assertJournalFence, assertJournalWritable } from './journal-write-guards'
 import type { JournalWriteBody } from './journal-write-queue'
+import type { JournalEpochFounding } from './journal-epoch-founding'
 
 /** Runs between BEGIN IMMEDIATE and COMMIT, on the SAME connection as the row
  *  insert; a throw rolls the whole append back. Synchronous by construction so
@@ -34,6 +35,8 @@ export type JournalRowWriterDeps = {
   inTransaction?: JournalRowTransactionHook
   /** After any rollback, so a cache filled inside the transaction cannot outlive it. */
   rolledBack?: () => void
+  /** The chat's held first epoch, written with its first row (`journal-epoch-founding.ts`). */
+  founding?: Pick<JournalEpochFounding, 'inTransaction' | 'settled' | 'held'>
 }
 
 const BOOKKEEPING_SAVEPOINT = 'journal_row_bookkeeping'
@@ -53,6 +56,7 @@ export class JournalRowWriter {
       try {
         // One INSERT: the chat's epoch pointer moves only when the epoch does.
         this.deps.database().transaction((db) => {
+          this.deps.founding?.inTransaction(db)
           insertJournalRow(db, this.deps.sessionId, row)
           hook?.(db, row)
           receipt?.write(db)
@@ -65,6 +69,7 @@ export class JournalRowWriter {
       // COMMIT landed, so the row is durable: adopt it before anything that can
       // fail. Rejecting here instead would leave the next append reusing a
       // sequence the table already holds. The ledger first: it cannot throw, the fold can.
+      this.deps.founding?.settled()
       receipt?.committed()
       this.deps.commit([row])
       return row
@@ -80,7 +85,8 @@ export class JournalRowWriter {
     return this.deps.serialize(() => this.writeRows(plan, receipt))
   }
 
-  /** `enqueueRows`' write, for a caller already running at its own turn in the queue. */
+  /** `enqueueRows`' write, for a caller already running at its own turn in the queue. A receipt
+   *  commits even when the plan is empty: what it records is already true of the rows. */
   writeRows(
     plan: () => readonly ((seq: number, ts: number) => JournalRow)[],
     receipt?: JournalOperationReceipt
@@ -89,7 +95,7 @@ export class JournalRowWriter {
     const first = this.deps.nextSequence()
     const ts = this.deps.now()
     const rows = plan().map((build, index) => build(first + index, ts))
-    if (rows.length === 0) {
+    if (rows.length === 0 && !receipt) {
       return rows
     }
     for (const row of rows) {
@@ -97,6 +103,9 @@ export class JournalRowWriter {
     }
     try {
       this.deps.database().transaction((db) => {
+        if (rows.length > 0) {
+          this.deps.founding?.inTransaction(db)
+        }
         for (const row of rows) {
           insertJournalRow(db, this.deps.sessionId, row)
           this.runBookkeeping(db, row)
@@ -108,8 +117,24 @@ export class JournalRowWriter {
       throw error
     }
     receipt?.committed()
-    this.deps.commit(rows)
+    if (rows.length > 0) {
+      this.deps.founding?.settled()
+      this.deps.commit(rows)
+    }
     return rows
+  }
+
+  /** Writes the chat's held first epoch on its own, for an acquisition: a chat whose agent started
+   *  is kept even if nothing else is written. Nothing when it is founded already. */
+  found(): Promise<void> {
+    return this.deps.serialize(() => {
+      if (!this.deps.founding?.held()) {
+        return
+      }
+      assertJournalWritable(this.deps.readOnly(), this.deps.sessionId)
+      this.deps.database().transaction((db) => this.deps.founding?.inTransaction(db))
+      this.deps.founding.settled()
+    })
   }
 
   /** Assign the next sequence, make the row durable, and fold it through the SAME reducer

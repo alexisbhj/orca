@@ -56,7 +56,8 @@ function record(overrides: {
       claimKeyId: 'k',
       claimStatus: overrides.claimStatus ?? 'live',
       unreconciled: false,
-      deathEvidence: null
+      deathEvidence: null,
+      leftoverSettledAt: null
     },
     createdAt: 0,
     updatedAt: 0

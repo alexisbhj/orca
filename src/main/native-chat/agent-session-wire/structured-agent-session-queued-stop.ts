@@ -68,7 +68,7 @@ export function stopReachesUnrecordedWork(
   ctx: Pick<AgentSessionTurnContext, 'journal' | 'fence'>,
   namedTurnId: string | undefined
 ): 'unrecorded' | 'repeat' | 'late' {
-  const live = ctx.journal.activeTurnId()
+  const live = ctx.journal.activeTurnId(ctx.fence)
   // No turn published yet while the agent works: the named one may still be opening.
   if (
     structuredAgentSessionStopNamesTurnNotLive(namedTurnId, live) &&

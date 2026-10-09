@@ -200,7 +200,8 @@ export function structuredAgentSessionWorkingAtStop(input: {
   const status = structuredAgentSessionShownStatus(
     { items: current.items, submissions: handedOver },
     childWork,
-    session.child.fence
+    session.child.fence,
+    session.journal.itemFence
   )
   if (status.state === 'done') {
     return null

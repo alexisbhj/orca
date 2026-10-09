@@ -110,9 +110,10 @@ async function closeWhileStarting(cause: 'user-close' | 'evict'): Promise<void> 
   await closed
 }
 
-/** The app quits: delivery stops first, so the held spawn finishing hands nothing over. */
-async function quitRestart(): Promise<void> {
-  const quit = rig.quitRestartHostProcess()
+/** The app quits: delivery stops first, so the held spawn finishing hands nothing over.
+ *  `beforeStartup` reads the state directory before the next process starts. */
+async function quitRestart(beforeStartup?: () => unknown): Promise<void> {
+  const quit = rig.quitRestartHostProcess(beforeStartup)
   releaseStart()
   releaseStart = () => {}
   await quit
@@ -161,17 +162,19 @@ describe('a message accepted while the agent starts, then Orca stops', () => {
       })
       // Nothing is sent on its own, however many times the chat reopens.
       await rig.host.close(SESSION, 'evict')
-      rig.crashRestartHostProcess()
+      await rig.crashRestartHostProcess()
       expect(await rig.drafts()).toEqual([{ messageId: id, ...KEPT }])
       expect(rig.dispatch).not.toHaveBeenCalled()
     }
   )
 
-  it('quit writes nothing for it: no closed-chat rejection, still queued until the next open', async () => {
+  it('quit writes nothing for it: no closed-chat rejection, still pending until the next startup', async () => {
     const id = await acceptWhileStarting(sendRequest('kept through quit'))
-    await quitRestart()
-    // Read beside the host, without opening the chat through it: the row the quit left.
-    const leftover = await peekSubmission(id)
+    let leftover: Awaited<ReturnType<typeof peekSubmission>> | undefined
+    // Read beside the host, between the two processes: the row the quit left.
+    await quitRestart(async () => {
+      leftover = await peekSubmission(id)
+    })
     expect(leftover).toMatchObject({ dispatchState: 'pending', handoverRecorded: true })
     expect(leftover?.handedOverAt).toBeUndefined()
   })
@@ -290,7 +293,7 @@ describe('the next accepted turn releases a kept card', () => {
     const id = await acceptWhileStarting(sendRequest('kept twice over'))
     await quitRestart()
     expect(await rig.drafts()).toEqual([{ messageId: id, ...KEPT }])
-    rig.crashRestartHostProcess()
+    await rig.crashRestartHostProcess()
     await new Promise((resolve) => setTimeout(resolve, 100))
     expect(rig.dispatch).not.toHaveBeenCalled()
     const working = await rig.workingSend()
@@ -352,11 +355,7 @@ describe('cards queued behind a working turn, then Orca stops', () => {
         ok: true,
         value: { queued: { state: 'waiting' } }
       })
-      if (how === 'quit') {
-        await quitRestart()
-      } else {
-        rig.crashRestartHostProcess()
-      }
+      await (how === 'quit' ? quitRestart() : rig.crashRestartHostProcess())
 
       expect(await rig.drafts()).toEqual([
         { messageId: first.id, state: 'waiting' },
@@ -429,7 +428,7 @@ describe('the queue at a quit', () => {
       }
       owed.mockRestore()
       healing.mockRestore()
-      rig.crashRestartHostProcess()
+      await rig.crashRestartHostProcess()
 
       expect(await rig.drafts()).toEqual([{ messageId: queued.id, state: 'waiting' }])
       expect(await rig.queuePause()).toBeNull()
@@ -470,7 +469,7 @@ describe('a message accepted while the agent starts, then the chat closes', () =
     async (cause) => {
       const id = await acceptWhileStarting(sendRequest('kept at close'))
       await closeWhileStarting(cause)
-      rig.crashRestartHostProcess()
+      await rig.crashRestartHostProcess()
 
       expect(await rig.submission(id)).toMatchObject({ dispatchState: 'rejected', ...CHAT_CLOSED })
       expect(await rig.drafts()).toEqual([{ messageId: id, ...KEPT }])
@@ -583,7 +582,7 @@ describe('what is not kept', () => {
     vi.spyOn(JournalQueuedMessages.prototype, 'holdInTransaction').mockImplementation(() => {
       throw new Error('disk full')
     })
-    rig.crashRestartHostProcess()
+    await rig.crashRestartHostProcess()
 
     await eventually(async () =>
       expect(await rig.submission(id)).toMatchObject({
@@ -758,7 +757,7 @@ describe("the reopen's mark", () => {
     await queued.result
     void working
     const sent = rig.dispatch.mock.calls.length
-    rig.crashRestartHostProcess()
+    await rig.crashRestartHostProcess()
     await rig.host.restoreReadableSessions([SESSION])
     expect(rig.host.collaboratorsForTests().sessions.has(SESSION)).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 100))

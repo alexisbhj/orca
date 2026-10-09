@@ -141,6 +141,9 @@ export type AgentSessionLease = {
   minimumNextFence?: number
   /** Null on a released lease when nothing proved its owner gone. */
   deathEvidence: AgentSessionDeathEvidence | null
+  /** When the work the generations before this fence left unfinished was last settled, or null
+   *  while it is owed. An index for startup only: every settlement re-derives from the journal. */
+  leftoverSettledAt: number | null
 }
 
 export type AgentSessionRecord = {
@@ -339,7 +342,8 @@ function isPersistedAgentSessionLease(value: unknown): value is PersistedAgentSe
       lease.claimStatus === 'conflicted' ||
       lease.claimStatus === 'released') &&
     typeof lease.unreconciled === 'boolean' &&
-    (lease.deathEvidence === null || isAgentSessionDeathEvidence(lease.deathEvidence))
+    (lease.deathEvidence === null || isAgentSessionDeathEvidence(lease.deathEvidence)) &&
+    (lease.leftoverSettledAt == null || Number.isSafeInteger(lease.leftoverSettledAt))
   )
 }
 

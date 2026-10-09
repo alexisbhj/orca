@@ -30,8 +30,8 @@ export function structuredQueuePauses(journal: PauseJournal): DerivedQueuePause[
 }
 
 /** The mark of a chat that stopped running with cards waiting — Orca quit or crashed, or the chat
- *  was closed — so they wait for its next turn (`queued-message-pause.ts`). Every open marks, and
- *  so does a person's close: the idle sweep never closes a chat with cards waiting, so its
+ *  was closed — so they wait for its next turn (`queued-message-pause.ts`). Startup marks each
+ *  chat with cards the earlier process left, and so does a person's close: the idle sweep never closes a chat with cards waiting, so its
  *  eviction never reopens one. `since`: where the chat stopped, for a mark written after a send
  *  that came later, which must still lift it. Bookkeeping, so a failure is reported and never
  *  thrown; the pause then starts where the mark would have gone, holding no less. */

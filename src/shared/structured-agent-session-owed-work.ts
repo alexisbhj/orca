@@ -1,6 +1,10 @@
 import type { AgentJournalRenderItem, AgentJournalSubmission } from './agent-session-journal-types'
 import { activeStructuredAgentSessionTurnId } from './structured-agent-session-live-turn'
-import { isStructuredAgentSessionMainAgentWorking } from './structured-agent-session-main-agent-working'
+import {
+  isStructuredAgentSessionEndedGenerationWork,
+  isStructuredAgentSessionMainAgentWorking,
+  type StructuredAgentSessionItemFence
+} from './structured-agent-session-main-agent-working'
 import { agentSessionCurrentContextRows } from './agent-session-context-clear'
 
 /** A running turn or an unanswered send: what a `working` status means, and what an `attention`
@@ -8,11 +12,17 @@ import { agentSessionCurrentContextRows } from './agent-session-context-clear'
 export function owesStructuredAgentSessionWork(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[],
-  currentFence?: number | null
+  currentFence?: number | null,
+  itemFence?: StructuredAgentSessionItemFence
 ): boolean {
   const current = agentSessionCurrentContextRows(items, submissions)
   return isStructuredAgentSessionMainAgentWorking(
-    activeStructuredAgentSessionTurnId(current.items),
+    activeStructuredAgentSessionTurnId(
+      current.items,
+      itemFence &&
+        ((item) =>
+          !isStructuredAgentSessionEndedGenerationWork(itemFence(item.itemId), currentFence))
+    ),
     current.submissions,
     currentFence
   )

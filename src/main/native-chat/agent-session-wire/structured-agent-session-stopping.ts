@@ -64,9 +64,10 @@ function firstSendHandedOverAfter(
 /** Where a Stop that failed leaves "Stopping…" (display only): the turn running now, or, with
  *  none, the first that opens after this position. */
 export function structuredAgentSessionFailedStopMark(
-  journal: Pick<AgentSessionJournal, 'activeTurnId' | 'cursor'>
+  journal: Pick<AgentSessionJournal, 'activeTurnId' | 'cursor'>,
+  fence: number
 ): JournalStopFailedOn {
-  const live = journal.activeTurnId()
+  const live = journal.activeTurnId(fence)
   return live !== null ? { turnId: live } : { openedAfter: journal.cursor().sequence }
 }
 

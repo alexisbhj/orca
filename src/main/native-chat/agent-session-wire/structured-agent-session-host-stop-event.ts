@@ -65,19 +65,19 @@ export async function stopEndsWork(
   const working =
     (drain === 'slow' && journal.stopMarks.latestAcceptedSendUnopened()) ||
     isStructuredAgentSessionMainAgentWorking(
-      journal.activeTurnId(),
+      journal.activeTurnId(child.fence),
       journal.submissions(),
       child.fence
     )
-  return working && (ending.cause === 'user-close' || !defersToPersonsStop(session))
+  return working && (ending.cause === 'user-close' || !defersToPersonsStop(session, child.fence))
 }
 
 /** A host stop of work a person's Stop is already ending must not supersede that Stop's reason:
  *  the turn it decides, or, with no turn running, the work under the queue pause it still holds,
  *  with nothing sent since, which a host's event would lift. */
-function defersToPersonsStop(session: StructuredAgentSessionHostSession): boolean {
+function defersToPersonsStop(session: StructuredAgentSessionHostSession, fence: number): boolean {
   const { journal } = session
-  const live = journal.activeTurnId()
+  const live = journal.activeTurnId(fence)
   if (live !== null) {
     return journal.stopMarks.personStopDecides(live)
   }
@@ -101,12 +101,10 @@ export function recordStopEvent(
   if ('recorded' in ending) {
     return Promise.resolve(null)
   }
-  const turnId = session.journal.activeTurnId()
+  const fence = structuredAgentSessionConversationFence(context.deps.store, sessionId)
+  const turnId = session.journal.activeTurnId(fence)
   return session.journal
-    .appendStopEvent(
-      { reason: ending.cause, ...(turnId !== null ? { turnId } : {}) },
-      structuredAgentSessionConversationFence(context.deps.store, sessionId)
-    )
+    .appendStopEvent({ reason: ending.cause, ...(turnId !== null ? { turnId } : {}) }, fence)
     .then(
       () => (ending.cause === 'user-close' ? session.journal.stopMarks.beginSettle() : null),
       (error: unknown) => {

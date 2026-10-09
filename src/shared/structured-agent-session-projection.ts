@@ -39,6 +39,10 @@ import { sha256 } from './sha256'
 import { readAgentMessageSource } from './agent-session-message-source'
 import { structuredAgentSessionStatusStartedAt } from './structured-agent-session-status-started-at'
 import { owesStructuredAgentSessionWork } from './structured-agent-session-owed-work'
+import {
+  isStructuredAgentSessionEndedGenerationWork,
+  type StructuredAgentSessionItemFence
+} from './structured-agent-session-main-agent-working'
 import { agentSessionCurrentContextRows } from './agent-session-context-clear'
 
 // Re-exported so the live-turn readers' and the unanswered-send rule's existing consumers keep one
@@ -211,23 +215,33 @@ export function structuredAgentSessionTabId(sessionId: string): string {
   return `structured-agent-session-${sessionId}`
 }
 
-function isPendingStructuredAgentSessionPrompt(item: AgentJournalRenderItem): boolean {
-  return (
+/** A prompt waiting on the user, unless an ended generation raised it: nothing can take its answer. */
+function pendingStructuredAgentSessionPrompt(
+  currentFence?: number | null,
+  itemFence?: StructuredAgentSessionItemFence
+): (item: AgentJournalRenderItem) => boolean {
+  return (item) =>
     (item.body.kind === 'approval' || item.body.kind === 'question') &&
-    item.body.resolution.state === 'pending'
-  )
+    item.body.resolution.state === 'pending' &&
+    !(
+      itemFence && isStructuredAgentSessionEndedGenerationWork(itemFence(item.itemId), currentFence)
+    )
 }
 
+/** `itemFence`: a host's, so work an ended generation left neither holds nor reads as Working. */
 export function projectStructuredAgentSessionStatus(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[] = [],
-  currentFence?: number | null
+  currentFence?: number | null,
+  itemFence?: StructuredAgentSessionItemFence
 ): StructuredAgentSessionProjectedStatus {
   ;({ items, submissions } = agentSessionCurrentContextRows(items, submissions))
-  if (items.some(isPendingStructuredAgentSessionPrompt)) {
+  if (items.some(pendingStructuredAgentSessionPrompt(currentFence, itemFence))) {
     return 'attention'
   }
-  return owesStructuredAgentSessionWork(items, submissions, currentFence) ? 'working' : 'idle'
+  return owesStructuredAgentSessionWork(items, submissions, currentFence, itemFence)
+    ? 'working'
+    : 'idle'
 }
 
 /** The activity fields a sidebar row shows beside the prompt, named as the agent-status
@@ -266,7 +280,8 @@ export function projectStructuredAgentSessionStatusSummary(
 export function projectStructuredAgentSessionStatusState(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[] = [],
-  currentFence?: number | null
+  currentFence?: number | null,
+  itemFence?: StructuredAgentSessionItemFence
 ): {
   summary: StructuredAgentSessionStatusProjection
   latestRequest: StructuredAgentSessionLatestRequest | null
@@ -285,7 +300,7 @@ export function projectStructuredAgentSessionStatusState(
     }
   }
   ;({ items, submissions } = agentSessionCurrentContextRows(items, submissions))
-  const status = projectStructuredAgentSessionStatus(items, submissions, currentFence)
+  const status = projectStructuredAgentSessionStatus(items, submissions, currentFence, itemFence)
   const statusToolCall = status === 'working' ? statusStructuredAgentSessionToolCall(items) : null
   const toolName = statusToolCall
     ? normalizeOptionalField(statusToolCall.name, AGENT_STATUS_TOOL_NAME_MAX_LENGTH)
@@ -315,10 +330,14 @@ export function projectStructuredAgentSessionStatusState(
   )
   return {
     latestRequest,
-    owesWork: status !== 'idle' && owesStructuredAgentSessionWork(items, submissions, currentFence),
+    owesWork:
+      status !== 'idle' &&
+      owesStructuredAgentSessionWork(items, submissions, currentFence, itemFence),
     pendingPromptIds:
       status === 'attention'
-        ? items.filter(isPendingStructuredAgentSessionPrompt).map((item) => item.itemId)
+        ? items
+            .filter(pendingStructuredAgentSessionPrompt(currentFence, itemFence))
+            .map((item) => item.itemId)
         : [],
     summary: {
       status,

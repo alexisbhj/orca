@@ -10,6 +10,7 @@ import type { JournalLoad } from './journal-open'
 import type { AgentJournalEpochReason } from './journal-row-schema'
 import { assertJournalFence, assertJournalWritable } from './journal-write-guards'
 import type { JournalWriteBody } from './journal-write-queue'
+import type { JournalEpochFounding } from './journal-epoch-founding'
 
 export class JournalEpochController {
   constructor(
@@ -25,6 +26,8 @@ export class JournalEpochController {
       queuePauseRestatement: () => JournalQueuePauseRestatement
       cursor: () => AgentJournalCursor
       adopt: (loaded: JournalLoad) => void
+      /** A published epoch replaces one still held unwritten. */
+      founding: Pick<JournalEpochFounding, 'settled'>
     }
   ) {}
 
@@ -36,7 +39,10 @@ export class JournalEpochController {
       reason,
       fence,
       now: this.deps.now(),
-      onPublished: this.deps.adopt
+      onPublished: (loaded) => {
+        this.deps.founding.settled()
+        this.deps.adopt(loaded)
+      }
     })
   }
 
@@ -72,7 +78,10 @@ export class JournalEpochController {
         queuePause: this.deps.queuePauseRestatement(),
         now: this.deps.now,
         mintEpoch: this.deps.mintEpoch,
-        onPublished: this.deps.adopt
+        onPublished: (loaded) => {
+          this.deps.founding.settled()
+          this.deps.adopt(loaded)
+        }
       })
       return this.deps.cursor()
     })

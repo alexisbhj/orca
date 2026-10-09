@@ -40,6 +40,12 @@ export type StructuredAgentSessionReadRestoreDeps = {
     sessionId: string,
     opened: OpenedStructuredAgentSessionConversation
   ) => Promise<void> | void
+  /** Inside the chat's serialize, once its recovery is resolved: what that ended is settled, for
+   *  a chat this restore opened (`opened`) before `onReadable` publishes it. */
+  afterReadable?: (
+    sessionId: string,
+    opened?: OpenedStructuredAgentSessionConversation
+  ) => Promise<void>
 }
 
 /** One session's share of the restart restore. Startup maps this over every supported record. */
@@ -56,19 +62,26 @@ async function restoreOneStructuredAgentSessionRead(
 
 /** The serialized half of the restore. */
 async function restoreOneStructuredAgentSessionReadUnderSerialize(
-  input: Pick<StructuredAgentSessionReadRestoreDeps, 'openDeps' | 'hasSession' | 'onReadable'>,
+  input: Pick<
+    StructuredAgentSessionReadRestoreDeps,
+    'openDeps' | 'hasSession' | 'onReadable' | 'afterReadable'
+  >,
   sessionId: string
 ): Promise<void> {
+  // A read or a send mid-restore may already have opened this one.
   if (input.hasSession(sessionId)) {
-    // A read or a send mid-restore already opened this one.
+    await input.afterReadable?.(sessionId)
     return
   }
   const opened = await restoreStructuredAgentSessionRead(input.openDeps, sessionId)
   if (!opened) {
     return
   }
-  // The open settled what a gone generation left running, so no reader sees it run.
-  await input.onReadable(sessionId, opened)
+  try {
+    await input.afterReadable?.(sessionId, opened)
+  } finally {
+    await input.onReadable(sessionId, opened)
+  }
 }
 
 export async function restoreStructuredAgentSessionsOnRestart(

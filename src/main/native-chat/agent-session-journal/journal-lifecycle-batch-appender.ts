@@ -16,9 +16,11 @@ import {
 } from './journal-row-builders'
 import type {
   JournalLifecycleBatchInput,
+  JournalPlannedLifecycleBatchInput,
   JournalResolvedLifecycleBatchInput
 } from './journal-store-contracts'
 import type { JournalRow } from './journal-row-schema'
+import type { JournalOperationReceipt } from './journal-row-writer'
 import { journalQueuedRejectionRowBuilders } from './journal-pending-submission-recovery'
 
 export class JournalLifecycleBatchAppender {
@@ -27,7 +29,8 @@ export class JournalLifecycleBatchAppender {
       state: () => JournalReducerState
       cursor: () => AgentJournalCursor
       enqueueRows: (
-        plan: () => readonly ((seq: number, ts: number) => JournalRow)[]
+        plan: () => readonly ((seq: number, ts: number) => JournalRow)[],
+        receipt?: JournalOperationReceipt
       ) => Promise<JournalRow[]>
     }
   ) {}
@@ -58,10 +61,28 @@ export class JournalLifecycleBatchAppender {
           ...this.planMutations(input, input.mutations)
         ]
       })
-      .then((rows) => {
-        const last = rows.at(-1)
-        return last ? { epoch: last.epoch, sequence: last.seq } : this.deps.cursor()
-      })
+      .then((rows) => this.cursorAfter(rows))
+  }
+
+  /** `append`, with every row chosen at the batch's own turn in the queue. */
+  appendPlanned(input: JournalPlannedLifecycleBatchInput): Promise<AgentJournalCursor> {
+    return this.deps
+      .enqueueRows(() => {
+        if (this.wasApplied(input.settlementId)) {
+          return []
+        }
+        const { mutations, dispatches } = input.plan()
+        return [
+          ...dispatches.map((dispatch) => journalDispatchRowBuilder(this.deps.state, dispatch)),
+          ...this.planMutations(input, mutations)
+        ]
+      }, input.receipt)
+      .then((rows) => this.cursorAfter(rows))
+  }
+
+  private cursorAfter(rows: readonly JournalRow[]): AgentJournalCursor {
+    const last = rows.at(-1)
+    return last ? { epoch: last.epoch, sequence: last.seq } : this.deps.cursor()
   }
 
   /** The rows a resolved settlement writes, planned at its own turn in the queue: its mutations,

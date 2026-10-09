@@ -82,10 +82,12 @@ export class StructuredAgentSessionJournalProjections {
         submissionCount: snapshot.submissions.length,
         fence,
         stopRevision,
+        // The host knows who wrote each item: an ended generation's work is not Working.
         state: projectStructuredAgentSessionStatusState(
           snapshot.items,
           snapshot.submissions,
-          fence
+          fence,
+          journal.itemFence
         ),
         acceptedSendKey: newestAcceptedSendKey(cursor.epoch, snapshot.submissions),
         stopping: structuredAgentSessionStopping(journal, snapshot.items, snapshot.submissions)

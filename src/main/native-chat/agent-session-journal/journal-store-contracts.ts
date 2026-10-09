@@ -15,6 +15,7 @@ import type { AgentSessionMessageSource } from '../../../shared/agent-session-me
 import type { JournalHostDatabase } from './journal-host-database'
 import type { JournalLifecycleMutationInput } from './journal-row-builders'
 import type { JournalRow } from './journal-row-schema'
+import type { JournalOperationReceipt } from './journal-row-writer'
 
 export type AgentSessionJournalOptions = {
   identity: AgentSessionJournalIdentity
@@ -80,6 +81,20 @@ export type JournalLifecycleBatchInput = {
    *  follows the messages it failed, and no reader meets one without the other. With none still
    *  queued, the batch is not written either. */
   rejectsQueued?: AgentJournalDispatchRejection
+}
+
+/** A lifecycle batch whose rows are chosen at its own turn in the write queue, so a write queued
+ *  ahead of it (an answer, a Stop) is what it plans from. */
+export type JournalPlannedLifecycleBatchInput = Pick<
+  JournalLifecycleBatchInput,
+  'settlementId' | 'fence' | 'recovered'
+> & {
+  plan: () => {
+    mutations: readonly JournalLifecycleMutationInput[]
+    dispatches: readonly ResolveDispatchInput[]
+  }
+  /** Committed in the same transaction as the rows, even when the plan is empty. */
+  receipt?: JournalOperationReceipt
 }
 
 export type JournalResolvedLifecycleBatchInput = Omit<

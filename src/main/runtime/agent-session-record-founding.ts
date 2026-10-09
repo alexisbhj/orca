@@ -64,7 +64,9 @@ export function foundAgentSessionRecord(
       claimKeyId: lease.claimKeyId,
       claimStatus: 'released',
       unreconciled: false,
-      deathEvidence: null
+      deathEvidence: null,
+      // No generation ran yet, so none left anything.
+      leftoverSettledAt: lease.now
     }
   }
 }

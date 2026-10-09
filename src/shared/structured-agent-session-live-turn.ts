@@ -27,6 +27,10 @@ import { isRootAgentJournalItem } from './agent-session-journal-producer'
 import type { AgentSessionLatestTurn, AgentSessionSubscribeEvent } from './agent-session-wire'
 import { readAgentJournalTurn } from './agent-session-turn-record'
 import { isAgentSessionContextClear } from './agent-session-context-clear'
+import {
+  isStructuredAgentSessionEndedGenerationWork,
+  type StructuredAgentSessionItemFence
+} from './structured-agent-session-main-agent-working'
 import type { NativeChatToolCallBlock } from './native-chat-types'
 import {
   isRunningStructuredAgentSessionToolAction,
@@ -35,16 +39,20 @@ import {
   type StructuredAgentSessionToolAction
 } from './structured-agent-session-tool-call-block'
 
+/** `current`: whether the running turn's item is current work; one an ended generation opened is
+ *  none (`isStructuredAgentSessionEndedGenerationWork`). */
 export function activeStructuredAgentSessionTurnId(
-  items: readonly AgentJournalRenderItem[]
+  items: readonly AgentJournalRenderItem[],
+  current?: (item: AgentJournalRenderItem) => boolean
 ): string | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (isAgentSessionContextClear(items[index]?.body)) {
+    const item = items[index]
+    if (isAgentSessionContextClear(item?.body)) {
       return null
     }
-    const turn = readAgentJournalTurn(items[index]?.body)
+    const turn = readAgentJournalTurn(item?.body)
     if (turn) {
-      return turn.state === 'running' ? turn.turnId : null
+      return turn.state === 'running' && (!current || (item && current(item))) ? turn.turnId : null
     }
   }
   return null
@@ -81,6 +89,14 @@ export function newestStructuredAgentSessionTurnBySequence(
 export function liveStructuredAgentSessionTurnScope(
   items: Iterable<AgentJournalRenderItem>
 ): AgentJournalTurnScope {
+  const running = runningStructuredAgentSessionTurnItemBySequence(items)
+  return running ? { kind: 'turn', turnItemId: running.item.itemId } : AGENT_JOURNAL_THREAD_SCOPE
+}
+
+/** The newest turn record's item when that turn is running, by sequence. */
+export function runningStructuredAgentSessionTurnItemBySequence(
+  items: Iterable<AgentJournalRenderItem>
+): { item: AgentJournalRenderItem; turnId: string } | null {
   let newest: AgentJournalRenderItem | null = null
   for (const item of items) {
     if (
@@ -90,17 +106,22 @@ export function liveStructuredAgentSessionTurnScope(
       newest = item
     }
   }
-  return newest && readAgentJournalTurn(newest.body)?.state === 'running'
-    ? { kind: 'turn', turnItemId: newest.itemId }
-    : AGENT_JOURNAL_THREAD_SCOPE
+  const turn = newest ? readAgentJournalTurn(newest.body) : null
+  return newest && turn?.state === 'running' ? { item: newest, turnId: turn.turnId } : null
 }
 
-/** Whether that newest turn is still running, which is all most callers want. */
-export function activeStructuredAgentSessionTurnIdBySequence(
-  items: Iterable<AgentJournalRenderItem>
+/** The running turn by sequence, given the lease's fence: one an ended generation opened is none
+ *  (`isStructuredAgentSessionEndedGenerationWork`). The host's one read of its active turn. */
+export function currentStructuredAgentSessionTurnId(
+  items: Iterable<AgentJournalRenderItem>,
+  itemFence: StructuredAgentSessionItemFence,
+  currentFence?: number | null
 ): string | null {
-  const newest = newestStructuredAgentSessionTurnBySequence(items)
-  return newest?.state === 'running' ? newest.turnId : null
+  const running = runningStructuredAgentSessionTurnItemBySequence(items)
+  return running &&
+    !isStructuredAgentSessionEndedGenerationWork(itemFence(running.item.itemId), currentFence)
+    ? running.turnId
+    : null
 }
 
 /** The newest turn record whatever state it ended in, STATE INCLUDED. Restart resume compares both
