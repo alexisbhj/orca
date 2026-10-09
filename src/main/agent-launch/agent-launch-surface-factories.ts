@@ -100,7 +100,7 @@ export class AgentLaunchStructuredSessionRefusedError extends Error {
 
 /** Creating the workspace, when the intent asks for one. Injected so orchestration keeps recording
  *  its own worktree stages and residual-resource effects around the same call. */
-export type AgentLaunchWorkspaceFactory = {
+export type AgentLaunchWorktreeFactory = {
   createWorktree(args: {
     create: Readonly<Record<string, unknown>>
     /** Set only when the settled mode is a terminal agent: agent-first creation sequences the
@@ -111,6 +111,9 @@ export type AgentLaunchWorkspaceFactory = {
     /** Offered only alongside a `startupAgent` whose CLI takes the prompt on argv: agent-first
      *  creation builds the startup command, so that is where the typed line is measured. */
     startupPrompt?: string
+    /** Set instead of `startupPrompt` under the `legacy-host` prompt policy: this create owns the
+     *  text for any agent and length, as `worktree.create` always has. */
+    legacyPrompt?: AgentLaunchPrompt
     /** Inputs needed when this terminal is created as the worktree's startup surface. */
     agentArgs?: string | null
     cwd?: string
@@ -130,6 +133,9 @@ export type AgentLaunchWorkspaceFactory = {
     /** Reported by the create that built the startup command's typed line. */
     promptRodeLaunchCommand?: boolean
   }>
+}
+
+export type AgentLaunchWorkspaceFactory = AgentLaunchWorktreeFactory & {
   /** A folder workspace has no startup terminal: the launch starts its agent there afterwards. */
   createFolderWorkspace(args: {
     create: Readonly<Record<string, unknown>>
