@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { RELAY_CLOSE_CODE } from '@orca-cloud/relay-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type WebSocket from 'ws'
+import { z } from 'zod'
 import type { RelayAssignmentStore } from './assignment-store.js'
 import type { RelayConfig } from './config.js'
 import type { RelayCredentialStore } from './credential-store.js'
@@ -33,6 +34,48 @@ class FakeSocket extends EventEmitter {
 }
 
 const incarnation = '11111111-1111-4111-8111-111111111111'
+
+// The published v1 shape, so a field rename fails here before it reaches a director.
+const SeatChangeSchema = z.object({
+  seq: z.number(),
+  kind: z.enum(['join', 'leave', 'drain-only']),
+  userId: z.string(),
+  relayHostId: z.string(),
+  epoch: z.number(),
+  generation: z.number(),
+  state: z.enum(['active', 'drain-only']).optional(),
+  closeCode: z.number().optional(),
+  at: z.number()
+})
+const SeatFeedReplySchema = z.object({
+  v: z.literal(1),
+  cellId: z.string(),
+  incarnation: z.string(),
+  at: z.number(),
+  fixLevel: z.number(),
+  draining: z.boolean(),
+  counts: z.object({
+    controls: z.number(),
+    splices: z.number(),
+    enforcedUnits: z.number().nullable(),
+    hardCap: z.number().nullable()
+  }),
+  seq: z.number(),
+  changes: z.array(SeatChangeSchema).optional(),
+  more: z.boolean().optional(),
+  full: z
+    .array(
+      z.object({
+        userId: z.string(),
+        relayHostId: z.string(),
+        epoch: z.number(),
+        generation: z.number(),
+        state: z.enum(['active', 'drain-only']),
+        joinedAt: z.number()
+      })
+    )
+    .optional()
+})
 
 function config(overrides: Partial<RelayConfig> = {}): RelayConfig {
   return {
@@ -150,7 +193,8 @@ function createCell(relayConfig = config()) {
       `/v1/admin/cell-seats${since === undefined ? '' : `?since=${encodeURIComponent(since)}`}`,
       { headers: { authorization: `Bearer ${token}` } }
     )
-  return { registry, connect, app, poll }
+  const read = async (since?: string) => SeatFeedReplySchema.parse(await (await poll(since)).json())
+  return { registry, connect, app, poll, read }
 }
 
 describe('cell seat feed', () => {
@@ -161,12 +205,11 @@ describe('cell seat feed', () => {
   })
 
   it('answers a first poll with every seated host, matching the controls count', async () => {
-    const { connect, poll } = createCell()
+    const { connect, poll, read } = createCell()
     await connect(1)
     await connect(2, { epoch: 4 })
-    const response = await poll()
-    expect(response.status).toBe(200)
-    const body = await response.json()
+    expect((await poll()).status).toBe(200)
+    const body = await read()
     expect(body).toMatchObject({
       v: 1,
       cellId: 'production-gce-c7',
@@ -182,20 +225,20 @@ describe('cell seat feed', () => {
   })
 
   it('reports join, drain-only and leave as changes after the cursor', async () => {
-    const { registry, connect, poll } = createCell()
+    const { registry, connect, read } = createCell()
     const socket = await connect(1)
-    const { seq } = await (await poll()).json()
+    const { seq } = await read()
     registry.drain(60_000)
     socket.close(RELAY_CLOSE_CODE.DRAINING, 'relay draining')
     await connect(2)
-    const body = await (await poll(`${incarnation}:${seq}`)).json()
+    const body = await read(`${incarnation}:${seq}`)
     expect(body.full).toBeUndefined()
     expect(body.draining).toBe(true)
-    expect(body.changes.map((change: { kind: string }) => change.kind)).toEqual([
+    expect(body.changes?.map((change) => change.kind)).toEqual([
       'drain-only',
       'leave'
     ])
-    expect(body.changes[1]).toMatchObject({
+    expect(body.changes?.[1]).toMatchObject({
       userId: 'user-1',
       closeCode: RELAY_CLOSE_CODE.DRAINING,
       generation: 1
@@ -205,28 +248,25 @@ describe('cell seat feed', () => {
   })
 
   it('does not report a rebind as a leave, and joins the rebound socket', async () => {
-    const { connect, poll } = createCell()
+    const { connect, read } = createCell()
     await connect(1)
-    const { seq } = await (await poll()).json()
+    const { seq } = await read()
     await connect(1, { rebind: true, epoch: 2 })
-    const body = await (await poll(`${incarnation}:${seq}`)).json()
+    const body = await read(`${incarnation}:${seq}`)
     expect(body.changes).toEqual([
       expect.objectContaining({ kind: 'join', userId: 'user-1', epoch: 2, state: 'active' })
     ])
   })
 
   it('reports a superseded generation leaving after its successor joined', async () => {
-    const { connect, poll } = createCell()
+    const { connect, read } = createCell()
     await connect(1)
-    const { seq } = await (await poll()).json()
+    const { seq } = await read()
     await connect(1, { generation: 2 })
-    const body = await (await poll(`${incarnation}:${seq}`)).json()
+    const body = await read(`${incarnation}:${seq}`)
     // Readers drop the leave: its generation is older than the seat's.
     expect(
-      body.changes.map((change: { kind: string; generation: number }) => [
-        change.kind,
-        change.generation
-      ])
+      body.changes?.map((change) => [change.kind, change.generation])
     ).toEqual([
       ['leave', 1],
       ['join', 2]
@@ -234,9 +274,9 @@ describe('cell seat feed', () => {
   })
 
   it('resyncs a cursor from another incarnation with a full snapshot', async () => {
-    const { connect, poll } = createCell()
+    const { connect, poll, read } = createCell()
     await connect(1)
-    const body = await (await poll('22222222-2222-4222-8222-222222222222:1')).json()
+    const body = await read('22222222-2222-4222-8222-222222222222:1')
     expect(body.full).toHaveLength(1)
     expect((await poll('not a cursor')).status).toBe(400)
   })
@@ -261,21 +301,20 @@ describe('cell seat feed', () => {
   // Review B1: the feed must not need the pair on more cells, and must not change what a cell
   // with or without it reports as its rehome protocol.
   it('leaves the reported rehome protocol to the existing env', async () => {
-    const runtimeStatus = async (relayConfig: RelayConfig) =>
-      await (
-        await createCell(relayConfig).app.request('/v1/admin/runtime-status', {
-          method: 'POST',
-          headers: { authorization: 'Bearer deploy-token', 'content-type': 'application/json' },
-          body: JSON.stringify({ v: 1 })
-        })
-      ).json()
-    expect((await runtimeStatus(config())).regionalRehomeProtocol).toBe(3)
+    const rehomeProtocol = async (relayConfig: RelayConfig) => {
+      const response = await createCell(relayConfig).app.request('/v1/admin/runtime-status', {
+        method: 'POST',
+        headers: { authorization: 'Bearer deploy-token', 'content-type': 'application/json' },
+        body: JSON.stringify({ v: 1 })
+      })
+      return z.object({ regionalRehomeProtocol: z.number() }).parse(await response.json())
+        .regionalRehomeProtocol
+    }
+    expect(await rehomeProtocol(config())).toBe(3)
     expect(
-      (
-        await runtimeStatus(
-          config({ rehomeAudience: undefined, rehomeDirectorServiceAccount: undefined })
-        )
-      ).regionalRehomeProtocol
+      await rehomeProtocol(
+        config({ rehomeAudience: undefined, rehomeDirectorServiceAccount: undefined })
+      )
     ).toBe(0)
   })
 })
