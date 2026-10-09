@@ -189,9 +189,10 @@ describe('one router decision for every Claude launch', () => {
   it('keeps the Claude selection and account folders out of every launch path but the router', () => {
     const routing =
       /\b(?:getSelectedClaudeAccountIdForTarget|activeClaudeManagedAccountIds?(?:ByRuntime)?|describeClaudeProfile|wslClaudeProfile|isHostManagedClaudeAccount)\b|\.accountHome\(/
-    // Maps settings keys to the provider whose model catalog they expire; it routes nothing.
+    // Both map settings keys to model-catalog expiry or prewarm; they route nothing.
     const allowed = new Set([
-      'native-chat/agent-model-catalog/agent-model-catalog-account-expiry.ts'
+      'native-chat/agent-model-catalog/agent-model-catalog-account-expiry.ts',
+      'startup/main-process-account-services.ts'
     ])
     const files = mainSourceFiles()
     // Presence: the scan reaches the router, and the pattern finds what the router reads.
@@ -221,7 +222,7 @@ describe('one router decision for every Claude launch', () => {
       'runtime/structured-claude-runtime-adapter.ts': 'wires the routed chat resolver',
       'runtime/structured-agent-session-runtime.ts': 'passes the resolver through',
       'runtime/structured-agent-runtime-registrations.ts': 'passes the resolver through',
-      'runtime/structured-agent-model-catalog-wiring.ts': 'model listing on the routed chat env',
+      'runtime/structured-agent-model-catalog-discovery.ts': 'model listing on the routed chat env',
       'runtime/orca-runtime-get-worktree-ps.ts': 'wires the routed chat resolver'
     }
     const found = mainSourceFiles().filter((file) =>
