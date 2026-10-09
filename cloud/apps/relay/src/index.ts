@@ -23,6 +23,7 @@ import { jitteredSweepIntervalMs } from './relay-sweep-schedule.js'
 import { observedRelayRequests } from './relay-observability.js'
 import { startRegionalRehomeWorker } from './regional-rehome-worker.js'
 import { createRelayServer } from './relay-server.js'
+import { readSeatFeedCells, startShadowSeatPoller } from './shadow-seat-directory.js'
 import {
   formatRegisteredMigrationInventory,
   readRegisteredMigrationInventory
@@ -119,6 +120,9 @@ const regionalRehomeWorker = startRegionalRehomeWorker(config, assignments, {
     ...readRelayDatabasePoolPressure(database)
   })
 })
+const shadowSeatPoller = startShadowSeatPoller(config, {
+  listCells: () => readSeatFeedCells(database)
+})
 const heartbeat = startCellHeartbeat(config, {
   ready,
   incarnation: cellIncarnation,
@@ -158,6 +162,7 @@ const shutdown = (): void => {
   observability.stop()
   heartbeat?.stop()
   regionalRehomeWorker?.stop()
+  shadowSeatPoller?.stop()
   sessions.drain(0)
   server.close(() => void database.close().catch(() => undefined))
 }

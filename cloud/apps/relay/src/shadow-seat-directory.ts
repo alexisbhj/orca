@@ -1,0 +1,520 @@
+import {
+  RELAY_DEFAULT_REGION,
+  RelayRegionSchema,
+  type RelayRegion
+} from '@orca-cloud/relay-contract'
+import { z } from 'zod'
+import type { RelayConfig } from './config.js'
+import type { RelayDatabase } from './database.js'
+import { googleMetadataIdentityToken } from './google-metadata-identity-token.js'
+
+// Step 3: each director polls every cell's seat feed and keeps who is seated
+// where in memory. It decides nothing; readers only compare and report.
+
+export const SHADOW_SEAT_POLL_MS = 1_000
+export const SHADOW_SEAT_POLL_TIMEOUT_MS = 2_000
+export const SHADOW_SEAT_CELL_LIST_REFRESH_MS = 30_000
+export const SHADOW_SEAT_RECENTLY_LEFT_TTL_MS = 24 * 60 * 60 * 1_000
+export const SHADOW_SEAT_RECENTLY_LEFT_MAX_HOSTS = 100_000
+const RECENTLY_LEFT_PER_HOST = 4
+// Google identity tokens live an hour; one per poll would be 26 metadata reads a second.
+const IDENTITY_TOKEN_REUSE_MS = 10 * 60_000
+const SUMMARY_INTERVAL_MS = 60_000
+
+// Lenient on purpose: a newer cell may add fields or change kinds.
+const SeatChangeSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  kind: z.string(),
+  userId: z.string(),
+  relayHostId: z.string(),
+  epoch: z.number().int(),
+  generation: z.number().int(),
+  closeCode: z.number().int().optional(),
+  at: z.number()
+})
+const SeatSchema = z.object({
+  userId: z.string(),
+  relayHostId: z.string(),
+  epoch: z.number().int(),
+  generation: z.number().int(),
+  state: z.string(),
+  joinedAt: z.number()
+})
+const SeatFeedSchema = z.object({
+  v: z.literal(1),
+  cellId: z.string(),
+  incarnation: z.string().min(1),
+  seq: z.number().int().nonnegative(),
+  at: z.number(),
+  draining: z.boolean().optional(),
+  counts: z.object({ controls: z.number().int().nonnegative() }).partial().optional(),
+  flagsApplied: z
+    .object({ generation: z.union([z.string(), z.number()]), flags: z.record(z.unknown()) })
+    .optional(),
+  changes: z.array(SeatChangeSchema).optional(),
+  full: z.array(SeatSchema).optional()
+})
+export type SeatFeedResponse = z.infer<typeof SeatFeedSchema>
+
+export type SeatFeedCell = { cellId: string; cellUrl: string; region: RelayRegion }
+
+export type ShadowSeat = {
+  cellId: string
+  epoch: number
+  generation: number
+  // 'active' or 'drain-only'; a newer cell may report other states.
+  state: string
+  joinedAt: number
+  observedAt: number
+}
+
+export type RecentlyLeftSeat = {
+  cellId: string
+  epoch: number
+  generation: number
+  closeCode?: number
+  // A full resync dropped the seat, so no close code was seen.
+  resync?: true
+  at: number
+}
+
+// Loss of contact is never evidence the seats are gone: `unverifiable` keeps them.
+export type SeatFeedCellStatus = 'pending' | 'live' | 'unverifiable' | 'no-feed'
+
+export type SeatFeedCellState = {
+  cellId: string
+  status: SeatFeedCellStatus
+  incarnation?: string
+  seq?: number
+  lastAnsweredAt?: number
+  lastLiveAt?: number
+  lastFailure?: string
+  draining?: boolean
+  reportedControls?: number
+  flagsApplied?: SeatFeedResponse['flagsApplied']
+}
+
+type CellCursor = SeatFeedCellState & { seats: Map<string, ShadowSeat> }
+
+function hostKey(userId: string, relayHostId: string): string {
+  return `${userId}\u0000${relayHostId}`
+}
+
+export class ShadowSeatDirectory {
+  private readonly cells = new Map<string, CellCursor>()
+  private readonly hosts = new Map<string, Map<string, ShadowSeat>>()
+  // Insertion order is age order: a touched host is re-inserted at the end.
+  private readonly recentlyLeft = new Map<string, RecentlyLeftSeat[]>()
+
+  // Cells no longer listed are forgotten with their seats; new ones start pending.
+  setCells(cellIds: readonly string[]): void {
+    const wanted = new Set(cellIds)
+    for (const [cellId, cursor] of this.cells) {
+      if (wanted.has(cellId)) continue
+      for (const key of cursor.seats.keys()) this.unindex(key, cellId)
+      this.cells.delete(cellId)
+    }
+    for (const cellId of wanted) {
+      if (!this.cells.has(cellId)) {
+        this.cells.set(cellId, { cellId, status: 'pending', seats: new Map() })
+      }
+    }
+  }
+
+  // The `since` cursor for the next poll, or undefined to ask for a full snapshot.
+  since(cellId: string): string | undefined {
+    const cursor = this.cells.get(cellId)
+    if (cursor?.incarnation === undefined || cursor.seq === undefined) return undefined
+    return `${cursor.incarnation}:${cursor.seq}`
+  }
+
+  apply(cellId: string, response: SeatFeedResponse, now: number): void {
+    const cursor = this.cells.get(cellId)
+    if (!cursor) return
+    if (response.cellId !== cellId) {
+      this.fail(cellId, 'cell_id_mismatch')
+      return
+    }
+    let seq: number | null = response.seq
+    if (response.full) {
+      this.replaceSeats(cursor, response.full, now)
+    } else {
+      seq =
+        cursor.incarnation === response.incarnation
+          ? this.applyChanges(cursor, response.changes ?? [], now)
+          : null
+      // A delta against a cursor we do not hold cannot be trusted: resync.
+      if (seq === null || (seq < response.seq && (response.changes ?? []).length === 0)) {
+        cursor.incarnation = undefined
+        cursor.seq = undefined
+        this.fail(cellId, 'cursor_gap')
+        return
+      }
+    }
+    cursor.incarnation = response.incarnation
+    // A page shorter than the cell's head resumes from its last change.
+    cursor.seq = seq
+    cursor.status = 'live'
+    cursor.lastAnsweredAt = now
+    cursor.lastLiveAt = now
+    cursor.lastFailure = undefined
+    cursor.draining = response.draining
+    cursor.reportedControls = response.counts?.controls
+    cursor.flagsApplied = response.flagsApplied
+  }
+
+  // An old cell (404) has no feed; its last known seats stay, marked by status.
+  markNoFeed(cellId: string, now: number): void {
+    const cursor = this.cells.get(cellId)
+    if (!cursor) return
+    cursor.status = 'no-feed'
+    cursor.lastAnsweredAt = now
+    cursor.incarnation = undefined
+    cursor.seq = undefined
+  }
+
+  fail(cellId: string, reason: string): void {
+    const cursor = this.cells.get(cellId)
+    if (!cursor) return
+    if (cursor.status !== 'pending' && cursor.status !== 'no-feed') cursor.status = 'unverifiable'
+    cursor.lastFailure = reason
+  }
+
+  // Every listed cell has answered (a feed or a 404) since this director started.
+  isComplete(): boolean {
+    if (this.cells.size === 0) return false
+    for (const cursor of this.cells.values()) {
+      if (cursor.lastAnsweredAt === undefined) return false
+    }
+    return true
+  }
+
+  seatsOf(userId: string, relayHostId: string): ShadowSeat[] {
+    return [...(this.hosts.get(hostKey(userId, relayHostId))?.values() ?? [])]
+  }
+
+  recentlyLeftOf(userId: string, relayHostId: string, now: number): RecentlyLeftSeat[] {
+    return (this.recentlyLeft.get(hostKey(userId, relayHostId)) ?? []).filter(
+      (entry) => entry.at > now - SHADOW_SEAT_RECENTLY_LEFT_TTL_MS
+    )
+  }
+
+  cellState(cellId: string): SeatFeedCellState | undefined {
+    const cursor = this.cells.get(cellId)
+    if (!cursor) return undefined
+    const { seats: _seats, ...state } = cursor
+    return state
+  }
+
+  summary(now: number) {
+    const statuses: Record<SeatFeedCellStatus, number> = {
+      pending: 0,
+      live: 0,
+      unverifiable: 0,
+      'no-feed': 0
+    }
+    let seats = 0
+    let controlsMismatchedCells = 0
+    let oldestLiveAgeMs = 0
+    for (const cursor of this.cells.values()) {
+      statuses[cursor.status] += 1
+      seats += cursor.seats.size
+      if (cursor.status === 'live') {
+        const reported = cursor.reportedControls
+        if (reported !== undefined && reported !== cursor.seats.size) controlsMismatchedCells += 1
+        oldestLiveAgeMs = Math.max(oldestLiveAgeMs, now - (cursor.lastLiveAt ?? now))
+      }
+    }
+    return {
+      cells: this.cells.size,
+      statuses,
+      seats,
+      hosts: this.hosts.size,
+      recentlyLeftHosts: this.recentlyLeft.size,
+      controlsMismatchedCells,
+      oldestLiveAgeMs,
+      complete: this.isComplete()
+    }
+  }
+
+  private applyChanges(
+    cursor: CellCursor,
+    changes: SeatFeedResponse['changes'] & object,
+    now: number
+  ): number | null {
+    let seq = cursor.seq ?? 0
+    for (const change of changes) {
+      if (change.seq <= seq) continue
+      if (change.seq !== seq + 1) return null
+      seq = change.seq
+      const key = hostKey(change.userId, change.relayHostId)
+      if (change.kind === 'join') {
+        this.seat(cursor, key, {
+          cellId: cursor.cellId,
+          epoch: change.epoch,
+          generation: change.generation,
+          state: 'active',
+          joinedAt: change.at,
+          observedAt: now
+        })
+      } else if (change.kind === 'leave') {
+        const seat = cursor.seats.get(key)
+        // A newer generation may have joined before the old one closed.
+        if (seat && seat.generation === change.generation) {
+          this.unseat(cursor, key)
+          this.rememberLeft(key, {
+            cellId: cursor.cellId,
+            epoch: change.epoch,
+            generation: change.generation,
+            closeCode: change.closeCode,
+            at: change.at
+          })
+        }
+      } else if (change.kind === 'drain-only') {
+        const seat = cursor.seats.get(key)
+        if (seat && seat.generation === change.generation) {
+          seat.state = 'drain-only'
+          seat.observedAt = now
+        }
+      }
+    }
+    return seq
+  }
+
+  private replaceSeats(cursor: CellCursor, full: SeatFeedResponse['full'] & object, now: number) {
+    const next = new Map<string, ShadowSeat>()
+    for (const seat of full) {
+      next.set(hostKey(seat.userId, seat.relayHostId), {
+        cellId: cursor.cellId,
+        epoch: seat.epoch,
+        generation: seat.generation,
+        state: seat.state,
+        joinedAt: seat.joinedAt,
+        observedAt: now
+      })
+    }
+    for (const [key, seat] of cursor.seats) {
+      if (next.has(key)) continue
+      this.unseat(cursor, key)
+      this.rememberLeft(key, {
+        cellId: cursor.cellId,
+        epoch: seat.epoch,
+        generation: seat.generation,
+        resync: true,
+        at: now
+      })
+    }
+    for (const [key, seat] of next) this.seat(cursor, key, seat)
+  }
+
+  private seat(cursor: CellCursor, key: string, seat: ShadowSeat): void {
+    cursor.seats.set(key, seat)
+    let seats = this.hosts.get(key)
+    if (!seats) {
+      seats = new Map()
+      this.hosts.set(key, seats)
+    }
+    seats.set(cursor.cellId, seat)
+  }
+
+  private unseat(cursor: CellCursor, key: string): void {
+    cursor.seats.delete(key)
+    this.unindex(key, cursor.cellId)
+  }
+
+  private unindex(key: string, cellId: string): void {
+    const seats = this.hosts.get(key)
+    if (!seats) return
+    seats.delete(cellId)
+    if (seats.size === 0) this.hosts.delete(key)
+  }
+
+  private rememberLeft(key: string, entry: RecentlyLeftSeat): void {
+    const entries = this.recentlyLeft.get(key) ?? []
+    this.recentlyLeft.delete(key)
+    entries.push(entry)
+    if (entries.length > RECENTLY_LEFT_PER_HOST) {
+      entries.splice(0, entries.length - RECENTLY_LEFT_PER_HOST)
+    }
+    this.recentlyLeft.set(key, entries)
+    const cutoff = entry.at - SHADOW_SEAT_RECENTLY_LEFT_TTL_MS
+    for (const [oldestKey, oldest] of this.recentlyLeft) {
+      const newest = oldest[oldest.length - 1]
+      const withinBound = this.recentlyLeft.size <= SHADOW_SEAT_RECENTLY_LEFT_MAX_HOSTS
+      if (withinBound && newest && newest.at > cutoff) break
+      this.recentlyLeft.delete(oldestKey)
+    }
+  }
+}
+
+export async function readSeatFeedCells(database: RelayDatabase): Promise<SeatFeedCell[]> {
+  // Every enabled cell in any admission state: a draining cell still seats hosts.
+  const rows = await database.query(
+    `SELECT cell.cell_id, cell.cell_url, region.region
+     FROM relay_cells cell
+     LEFT JOIN relay_cell_regions region ON region.cell_id = cell.cell_id
+     WHERE cell.enabled = 1
+     ORDER BY cell.cell_id ASC`
+  )
+  return rows.map((row) => {
+    const region = RelayRegionSchema.safeParse(row.region)
+    return {
+      cellId: String(row.cell_id),
+      cellUrl: String(row.cell_url),
+      region: region.success ? region.data : RELAY_DEFAULT_REGION
+    }
+  })
+}
+
+export type ShadowSeatPollerOptions = {
+  listCells: () => Promise<SeatFeedCell[]>
+  fetch?: typeof fetch
+  identityToken?: (audience: string) => Promise<string>
+  now?: () => number
+  pollMs?: number
+  log?: (line: string) => void
+}
+
+export type ShadowSeatPoller = {
+  directory: ShadowSeatDirectory
+  // One round: refreshes the cell list when due, then polls every idle cell.
+  tick: () => Promise<void>
+  stop: () => void
+}
+
+// Null unless this is a director with the rehome credential and at least one cell switched on.
+export function startShadowSeatPoller(
+  config: Pick<RelayConfig, 'role' | 'rehomeAudience' | 'shadowSeatFeedCells'>,
+  options: ShadowSeatPollerOptions
+): ShadowSeatPoller | null {
+  const selection = config.shadowSeatFeedCells
+  if (
+    config.role !== 'director' ||
+    !config.rehomeAudience ||
+    selection === undefined ||
+    (selection !== 'all' && selection.length === 0)
+  ) {
+    return null
+  }
+  const audience = config.rehomeAudience
+  const fetchImpl = options.fetch ?? fetch
+  const now = options.now ?? Date.now
+  const log = options.log ?? ((line: string) => console.warn(line))
+  const tokenProvider =
+    options.identityToken ??
+    ((tokenAudience: string) => googleMetadataIdentityToken(tokenAudience, fetchImpl))
+  const directory = new ShadowSeatDirectory()
+  const inFlight = new Set<string>()
+  let cells: SeatFeedCell[] = []
+  let cellsReadAt: number | undefined
+  let cellListInFlight = false
+  let token: { value: Promise<string>; at: number } | undefined
+  let lastSummaryAt = now()
+  let stopped = false
+
+  const identity = (): Promise<string> => {
+    const at = now()
+    if (!token || at - token.at > IDENTITY_TOKEN_REUSE_MS) {
+      const value = tokenProvider(audience)
+      token = { value, at }
+      // A failed fetch must not be reused for ten minutes.
+      value.catch(() => {
+        if (token?.value === value) token = undefined
+      })
+    }
+    return token.value
+  }
+
+  const refreshCells = async (): Promise<void> => {
+    if (cellListInFlight) return
+    if (cellsReadAt !== undefined && now() - cellsReadAt < SHADOW_SEAT_CELL_LIST_REFRESH_MS) return
+    cellListInFlight = true
+    try {
+      const listed = await options.listCells()
+      cells =
+        selection === 'all' ? listed : listed.filter((cell) => selection.includes(cell.cellId))
+      directory.setCells(cells.map((cell) => cell.cellId))
+      cellsReadAt = now()
+    } catch (error) {
+      // Keep polling the last list; the database being down is not the cells being down.
+      log(
+        JSON.stringify({
+          event: 'orca_relay_shadow_seat_cell_list_failed',
+          reason: error instanceof Error ? error.message : 'unknown'
+        })
+      )
+    } finally {
+      cellListInFlight = false
+    }
+  }
+
+  const poll = async (cell: SeatFeedCell): Promise<void> => {
+    if (inFlight.has(cell.cellId)) return
+    inFlight.add(cell.cellId)
+    try {
+      const url = new URL('/v1/admin/cell-seats', cell.cellUrl)
+      const since = directory.since(cell.cellId)
+      if (since !== undefined) url.searchParams.set('since', since)
+      const response = await fetchImpl(url, {
+        headers: { authorization: `Bearer ${await identity()}` },
+        signal: AbortSignal.timeout(SHADOW_SEAT_POLL_TIMEOUT_MS)
+      })
+      if (stopped) return
+      if (response.status === 404) {
+        await response.body?.cancel().catch(() => undefined)
+        directory.markNoFeed(cell.cellId, now())
+        return
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined)
+        directory.fail(cell.cellId, `status_${response.status}`)
+        return
+      }
+      const body = SeatFeedSchema.safeParse(await response.json().catch(() => null))
+      if (!body.success) {
+        directory.fail(cell.cellId, 'malformed')
+        return
+      }
+      directory.apply(cell.cellId, body.data, now())
+    } catch (error) {
+      directory.fail(
+        cell.cellId,
+        error instanceof Error && error.name === 'TimeoutError' ? 'timeout' : 'unreachable'
+      )
+    } finally {
+      inFlight.delete(cell.cellId)
+    }
+  }
+
+  const round = async (awaitPolls: boolean): Promise<void> => {
+    if (stopped) return
+    await refreshCells()
+    // A slow cell holds only its own slot; the timer never waits on it.
+    const polls = cells.map((cell) => poll(cell))
+    if (awaitPolls) await Promise.all(polls)
+    if (now() - lastSummaryAt >= SUMMARY_INTERVAL_MS) {
+      lastSummaryAt = now()
+      log(JSON.stringify({ event: 'orca_relay_shadow_seat_summary', ...directory.summary(now()) }))
+    }
+  }
+
+  const timer = setInterval(() => {
+    round(false).catch((error: unknown) => {
+      log(
+        JSON.stringify({
+          event: 'orca_relay_shadow_seat_round_failed',
+          reason: error instanceof Error ? error.message : 'unknown'
+        })
+      )
+    })
+  }, options.pollMs ?? SHADOW_SEAT_POLL_MS)
+  timer.unref()
+  return {
+    directory,
+    tick: () => round(true),
+    stop: () => {
+      stopped = true
+      clearInterval(timer)
+    }
+  }
+}
