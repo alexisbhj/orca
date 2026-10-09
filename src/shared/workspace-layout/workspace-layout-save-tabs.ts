@@ -7,7 +7,8 @@ import type { TerminalLayoutSnapshot, TerminalTab } from '../terminal-tab-types'
 import { pickStoredFields } from './stored-record-fields'
 import { collectLayoutLeafIdsInOrder } from './terminal-pane-tree'
 import type { DesktopLayoutView, LayoutContentFacts } from './workspace-layout-beside'
-import type { LayoutTab, LayoutTerminalTab } from './workspace-layout-model'
+import type { LayoutEditorFile, LayoutTab, LayoutTerminalTab } from './workspace-layout-model'
+import { tabExecutionHostId } from './workspace-layout-tab-host'
 
 const SHARED_OPTIONAL_FIELDS = [
   'aiVaultTitle',
@@ -21,12 +22,13 @@ export type WorkspaceSaveScope = {
   workspaceKey: string
   worktreeId: string
   hostId: ExecutionHostId
+  editorFiles: readonly LayoutEditorFile[] | undefined
   facts: LayoutContentFacts
   view: DesktopLayoutView
 }
 
 /** The row's terminal: the focused pane's, else the first bound pane's, else none. */
-function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
+export function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
   if (!tab.panes) {
     return tab.legacyPtyId ?? null
   }
@@ -86,7 +88,9 @@ export function saveTabBarEntry(
     entityId: tab.entityId,
     groupId: placement.groupId,
     worktreeId: scope.worktreeId,
-    ...(tab.namesExecutionHost ? { executionHostId: scope.hostId } : {}),
+    ...(tab.namesExecutionHost
+      ? { executionHostId: tabExecutionHostId(tab, scope.editorFiles, scope.hostId) }
+      : {}),
     contentType: tab.kind,
     label,
     ...(tab.generatedTitle !== undefined ? { generatedLabel: tab.generatedTitle } : {}),

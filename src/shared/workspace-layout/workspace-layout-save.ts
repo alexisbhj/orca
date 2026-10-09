@@ -35,7 +35,14 @@ function saveWorkspace(
 ): void {
   const { facts, desktopView: view } = loaded
   const { worktreeId } = workspace
-  const scope = { workspaceKey: key, worktreeId, hostId: loaded.layout.hostId, facts, view }
+  const scope = {
+    workspaceKey: key,
+    worktreeId,
+    hostId: loaded.layout.hostId,
+    editorFiles: workspace.editorFiles,
+    facts,
+    view
+  }
   // Rows follow the one tab order: the rules and older readers expect the row list in that order.
   const ordered = tabsInOrder(workspace)
   const unplaced = workspace.tabs.filter((tab) => !ordered.includes(tab))
@@ -93,7 +100,7 @@ function saveWorkspace(
     }
   }
   if (workspace.editorFiles) {
-    // Preview is the tab's; today's writer stores it on the file only when true.
+    // One preview fact per editor tab; today's writer stores the file's copy only when true.
     const previewFiles = new Set(
       workspace.tabs.flatMap((tab) =>
         tab.kind === 'editor' && tab.isPreview ? [tab.entityId] : []

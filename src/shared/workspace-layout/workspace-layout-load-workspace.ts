@@ -11,6 +11,8 @@ import {
 import { loadContentTab, loadTerminalTab, type TabLoadReport } from './workspace-layout-load-tabs'
 import type { WorkspaceLoadArgs } from './workspace-layout-load-types'
 import type { LayoutTab, LayoutTerminalTab, WorkspaceLayout } from './workspace-layout-model'
+import { rowPtyId } from './workspace-layout-save-tabs'
+import { tabExecutionHostId } from './workspace-layout-tab-host'
 import { pruneGroupLayout } from '../workspace-session-terminal-tab-close'
 
 function takeRows({ session, key, terminalHomes, normalizations }: WorkspaceLoadArgs) {
@@ -42,17 +44,27 @@ function loadPanes(
     activeLeafId: layout.activeLeafId,
     expandedLeafId: layout.expandedLeafId
   }
-  const scrollback = pickStoredFields(layout, ['buffersByLeafId', 'scrollbackRefsByLeafId'])
-  if (Object.keys(scrollback).length > 0) {
-    args.facts.scrollback[tab.entityId] = scrollback
-  }
-  return {
+  const loaded: LayoutTerminalTab = {
     ...tab,
     panes: {
       root: layout.root,
       ...pickStoredFields(layout, ['chatLeafId', 'titlesByLeafId', 'ptyIdsByLeafId'])
     }
   }
+  // The row's terminal is derived from the panes on save; report a stored one that differs.
+  if (rowPtyId(loaded, args.view) !== row.ptyId) {
+    args.normalizations.push({
+      rule: 'row_terminal_rederived',
+      workspaceKey: args.key,
+      ids: [row.id],
+      field: 'ptyId'
+    })
+  }
+  const scrollback = pickStoredFields(layout, ['buffersByLeafId', 'scrollbackRefsByLeafId'])
+  if (Object.keys(scrollback).length > 0) {
+    args.facts.scrollback[tab.entityId] = scrollback
+  }
+  return loaded
 }
 
 function reporterFor(args: WorkspaceLoadArgs, tabId: string): TabLoadReport {
@@ -119,7 +131,12 @@ function loadTabs(args: WorkspaceLoadArgs): { tabs: LayoutTab[]; candidates: Ord
       addTerminal(row, entry)
     } else {
       const contentType = entry.contentType
-      tabs.push(loadContentTab({ ...entry, contentType }, hostId, reporterFor(args, entry.id)))
+      const ownerHostId = tabExecutionHostId(
+        { kind: contentType, entityId: entry.entityId },
+        session.openFilesByWorktree?.[key],
+        hostId
+      )
+      tabs.push(loadContentTab({ ...entry, contentType }, ownerHostId, reporterFor(args, entry.id)))
       tabIds.add(entry.id)
       candidates.push({
         id: entry.id,
