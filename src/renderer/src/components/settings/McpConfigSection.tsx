@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import type { Repo } from '../../../../shared/repo-types'
 import type { Worktree } from '../../../../shared/worktree/types'
+import { getRepoSshConnectionId } from '../../../../shared/execution-host'
 import {
   canInspectLocalMcpConfigRoot,
   inspectMcpConfigContent,
@@ -11,6 +12,7 @@ import {
   MCP_STARTER_CONFIG
 } from '../../../../shared/mcp-config'
 import { useAppStore } from '../../store'
+import { selectRuntimeAwareSshStatus } from '../../store/slices/runtime-environment-ssh-selectors'
 import { joinPath } from '../../lib/path'
 import { extractIpcErrorMessage } from '../../lib/ipc-error'
 import { Button } from '../ui/button'
@@ -60,8 +62,10 @@ export function McpConfigSection({ repo }: McpConfigSectionProps): React.JSX.Ele
     [repos, repo, worktreesForRepo, activeWorktreeId, activeWorkspaceExecutionHostId]
   )
   const connectionId = workspace.context.connectionId
+  const runtimeEnvironmentId = workspace.context.settings?.activeRuntimeEnvironmentId ?? null
+  const sshTargetId = getRepoSshConnectionId(repo)
   const sshConnectionStatus = useAppStore((state) =>
-    connectionId ? state.sshConnectionStates.get(connectionId)?.status : null
+    sshTargetId ? selectRuntimeAwareSshStatus(state, runtimeEnvironmentId, sshTargetId) : null
   )
   const [configs, setConfigs] = useState<LoadedMcpConfigInspection[]>([])
   const [loading, setLoading] = useState(true)
@@ -77,7 +81,6 @@ export function McpConfigSection({ repo }: McpConfigSectionProps): React.JSX.Ele
   const isWindows = isWindowsUserAgent()
   const targetWorktreeId = workspace.worktreeId
   const targetRootPath = workspace.rootPath
-  const runtimeEnvironmentId = workspace.context.settings?.activeRuntimeEnvironmentId ?? null
   const detectedCount = useMemo(() => configs.filter((config) => config.exists).length, [configs])
   const inspectionUnavailable = inspectionUnavailableMessage !== null
   const visibleConfigs = useMemo(
@@ -117,7 +120,7 @@ export function McpConfigSection({ repo }: McpConfigSectionProps): React.JSX.Ele
     const isCurrent = () => mountedRef.current && inspectionRequestRef.current === requestId
 
     try {
-      if (connectionId && sshConnectionStatus !== 'connected') {
+      if (sshTargetId && sshConnectionStatus !== 'connected') {
         if (isCurrent()) {
           setConfigs(missingInspections)
           setInspectionUnavailableMessage('Connect this SSH repo to inspect or add MCP configs.')
@@ -167,6 +170,7 @@ export function McpConfigSection({ repo }: McpConfigSectionProps): React.JSX.Ele
     missingInspections,
     mountedRef,
     sshConnectionStatus,
+    sshTargetId,
     targetRootPath,
     runtimeEnvironmentId,
     workspace.context

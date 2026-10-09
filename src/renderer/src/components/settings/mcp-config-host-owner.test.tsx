@@ -9,6 +9,7 @@ import type { ExecutionHostId } from '../../../../shared/execution-host'
 import { makeWorktree } from '@/store/slices/worktrees-slice-test-fixtures'
 import { useAppStore } from '@/store'
 import { McpConfigSection } from './McpConfigSection'
+import { createCompatibleRuntimeStatusResponse } from '@/runtime/runtime-compatibility-test-fixture'
 import {
   captureMcpConfigOperation,
   resolveMcpConfigWorkspaceOwner
@@ -93,6 +94,10 @@ const owners: {
 ]
 
 function seedOwner(owner: (typeof owners)[number]): Repo {
+  const runtimeStatus = createCompatibleRuntimeStatusResponse('host-a')
+  if (!runtimeStatus.ok) {
+    throw new Error('Missing runtime fixture status')
+  }
   const selected = { ...repo, executionHostId: owner.hostId, connectionId: owner.connectionId }
   const target = {
     targetId: 'target-a',
@@ -117,6 +122,9 @@ function seedOwner(owner: (typeof owners)[number]): Repo {
       ]
     },
     sshConnectionStates: new Map([['target-a', target]]),
+    runtimeStatusByEnvironmentId: new Map([
+      ['host-a', { checkedAt: 1, status: runtimeStatus.result }]
+    ]),
     sshStateByEnvironment: new Map([
       [
         'host-a',
@@ -136,6 +144,41 @@ function seedOwner(owner: (typeof owners)[number]): Repo {
   })
   return selected
 }
+
+it('defers nested SSH inspection until its owning server reports the target connected', async () => {
+  const selected = seedOwner({
+    name: 'nested SSH',
+    hostId: 'runtime:host-a',
+    connectionId: 'target-a',
+    environmentId: 'host-a'
+  })
+  const setNestedStatus = (status: 'connected' | 'disconnected') => {
+    const buckets = new Map(useAppStore.getState().sshStateByEnvironment)
+    const bucket = buckets.get('host-a')
+    const connection = bucket?.connectionStates.get('target-a')
+    if (!bucket || !connection) {
+      throw new Error('Missing nested SSH fixture')
+    }
+    buckets.set('host-a', {
+      ...bucket,
+      connectionStates: new Map([['target-a', { ...connection, status }]])
+    })
+    useAppStore.setState({ sshStateByEnvironment: buckets })
+  }
+  setNestedStatus('disconnected')
+  render(<McpConfigSection repo={selected} />)
+  await screen.findByText('Connect this SSH repo to inspect or add MCP configs.')
+  expect(pathExists).not.toHaveBeenCalled()
+  expect(readDirectory).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Add MCP config' })).toBeNull()
+  await act(async () => setNestedStatus('connected'))
+  await screen.findByText('SELECTED_OWNER')
+  expect(readDirectory).toHaveBeenCalledWith(
+    expect.objectContaining({ settings: { activeRuntimeEnvironmentId: 'host-a' } }),
+    root
+  )
+  expect(desktopRead).not.toHaveBeenCalled()
+})
 
 for (const owner of owners) {
   it(`inspects the selected ${owner.name}`, async () => {
