@@ -1,14 +1,16 @@
-import type { Page } from '@playwright/test'
+import type { JSHandle, Page } from '@playwright/test'
 import { expect, test } from './helpers/orca-app'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 
 type CardFrame = { title: string; left: number; count: number; sliding: boolean }
+type CardRecording = { stop: () => CardFrame[] }
 
-function recordCardFrames(page: Page, duration: number): Promise<CardFrame[]> {
-  return page.evaluate(async (duration) => {
+function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
+  return page.evaluateHandle(() => {
     const frames: CardFrame[] = []
     const started = performance.now()
-    do {
+    let nextFrame = 0
+    const record = (): void => {
       const cards = document.querySelectorAll('[data-tab-hover-card]')
       const element = cards[0]
       frames.push({
@@ -22,10 +24,24 @@ function recordCardFrames(page: Page, duration: number): Promise<CardFrame[]> {
               animation.effect?.getKeyframes().some((frame) => frame.translate !== undefined)
             ) ?? false
       })
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    } while (performance.now() - started < duration)
-    return frames
-  }, duration)
+      if (performance.now() - started < 10_000) {
+        nextFrame = requestAnimationFrame(record)
+      }
+    }
+    record()
+    return {
+      stop: () => {
+        cancelAnimationFrame(nextFrame)
+        return frames
+      }
+    }
+  })
+}
+
+async function stopCardRecording(recording: JSHandle<CardRecording>): Promise<CardFrame[]> {
+  const frames = await recording.evaluate((recording) => recording.stop())
+  await recording.dispose()
+  return frames
 }
 
 test('whole-tab hover cards slide immediately between neighboring tabs', async ({ orcaPage }) => {
@@ -69,9 +85,11 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   expect(programBox?.y).toBeGreaterThan((titleBox?.y ?? 0) + (titleBox?.height ?? 0))
   await orcaPage.waitForTimeout(200)
 
-  const recording = recordCardFrames(orcaPage, 350)
+  const recording = await startCardRecording(orcaPage)
   await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)
-  const frames = await recording
+  await expect(cardTitle).toHaveText('Review changes', { timeout: 150 })
+  await orcaPage.waitForTimeout(200)
+  const frames = await stopCardRecording(recording)
   const firstTargetFrame = frames.findIndex((frame) => frame.title === 'Review changes')
   expect(firstTargetFrame).toBeGreaterThan(0)
   expect(
@@ -93,7 +111,7 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)
   await expect(cardTitle).toHaveText('Review changes', { timeout: 150 })
 
-  const reversalRecording = recordCardFrames(orcaPage, 2000)
+  const reversalRecording = await startCardRecording(orcaPage)
   for (let index = 0; index < 12; index += 1) {
     const target = index % 2 === 0 ? firstBox : secondBox
     const title = index % 2 === 0 ? 'Build and test the hover cards' : 'Review changes'
@@ -102,7 +120,7 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
     await orcaPage.waitForTimeout(30)
     await expect(card).toHaveCount(1)
   }
-  const reversalFrames = await reversalRecording
+  const reversalFrames = await stopCardRecording(reversalRecording)
   expect(reversalFrames.every((frame) => frame.count === 1)).toBe(true)
   for (const title of ['Build and test the hover cards', 'Review changes']) {
     expect(reversalFrames.some((frame) => frame.title === title && frame.sliding)).toBe(true)
