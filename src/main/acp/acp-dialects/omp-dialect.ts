@@ -112,7 +112,6 @@ function compactionReply(text: string): AcpCompactionReply | undefined {
 export const OMP_ACP_DIALECT: AcpDialect = {
   normalizeToolUpdate,
   compactionReply,
-  promptErrorDetail: (error) => promptErrorDataSchema.safeParse(error.data).data?.details,
   authenticationRequired: (error) => {
     const details = promptErrorDataSchema.safeParse(error.data).data?.details
     return (
