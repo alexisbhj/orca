@@ -29,7 +29,7 @@ import type WebSocket from 'ws'
 import type { RawData } from 'ws'
 import type { RelayConfig } from './config.js'
 import type { RelayAssignmentStore } from './assignment-store.js'
-import { CellSeatLog, type CellSeat, type CellSeatPage } from './cell-seat-log.js'
+import { CellSeatLog, type CellSeatFeedPage } from './cell-seat-log.js'
 import { ControlRenewalBatch } from './control-renewal-batch.js'
 import { RelayCredentialStore, type CredentialReservation } from './credential-store.js'
 import { HostCloseReasonMemory } from './host-close-reason-memory.js'
@@ -1298,25 +1298,8 @@ export class HostSessionRegistry {
     this.appendSeatChange(session, 'join')
   }
 
-  seatFeed(sinceSeq: number | null): CellSeatPage {
-    return this.seatLog.read(sinceSeq, () => {
-      const seats: CellSeat[] = []
-      // Same filter as runtimeCounts' controls, so a full snapshot always matches it.
-      for (const session of this.sessions.values()) {
-        const socket = session.socket
-        if (socket === null || socket.readyState !== socket.OPEN) continue
-        if (session.state !== 'active' && session.state !== 'drain-only') continue
-        seats.push({
-          userId: session.identity.sub,
-          relayHostId: session.relayHostId,
-          epoch: session.assignmentEpoch,
-          generation: session.generation,
-          state: session.state,
-          joinedAt: session.controlWiredAt
-        })
-      }
-      return seats
-    })
+  seatFeed(sinceSeq: number | null): CellSeatFeedPage {
+    return { ...this.seatLog.read(sinceSeq), seats: this.seatLog.seatCount() }
   }
 
   private appendSeatChange(

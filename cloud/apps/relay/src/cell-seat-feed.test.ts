@@ -56,6 +56,7 @@ const SeatFeedReplySchema = z.object({
   draining: z.boolean(),
   counts: z.object({
     controls: z.number(),
+    seats: z.number(),
     splices: z.number(),
     enforcedUnits: z.number().nullable(),
     hardCap: z.number().nullable()
@@ -216,12 +217,25 @@ describe('cell seat feed', () => {
       incarnation,
       seq: 2,
       draining: false,
-      counts: { controls: 2, splices: 0, enforcedUnits: null, hardCap: null }
+      counts: { controls: 2, seats: 2, splices: 0, enforcedUnits: null, hardCap: null }
     })
-    expect(body.full).toHaveLength(body.counts.controls)
+    expect(body.full).toHaveLength(body.counts.seats)
     expect(body.full).toContainEqual(
       expect.objectContaining({ userId: 'user-2', epoch: 4, generation: 1, state: 'active' })
     )
+  })
+
+  it('keeps a closing socket seated until its close lands, as the change log does', async () => {
+    const { connect, read } = createCell()
+    const socket = await connect(1)
+    // The ws close handshake: no longer OPEN, close event not yet emitted.
+    socket.readyState = 2
+    const closing = await read()
+    expect(closing.counts).toMatchObject({ controls: 0, seats: 1 })
+    expect(closing.full).toHaveLength(1)
+    socket.readyState = socket.CLOSED
+    socket.emit('close', 1000, Buffer.from(''))
+    expect((await read()).counts).toMatchObject({ controls: 0, seats: 0 })
   })
 
   it('reports join, drain-only and leave as changes after the cursor', async () => {

@@ -1,5 +1,5 @@
 import type { Hono } from 'hono'
-import type { CellSeatPage } from './cell-seat-log.js'
+import type { CellSeatFeedPage } from './cell-seat-log.js'
 import { parseCellSeatCursor } from './cell-seat-log.js'
 import type { RelayConfig } from './config.js'
 import { RELAY_FIX_LEVEL } from './relay-fix-level.js'
@@ -14,7 +14,7 @@ export function registerCellSeatFeedRoute(
   input: {
     verifyRegionalRehomeToken: (token: string) => Promise<boolean>
     cellIncarnation?: string
-    seatFeed?: (sinceSeq: number | null) => CellSeatPage
+    seatFeed?: (sinceSeq: number | null) => CellSeatFeedPage
     isDraining?: () => boolean
     runtimeCounts?: () => RelayRuntimeCounts
     now?: () => number
@@ -35,7 +35,7 @@ export function registerCellSeatFeedRoute(
     if (cursor === 'invalid') return context.json({ error: 'invalid_request' }, 400)
     const sinceSeq =
       cursor !== null && cursor.incarnation === input.cellIncarnation ? cursor.seq : null
-    const page = input.seatFeed(sinceSeq)
+    const { seats, ...page } = input.seatFeed(sinceSeq)
     const counts = input.runtimeCounts?.()
     return context.json({
       v: 1,
@@ -46,6 +46,9 @@ export function registerCellSeatFeedRoute(
       draining: input.isDraining?.() ?? false,
       counts: {
         controls: counts?.controls ?? 0,
+        // The feed's own view: a reader that applied every change holds exactly this many.
+        // `controls` drops when a socket starts closing, `seats` when its close lands.
+        seats,
         splices: counts?.splices ?? 0,
         enforcedUnits: counts?.enforcedConnectionUnits ?? null,
         hardCap: config.connectionHardCap ?? null

@@ -4,7 +4,8 @@
 //   absent, from another incarnation, or older than the ring. `seq` in the reply is the
 //   cursor for the next poll; `more` says a page was cut at CELL_SEAT_FEED_PAGE_MAX.
 //   Apply a change only when its generation is >= the seat's: a superseded generation's
-//   socket can close after its successor joined.
+//   socket can close after its successor joined. `full` is this log's own seats under the
+//   same rules, so a reader that applies every change holds exactly `counts.seats`.
 
 export type CellSeatState = 'active' | 'drain-only'
 
@@ -35,12 +36,16 @@ export type CellSeatPage =
   | { seq: number; changes: CellSeatChange[]; more: boolean }
   | { seq: number; full: CellSeat[] }
 
+// What the registry hands the route: a page plus the log's own seat count.
+export type CellSeatFeedPage = CellSeatPage & { seats: number }
+
 // ~10 minutes of a full-cell drain's joins and leaves (inferred), at ~130 B each.
 export const CELL_SEAT_LOG_CAPACITY = 20_000
 export const CELL_SEAT_FEED_PAGE_MAX = 2_000
 
 export class CellSeatLog {
   private readonly ring: (CellSeatChange | undefined)[]
+  private readonly seats = new Map<string, CellSeat>()
   private headSeq = 0
 
   constructor(private readonly capacity = CELL_SEAT_LOG_CAPACITY) {
@@ -50,13 +55,18 @@ export class CellSeatLog {
   append(change: Omit<CellSeatChange, 'seq'>): void {
     this.headSeq += 1
     this.ring[this.headSeq % this.capacity] = { seq: this.headSeq, ...change }
+    this.applyToSeats(change)
+  }
+
+  seatCount(): number {
+    return this.seats.size
   }
 
   // `sinceSeq` null means the caller has no cursor for this incarnation.
-  read(sinceSeq: number | null, seats: () => CellSeat[]): CellSeatPage {
+  read(sinceSeq: number | null): CellSeatPage {
     const oldestSeq = Math.max(1, this.headSeq - this.capacity + 1)
     if (sinceSeq === null || sinceSeq > this.headSeq || sinceSeq < oldestSeq - 1) {
-      return { seq: this.headSeq, full: seats() }
+      return { seq: this.headSeq, full: [...this.seats.values()].map((seat) => ({ ...seat })) }
     }
     const lastSeq = Math.min(this.headSeq, sinceSeq + CELL_SEAT_FEED_PAGE_MAX)
     const changes: CellSeatChange[] = []
@@ -64,6 +74,26 @@ export class CellSeatLog {
       changes.push(this.ring[seq % this.capacity]!)
     }
     return { seq: lastSeq, changes, more: lastSeq < this.headSeq }
+  }
+
+  private applyToSeats(change: Omit<CellSeatChange, 'seq'>): void {
+    const key = JSON.stringify([change.userId, change.relayHostId])
+    const seat = this.seats.get(key)
+    if (seat && change.generation < seat.generation) return
+    if (change.kind === 'join') {
+      this.seats.set(key, {
+        userId: change.userId,
+        relayHostId: change.relayHostId,
+        epoch: change.epoch,
+        generation: change.generation,
+        state: change.state ?? 'active',
+        joinedAt: change.at
+      })
+    } else if (change.kind === 'leave') {
+      this.seats.delete(key)
+    } else if (seat) {
+      seat.state = 'drain-only'
+    }
   }
 }
 
