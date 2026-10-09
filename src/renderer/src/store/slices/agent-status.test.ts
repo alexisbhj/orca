@@ -207,11 +207,6 @@ import type { RetainedAgentEntry } from './agent-status'
 }
 
 {
-  // Why: split out from agent-status.test.ts to keep each file under the
-  // repo's 300-line cap for test files. This suite covers the new
-  // user-dismissal paths (dropAgentStatus, retentionSuppressedPaneKeys,
-  // clearRetentionSuppressedPaneKeys) introduced alongside the dashboard.
-
   describe('dropAgentStatus + retention suppressor', () => {
     // Why: setAgentStatus schedules a real 30-minute freshness setTimeout via
     // queueMicrotask. Use fake timers so the handle does not leak into the
