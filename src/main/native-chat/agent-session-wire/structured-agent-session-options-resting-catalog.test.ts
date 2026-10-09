@@ -37,10 +37,11 @@ import { claudeAndCodexDeclared } from './structured-agent-session-adapter-route
 const LOW = { value: 'low', label: 'Low' }
 const HIGH = { value: 'high', label: 'High' }
 const XHIGH = { value: 'xhigh', label: 'Extra high' }
+// Claude's account-level listing names no default model; its first row is what a gone pick becomes.
 const SONNET: AgentSessionModelOption = {
   id: 'sonnet',
   label: 'Sonnet',
-  isDefault: true,
+  isDefault: false,
   efforts: [LOW, HIGH]
 }
 const OPUS: AgentSessionModelOption = {
@@ -77,11 +78,12 @@ function restingChat(input: {
   store.recordSuccess(
     agentModelCatalogFingerprintForRecord(record),
     record.provider,
-    listing([SONNET])
+    listing([SONNET]),
+    'discovery'
   )
   clock.now += input.ageMs ?? 0
   const relists = input.relists
-  const probe = vi.fn(async (_home: string) => {
+  const probe = vi.fn(async (_home: unknown, _options?: unknown) => {
     if (relists === 'hangs') {
       return new Promise<AgentModelCatalogSuccess>(() => {})
     }
@@ -102,7 +104,7 @@ function restingChat(input: {
   const resting = {
     child: null,
     params: { provider: record.provider },
-    journal: { contextUsage: () => null, threadGoal: () => null }
+    journal: { contextUsage: () => null, threadGoal: () => null, context: { floor: () => null } }
   }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: this at-rest read uses only these context members; no child or journal mutation runs.
   const context = {
@@ -158,7 +160,7 @@ describe('Claude picker catalog at rest', () => {
         picks: structuredAgentSessionOptionPicks(state, record.options ?? {})
       })
       expect(resolveStructuredLaunchSeedOptions(persisted, 'claude')?.model).toBeUndefined()
-      expect(result.current).toEqual({ model: '' })
+      expect(result.current).toEqual({})
       const model = snapshotRow(state, 'model')
       expect(model).toMatchObject({ valueSource: 'unknown' })
       expect(model?.kind).not.toHaveProperty('currentValue')
@@ -176,7 +178,10 @@ describe('Claude picker catalog at rest', () => {
     expect((await chat.read()).result.current).toEqual({ model: 'opus', effort: 'xhigh' })
     await chat.listed()
     const { result, state } = await chat.read()
-    expect(chat.probe).toHaveBeenCalledExactlyOnceWith('/accounts/pinned')
+    expect(chat.probe).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ path: '/accounts/pinned' }),
+      expect.anything()
+    )
     expect(result.current).toEqual({ model: 'opus', effort: 'xhigh' })
     expect(result.models).toContainEqual(
       expect.objectContaining({ id: 'opus', efforts: OPUS.efforts })

@@ -16,6 +16,7 @@ import type { AgentSessionRecordStore } from '../../runtime/agent-session-record
 import { journalOpenReadRefusal } from '../agent-session-journal/journal-open-failure'
 import type { StructuredAgentDefinition } from './structured-agent-definition'
 import type { StructuredAgentRegistry } from './structured-agent-registry'
+import type { StructuredAgentSessionLiveOptions } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 import { structuredAgentSessionOptionModels } from './structured-agent-session-option-models'
 import { settledAgentModelSelection } from '../agent-model-catalog/agent-model-catalog-selection'
@@ -46,29 +47,35 @@ async function readStructuredAgentSessionOptionsAtRest(
   const catalog = (await deps.modelCatalog
     ?.read({ agent: record.provider, sessionId })
     .catch(() => null)) ?? { origin: 'unknown' as const }
+  // With no catalog for the account, the list a running child of this agent falls back to.
+  const listed = catalog.origin === 'unknown' ? (rules?.fallbackModels() ?? null) : catalog.models
+  const models = listed ?? []
   const saved = settledAgentModelSelection(catalog, record.options ?? {})
   const fastMode =
     saved.fastMode === undefined
       ? null
       : decodeStructuredAgentSessionOptionValue('fastMode', saved.fastMode)
-  const current = {
-    model: saved.model ?? '',
-    ...(saved.effort ? { effort: saved.effort } : {}),
-    ...(typeof fastMode === 'boolean' ? { fastMode } : {})
-  }
-  if (rules?.projectOptions) {
-    return rules.projectOptions(catalog, current)
-  }
-  // Agents without a saved-catalog projection list the catalog as is. An unknown model is one the
-  // client already treats as unconfirmed; only a real listing names the account's default.
-  const listed = catalog.origin === 'unknown' ? null : catalog.models
-  const model = saved.model ?? listed?.find((entry) => entry.isDefault)?.id ?? ''
+  // An unknown model is one the client already treats as unconfirmed. Only a real listing names the
+  // account's default; a built-in list's default is a guess, so with none the client keeps its own.
+  const model =
+    saved.model ??
+    (catalog.origin === 'unknown' ? undefined : models.find((entry) => entry.isDefault)?.id)
+  // As a live child answers: the pick, else the model's default where the agent reports that.
+  const effort =
+    saved.effort ??
+    (rules?.effortDefaultsToModel
+      ? models.find((entry) => entry.id === model)?.defaultEffort
+      : undefined)
   return {
     models: listed ? structuredAgentSessionOptionModels(listed, model, (row) => row) : [],
     ...(catalog.origin !== 'unknown' && catalog.fastModeSupport
       ? { fastModeSupport: catalog.fastModeSupport }
       : {}),
-    current: { ...current, model }
+    current: {
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      ...(typeof fastMode === 'boolean' ? { fastMode } : {})
+    }
   }
 }
 
@@ -127,7 +134,7 @@ export async function readStructuredAgentSessionOptions(
       options: await adapter.readOptions({ sessionId, fence: child.fence })
     }
   })
-  const live =
+  const live: StructuredAgentSessionLiveOptions | null =
     started.kind === 'live'
       ? started.options
       : started.kind === 'prepared'
@@ -138,12 +145,24 @@ export async function readStructuredAgentSessionOptions(
             })
           )
         : null
-  const options = live ?? (await readStructuredAgentSessionOptionsAtRest(context.deps, sessionId))
+  let options: Omit<AgentSessionOptionsResult, 'rewind'>
+  if (live) {
+    const { catalogListing, ...answer } = live
+    if (catalogListing) {
+      // What a running child listed is its account's catalog too, so the next chat opens warm.
+      context.deps.modelCatalog?.recordLiveListing(sessionId, catalogListing)
+    }
+    options = answer
+  } else {
+    options = await readStructuredAgentSessionOptionsAtRest(context.deps, sessionId)
+  }
   // Re-acquired after the reads above: the handle they saw may have closed and reopened since.
   const session = await context.conversation(sessionId)
   const phase = store.getRecord(sessionId)?.rewind?.phase
   const agent = session.params.provider
   const capabilities = agents.capabilities(agent)
+  const floor = session.journal.context.floor()
+  const contextFloor = floor ? { contextFloor: floor } : {}
   return {
     ...options,
     rewind:
@@ -154,9 +173,11 @@ export async function readStructuredAgentSessionOptions(
             reason: 'unsupported'
           }),
     conversationCommands: capabilities?.compact ? ['clear', 'compact'] : ['clear'],
-    ...(capabilities?.threadGoal ? { threadGoal: { current: session.journal.threadGoal() } } : {}),
+    ...(capabilities?.threadGoal
+      ? { threadGoal: { current: session.journal.threadGoal(), ...contextFloor } }
+      : {}),
     ...(capabilities?.contextUsage
-      ? { contextUsage: { current: session.journal.contextUsage() } }
+      ? { contextUsage: { current: session.journal.contextUsage(), ...contextFloor } }
       : {})
   }
 }

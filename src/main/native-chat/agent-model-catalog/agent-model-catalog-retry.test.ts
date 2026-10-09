@@ -62,7 +62,7 @@ describe('model discovery recovery on the execution host', () => {
   it('keeps a persisted list usable through an empty refresh, then replaces it on recovery', async () => {
     let now = 1_000
     const store = new AgentModelCatalogStore({ now: () => now })
-    const saved = store.recordSuccess(FINGERPRINT, 'claude', listing('saved'))!
+    const saved = store.recordSuccess(FINGERPRINT, 'claude', listing('saved'), 'discovery')!
     const save = vi.fn()
     await store.attachPersistence({ load: async () => [saved], save, flush: async () => {} })
     now += AGENT_MODEL_CATALOG_FRESH_MS

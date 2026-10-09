@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { AgentModelCatalogStore } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
-import { claudeAcquireCatalogAccess } from './claude-structured-acquire-catalog'
 import { ClaudeStructuredSessionAdapter } from './claude-structured-session-adapter'
 import type { openClaudeStreamJsonConnection } from './claude-stream-json-connection'
 import type { ClaudeStructuredSessionEvent } from './claude-structured-session-state'
@@ -13,38 +11,13 @@ import {
   USER_MESSAGE
 } from './claude-structured-session-test-support'
 
-const ACCOUNT_HOME = '/accounts/claude'
-const SAVED_MODEL = {
-  id: 'account-model',
-  label: 'Account model',
-  isDefault: true,
-  efforts: [{ value: 'high', label: 'High' }],
-  defaultEffort: 'high',
-  supportsFastMode: false
-}
-
 function fixture(
-  saved: boolean,
   listing: 'empty' | 'error',
   openConnection?: typeof openClaudeStreamJsonConnection
 ) {
-  const store = new AgentModelCatalogStore()
-  const access = claudeAcquireCatalogAccess(store, ACCOUNT_HOME)
-  if (!access) {
-    throw new Error('the account has a catalog key')
-  }
-  if (saved) {
-    store.recordSuccess(access.fingerprint, 'claude', {
-      models: [SAVED_MODEL],
-      fastModeTierByModel: new Map(),
-      origin: 'probe'
-    })
-  }
   const claude = fakeClaude({
     initModels: [],
-    ...(saved
-      ? { settings: { applied: { model: SAVED_MODEL.id, effort: 'high' }, effective: {} } }
-      : {}),
+    settings: {},
     routes: {
       list_models: () => {
         if (listing === 'error') {
@@ -60,7 +33,7 @@ function fixture(
       pathToClaudeCodeExecutable: 'claude',
       options: {},
       cwd: '/work/folder',
-      claudeConfigDir: ACCOUNT_HOME,
+      claudeConfigDir: '/accounts/claude',
       providerSessionId: PROVIDER_SESSION_ID,
       resumeLeafUuid: null,
       resumesTranscript: false,
@@ -69,17 +42,16 @@ function fixture(
     onEvent: (event) => events.push(event),
     openConnection: openConnection ?? claude.openConnection,
     readProcessStartTime: async () => 1_700_000_000_000,
-    persistHandle: async () => {},
-    modelCatalog: store
+    persistHandle: async () => {}
   })
-  return { store, access, claude, events, adapter }
+  return { claude, events, adapter }
 }
 
 describe('Claude chats with unavailable model discovery', () => {
   it.each(['empty', 'error'] as const)(
-    'starts on the provider default and keeps the saved picker when discovery is %s',
+    'starts on the provider default and keeps choices usable when discovery is %s',
     async (listing) => {
-      const { store, access, claude, events, adapter } = fixture(true, listing)
+      const { claude, events, adapter } = fixture(listing)
       try {
         await adapter.acquire({
           identity: identityFor(),
@@ -91,15 +63,10 @@ describe('Claude chats with unavailable model discovery', () => {
         expect(events.some((event) => event.type === 'started')).toBe(true)
         expect(claude.connections[0].launch.options.model).toBeUndefined()
         const options = await adapter.readOptions({ sessionId: 'session-1', fence: 7 })
-        expect(options.models).toContainEqual(
-          expect.objectContaining({
-            id: SAVED_MODEL.id,
-            label: SAVED_MODEL.label,
-            efforts: SAVED_MODEL.efforts
-          })
-        )
-        expect(store.get(access.fingerprint)?.models).toEqual([SAVED_MODEL])
-        // Saved picker metadata cannot refuse a choice while live discovery is unavailable.
+        // The built-in list stands in; an empty listing is no catalog for the host to save.
+        expect(options.models.length).toBeGreaterThan(0)
+        expect(options.catalogListing).toBeUndefined()
+        // Nothing listed cannot refuse a choice while live discovery is unavailable.
         await expect(
           adapter.setOption({ sessionId: 'session-1', key: 'fastMode', value: 'true', fence: 7 })
         ).resolves.toMatchObject({ fastMode: 'true' })
@@ -120,7 +87,7 @@ describe('Claude chats with unavailable model discovery', () => {
   )
 
   it.each(['empty', 'failed-start'] as const)(
-    'a new connection recovers after %s despite the host probe backoff',
+    'lists afresh in a new child after %s',
     async (firstResult) => {
       let available = false
       const children: ReturnType<typeof fakeClaude>[] = []
@@ -139,12 +106,8 @@ describe('Claude chats with unavailable model discovery', () => {
         connection.supportedModels = async () => models
         return connection
       }
-      const { adapter, access, store } = fixture(false, 'empty', openConnection)
+      const { adapter } = fixture('empty', openConnection)
       try {
-        await store.refresh(access.fingerprint, 'claude', access, async () => {
-          throw new Error('host probe failed')
-        })
-        expect(store.shouldRefresh(access.fingerprint)).toBe(false)
         const acquire = adapter.acquire({
           identity: identityFor(),
           fence: 7,
@@ -160,13 +123,11 @@ describe('Claude chats with unavailable model discovery', () => {
         if (firstResult === 'empty') {
           const options = await adapter.readOptions({ sessionId: 'session-1', fence: 7 })
           expect(options.models.some((model) => model.id === 'recovered')).toBe(false)
-          expect(store.get(access.fingerprint)).toBeNull()
         } else {
           await adapter.drainObservedExits()
           expect(children[0].connections[0].closed).toBe(true)
         }
         await adapter.closeSession('session-1')
-        expect(store.hasActiveFailure(access.fingerprint)).toBe(true)
         await adapter.acquire({ identity: identityFor(), fence: 8, spawnToken: 'spawn-10' })
         await claudeStartupSettled(adapter, 'session-1')
         const options = await adapter.readOptions({ sessionId: 'session-1', fence: 8 })
@@ -176,10 +137,9 @@ describe('Claude chats with unavailable model discovery', () => {
           isDefault: false,
           efforts: []
         })
+        expect(options.catalogListing?.models.map((model) => model.id)).toEqual(['recovered'])
         expect(children).toHaveLength(2)
         expect(children[1].connections[0].launch.options.model).toBeUndefined()
-        expect(store.get(access.fingerprint)?.models[0].id).toBe('recovered')
-        expect(store.hasActiveFailure(access.fingerprint)).toBe(false)
       } finally {
         await adapter.closeAll()
       }

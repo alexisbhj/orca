@@ -124,6 +124,11 @@ describe('Claude structured session publishes before the CLI answers initialize'
       // What the child was launched with, carried so the host never asks the CLI again.
       reportedOptions: expect.objectContaining({ model: 'opus' }),
       restoreSkippedOptions: [],
+      // The account listing initialize answered, for the host's catalog.
+      catalogListing: {
+        models: [expect.objectContaining({ id: 'claude-sonnet' })],
+        frozenListingOf: expect.any(String)
+      },
       // No host revision handed in: nothing has moved it.
       optionRevision: 0
     })

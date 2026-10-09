@@ -1,7 +1,7 @@
 import type { DirectoryAccountAgentDefinition } from '../native-chat/agent-session-wire/structured-agent-definition'
 import { CLAUDE_STRUCTURED_HANDLE_NAMESPACE } from '../../shared/agent-session-provider-handle-encoding'
 import { isClaudeStructuredOptionKey } from './claude-structured-options'
-import { projectClaudeSessionModelOptions } from './claude-structured-model-catalog'
+import { claudeFallbackModelOptions } from './claude-structured-session-options'
 
 export const CLAUDE_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
   agent: 'claude',
@@ -21,15 +21,8 @@ export const CLAUDE_STRUCTURED_AGENT: DirectoryAccountAgentDefinition = {
   },
   restingOptions: {
     acceptsKey: isClaudeStructuredOptionKey,
-    replacesUnlistedModel: true,
-    projectOptions: (catalog, current) => ({
-      ...projectClaudeSessionModelOptions({
-        ...(catalog.origin === 'unknown' ? {} : { savedModels: catalog.models }),
-        current
-      }),
-      ...(catalog.origin !== 'unknown' && catalog.fastModeSupport
-        ? { fastModeSupport: catalog.fastModeSupport }
-        : {})
-    })
+    fallbackModels: claudeFallbackModelOptions,
+    effortDefaultsToModel: true,
+    replacesUnlistedModel: true
   }
 }

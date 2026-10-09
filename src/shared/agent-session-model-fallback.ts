@@ -70,14 +70,15 @@ export function verifiedListReplacementRecord(
   replacement: string | undefined
 ): NativeChatSessionOptionRecord {
   const selected = typeof record.model?.value === 'string' ? record.model.value : null
-  if (!selected || !unlistedAgentModelReplacement(catalog.models, selected, replacement)) {
+  const target = unlistedAgentModelReplacement(catalog.models, selected, replacement)
+  if (!selected || !target) {
     return record
   }
   const next = cloneNativeChatSessionOptionRecord(record)
-  next.model = { value: replacement, source: 'default' }
+  next.model = { value: target, source: 'default' }
   const effort = next.valuesByModel[selected]?.effort
   const effortOption = catalog.models
-    .find((model) => model.id === replacement)
+    .find((model) => model.id === target)
     ?.options.find((option) => option.id === 'effort')
   const carried = nearestAgentEffort(
     typeof effort?.value === 'string' ? effort.value : undefined,
@@ -86,8 +87,8 @@ export function verifiedListReplacementRecord(
       : []
   )
   if (effort && carried) {
-    next.valuesByModel[replacement] = {
-      ...next.valuesByModel[replacement],
+    next.valuesByModel[target] = {
+      ...next.valuesByModel[target],
       effort: { ...effort, value: carried }
     }
   }

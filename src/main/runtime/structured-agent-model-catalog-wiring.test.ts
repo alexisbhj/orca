@@ -36,14 +36,7 @@ const SAVED_MODEL = {
 }
 
 let nextAccount = 0
-async function hostCatalog(input: {
-  agent?: 'claude' | 'codex'
-  origin?: AgentModelCatalogSuccess['origin']
-  stale?: boolean
-  session?: boolean
-  model?: string
-  fastSupported?: boolean
-}) {
+async function hostCatalog(input: { agent?: 'claude' | 'codex'; stale?: boolean; model?: string }) {
   const agent = input.agent ?? 'claude'
   const home = {
     variable: agent === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME',
@@ -58,13 +51,12 @@ async function hostCatalog(input: {
   record.options = input.model ? { model: input.model } : {}
   const fingerprint = agentModelCatalogFingerprint({ agent, accountHome: home, wslDistro: null })
   const saved: AgentModelCatalogSuccess = {
-    models: [{ ...SAVED_MODEL, supportsFastMode: input.fastSupported ?? false }],
-    fastModeSupport: { supported: input.fastSupported ?? false },
+    models: [SAVED_MODEL],
+    fastModeSupport: { supported: false },
     fastModeTierByModel: new Map(),
-    origin: input.origin ?? 'probe'
+    origin: 'probe'
   }
-  agentModelCatalogStore.recordSuccess(fingerprint, agent, saved)
-  const fetchedAt = clock.now
+  agentModelCatalogStore.recordSuccess(fingerprint, agent, saved, 'discovery')
   if (input.stale) {
     clock.now += AGENT_MODEL_CATALOG_FRESH_MS
     const failedProbe = async () => {
@@ -74,77 +66,45 @@ async function hostCatalog(input: {
     expect(agentModelCatalogStore.hasActiveFailure(fingerprint)).toBe(true)
   }
   vi.spyOn(agentModelCatalogStore, 'attachPersistence').mockResolvedValue()
-  const resolveEnvironment = vi.fn(async () => {
-    throw new Error('a saved catalog read must not launch an agent')
-  })
   const { modelCatalog } = await modelCatalogHostDeps({
-    store: { getRecord: () => (input.session ? record : null) },
+    store: { getRecord: () => record, listRecords: () => [record] },
     agents: claudeAndCodexAgents(),
+    // No registered lister: a saved catalog read must not launch an agent.
+    registrations: [],
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: with no registration and a pinned record, the read resolves only the account home.
     deps: {
       stateDirectory: '/unused/catalog-test-state',
       resolveAgentAccountHome: async () => home,
-      resolveClaudeAuthPolicy: () => ({ stripAuthEnv: true })
-    },
-    envResolvers: {
-      resolveCodexEnvironment: resolveEnvironment,
-      resolveClaudeInheritedEnv: resolveEnvironment
-    }
+      resolveWorkspacePath: async () => null
+    } as unknown as Parameters<typeof modelCatalogHostDeps>[0]['deps'],
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: no registration reads the environment.
+    environment: {} as Parameters<typeof modelCatalogHostDeps>[0]['environment']
   })
   if (!modelCatalog) {
     throw new Error('the host has a catalog service')
   }
-  const result = await modelCatalog.read({
-    agent,
-    ...(input.session ? { sessionId: record.sessionId } : {})
-  })
-  expect(resolveEnvironment).not.toHaveBeenCalled()
-  return { result, record, saved, fetchedAt, fingerprint }
+  return modelCatalog.read({ agent, sessionId: record.sessionId })
 }
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('the runtime host catalog for session pickers', () => {
-  it.each([
-    ['probe', false],
-    ['probe', true],
-    ['live-session', false],
-    ['live-session', true]
-  ] as const)(
-    'serves saved %s rows with their own capabilities (stale: %s)',
-    async (origin, stale) => {
-      const { result, saved, fetchedAt } = await hostCatalog({ origin, stale })
-      // Nothing is selected, so the CLI's own default is not named.
-      expect(result).toEqual({
-        origin,
-        fetchedAt,
-        models: [{ ...SAVED_MODEL, isDefault: false }],
-        fastModeSupport: saved.fastModeSupport,
-        // Only a list current enough to call a missing model gone says so.
-        ...(stale ? {} : { unlistedModelReplacement: 'sonnet' })
-      })
-    }
-  )
-
-  it.each(['sonnet', 'new-current-model'])(
-    'adds no row for a pinned folder session model %s and verifies nothing while listing fails',
+  it.each(['sonnet', 'gone-model'])(
+    "names the replacement for a Claude chat's model %s only while its list is current",
     async (model) => {
-      const { result, record } = await hostCatalog({ session: true, model, stale: true })
-      if (result.origin === 'unknown') {
-        throw new Error('the pinned account has a saved catalog')
-      }
-      expect(result.models).toEqual([SAVED_MODEL])
-      expect(result).not.toHaveProperty('unlistedModelReplacement')
-      expect(record.options).toEqual({ model })
+      expect(await hostCatalog({ model })).toMatchObject({
+        models: [{ id: 'sonnet', efforts: SAVED_MODEL.efforts }],
+        unlistedModelReplacement: 'sonnet'
+      })
+      const stale = await hostCatalog({ model, stale: true })
+      expect(stale).toMatchObject({ models: [{ id: 'sonnet' }] })
+      expect(stale).not.toHaveProperty('unlistedModelReplacement')
     }
   )
 
-  it('preserves the existing Codex catalog default and capability policy', async () => {
-    const { result, saved, fetchedAt } = await hostCatalog({ agent: 'codex', stale: true })
-    expect(result).toEqual({
-      origin: saved.origin,
-      models: saved.models,
-      fastModeSupport: saved.fastModeSupport,
-      fetchedAt
-    })
+  it('names no replacement for an agent that keeps its own model policy', async () => {
+    expect(await hostCatalog({ agent: 'codex', model: 'gone-model' })).not.toHaveProperty(
+      'unlistedModelReplacement'
+    )
   })
 })

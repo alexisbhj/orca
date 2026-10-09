@@ -1,20 +1,22 @@
-import type {
-  AgentSessionFastModeState,
-  AgentSessionFastModeSupport,
-  AgentSessionOptionsResult
-} from '../../shared/agent-session-wire'
+import type { AgentSessionFastModeState } from '../../shared/agent-session-wire'
 import {
-  claudeSessionModelRows,
+  currentModelId,
   listedModels,
   matchListedModel,
   record,
-  projectClaudeSessionModelOptions,
+  seedModels,
   text,
-  wireClaudeModel,
   type ListedModel
 } from './claude-structured-model-catalog'
 import type { ClaudeSession } from './claude-structured-session-state'
-import { claudeCatalogRowsOfAccount } from './claude-structured-retired-model'
+import { structuredAgentSessionOptionModels } from '../native-chat/agent-session-wire/structured-agent-session-option-models'
+import {
+  claudeCatalogListing,
+  claudeFastModeSupport,
+  wireClaudeModels,
+  type WireClaudeModel
+} from './claude-structured-catalog-listing'
+import type { StructuredAgentSessionLiveOptions } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { decodeStructuredAgentSessionOptionValue } from '../../shared/structured-agent-session-option-codec'
 
 /**
@@ -172,27 +174,6 @@ export function claudeModelFastModeSupport(
   }
 }
 
-const TRANSIENT_FAST_MODE_REASONS = new Set(['network_error', 'unknown', 'pending'])
-const NON_BLOCKING_FAST_MODE_REASONS = new Set(['preference', 'sdk_opt_in_required'])
-
-function claudeFastModeSupport(
-  models: readonly ListedModel[],
-  disabledReason: string | undefined
-): AgentSessionFastModeSupport | undefined {
-  if (disabledReason && TRANSIENT_FAST_MODE_REASONS.has(disabledReason)) {
-    return undefined
-  }
-  if (disabledReason && !NON_BLOCKING_FAST_MODE_REASONS.has(disabledReason)) {
-    return { supported: false, reason: disabledReason }
-  }
-  if (!models.some((model) => model.supportsFastMode === true)) {
-    return models.length > 0 && models.every((model) => model.supportsFastMode === false)
-      ? { supported: false, reason: 'model-not-supported' }
-      : undefined
-  }
-  return { supported: true }
-}
-
 function listedModelFastModeSupport(
   models: readonly ListedModel[],
   modelId: string
@@ -225,49 +206,26 @@ export function claudeCatalogAdmitsModel(models: readonly ListedModel[], modelId
   )
 }
 
-type WireClaudeModel = AgentSessionOptionsResult['models'][number]
-
-/** The listing, with what the CLI runs when no effort is sent on each model the child applies —
- *  a default only a running child knows, and only while this session has no effort pick. */
-function catalogClaudeModels(session: ClaudeSession, discovered: ListedModel[]): WireClaudeModel[] {
-  const applied = session.options.has('effort') ? undefined : session.appliedOptions
-  return discovered.map((listed) => {
-    const model = wireClaudeModel(listed)
-    const effort = applied?.effort
-    const runsApplied =
-      applied?.model !== undefined &&
-      (listed.id === applied.model || listed.resolvedModel === applied.model)
-    return effort && runsApplied && model.efforts.some((choice) => choice.value === effort)
-      ? { ...model, defaultEffort: effort }
-      : model
-  })
+/** The built-in models a running child lists when the CLI gives it none; a chat at rest with no
+ *  catalog lists the same. */
+export function claudeFallbackModelOptions(): WireClaudeModel[] {
+  return wireClaudeModels(seedModels())
 }
 
-/** Write a provider-listed catalog through to the host store. Account-level
- *  facts only: this session's disabled reason and its unlisted current model
- *  stay out, so another surface never inherits session state as a catalog.
- *  The child answers from its initialize result, so every write keeps the age of its first. */
-function writeClaudeCatalogThrough(session: ClaudeSession, discovered: ListedModel[]): void {
-  const access = session.catalogAccess
-  if (discovered.length === 0 || !access) {
-    return
-  }
-  session.catalogListedAt ??= access.store.now()
-  const rows = claudeCatalogRowsOfAccount(access, discovered, session.launchedModel)
-  const support = claudeFastModeSupport(rows, undefined)
-  access.store.recordSuccess(access.fingerprint, 'claude', {
-    models: catalogClaudeModels(session, rows),
-    ...(support ? { fastModeSupport: support } : {}),
-    fastModeTierByModel: new Map(),
-    origin: 'live-session',
-    listedAt: session.catalogListedAt
-  })
+/** Whether `modelId` is a row of the list this child's options answer from: its own, else the seed. */
+export function claudeSessionListsModel(
+  catalog: unknown[] | null,
+  modelId: string | undefined
+): boolean {
+  const discovered = listedModels(catalog ? { models: catalog } : null)
+  const listed = discovered.length > 0 ? discovered : seedModels()
+  return modelId !== undefined && listed.some((row) => row.id === modelId)
 }
 
 export async function readClaudeStructuredSessionOptions(
   session: ClaudeSession,
   timeoutMs: number | undefined
-): Promise<AgentSessionOptionsResult> {
+): Promise<StructuredAgentSessionLiveOptions> {
   const readMutationSequence = session.optionMutationSequence
   // Before startup both requests would wait on initialize; answer from the saved options.
   const [catalog, settings] =
@@ -307,21 +265,6 @@ function observeClaudeSettingsReadback(
   }
 }
 
-/** Whether a row of the list this session's options answer from has `modelId` as its own id. */
-export function claudeSessionListsModel(
-  session: ClaudeSession,
-  catalog: unknown[] | null,
-  modelId: string | undefined
-): boolean {
-  return (
-    modelId !== undefined &&
-    claudeSessionModelRows({
-      liveModels: listedModels(catalog ? { models: catalog } : null),
-      savedModels: session.catalogAccess?.store.get(session.catalogAccess.fingerprint)?.models
-    }).some((row) => row.id === modelId)
-  )
-}
-
 /** The options as main already holds them, over `catalog`; asks the CLI nothing. Startup's
  *  settings readback is applied by the time a start proves, and the SDK answers `list_models`
  *  from its initialize result, so a started session's snapshot passes that result here rather
@@ -330,16 +273,16 @@ export function claudeStructuredSessionOptionsFrom(
   session: ClaudeSession,
   catalog: unknown[] | null,
   readMutationSequence = session.optionMutationSequence
-): AgentSessionOptionsResult {
+): StructuredAgentSessionLiveOptions {
   const discovered = listedModels(catalog ? { models: catalog } : null)
-  writeClaudeCatalogThrough(session, discovered)
+  const catalogListing = claudeCatalogListing(session, discovered)
+  const listed = discovered.length > 0 ? discovered : seedModels()
   const current = readClaudeCurrentModel(session)
-  const projected = projectClaudeSessionModelOptions({
-    liveModels: discovered,
-    savedModels: session.catalogAccess?.store.get(session.catalogAccess.fingerprint)?.models,
-    current: { model: current.id ?? '' }
-  })
-  const model = projected.current.model
+  const model = currentModelId(listed, current.id)
+  const models = structuredAgentSessionOptionModels(listed, model, (row) => ({
+    ...row,
+    resolvedModel: null
+  }))
   const effort =
     session.options.get('effort') ??
     session.reportedOptions.effort ??
@@ -347,6 +290,7 @@ export function claudeStructuredSessionOptionsFrom(
   let desiredFastMode = decodedFastMode(session)
   if (
     desiredFastMode === true &&
+    model !== undefined &&
     listedModelFastModeSupport(discovered, model) === false &&
     readMutationSequence === session.optionMutationSequence
   ) {
@@ -374,14 +318,15 @@ export function claudeStructuredSessionOptionsFrom(
       : [])
   ]
   return {
-    models: projected.models,
+    models: wireClaudeModels(models),
     ...(support ? { fastModeSupport: support } : {}),
     current: {
-      model,
+      ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
       ...(fastMode !== undefined ? { fastMode } : {}),
       ...(session.fastModeState ? { fastModeState: session.fastModeState } : {}),
       ...(confirmed.length > 0 ? { confirmed } : {})
-    }
+    },
+    ...(catalogListing ? { catalogListing } : {})
   }
 }

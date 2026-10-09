@@ -10,10 +10,7 @@ import {
   applyNativeChatSessionOptionPicks,
   resolveStructuredLaunchSeedOptions
 } from '../../shared/native-chat-session-option-defaults'
-import { AgentModelCatalogStore } from '../native-chat/agent-model-catalog/agent-model-catalog-store'
-import { claudeAcquireCatalogAccess } from './claude-structured-acquire-catalog'
 import { ClaudeStructuredSessionAdapter } from './claude-structured-session-adapter'
-import type { ClaudeStructuredSessionEvent } from './claude-structured-session-state'
 import {
   claudeStartupSettled,
   fakeClaude,
@@ -21,35 +18,13 @@ import {
   PROVIDER_SESSION_ID
 } from './claude-structured-session-test-support'
 
-const ACCOUNT_HOME = '/accounts/claude'
-const SAVED_MODEL = {
-  id: 'retired-account-default',
-  label: 'Account model',
-  isDefault: true,
-  efforts: [
-    { value: 'low', label: 'Low' },
-    { value: 'high', label: 'High' }
-  ],
-  defaultEffort: 'high',
-  supportsFastMode: false
-}
+// A model the built-in list offers, picked after the running child named none.
+const PICKED_MODEL = CLAUDE_SESSION_OPTION_CATALOG.models[0]!.id
 
-function fixture(saved: boolean, listing: 'empty' | 'error') {
-  const store = new AgentModelCatalogStore()
-  const access = claudeAcquireCatalogAccess(store, ACCOUNT_HOME)
-  if (!access) {
-    throw new Error('the account has a catalog key')
-  }
-  if (saved) {
-    store.recordSuccess(access.fingerprint, 'claude', {
-      models: [SAVED_MODEL],
-      fastModeTierByModel: new Map(),
-      origin: 'probe'
-    })
-  }
+function fixture(listing: 'empty' | 'error') {
   const claude = fakeClaude({
     initModels: [],
-    ...(saved ? { settings: {} } : {}),
+    settings: {},
     routes: {
       list_models: () => {
         if (listing === 'error') {
@@ -59,32 +34,30 @@ function fixture(saved: boolean, listing: 'empty' | 'error') {
       }
     }
   })
-  const events: ClaudeStructuredSessionEvent[] = []
   const adapter = new ClaudeStructuredSessionAdapter({
     resolveLaunch: async () => ({
       pathToClaudeCodeExecutable: 'claude',
       options: {},
       cwd: '/work/folder',
-      claudeConfigDir: ACCOUNT_HOME,
+      claudeConfigDir: '/accounts/claude',
       providerSessionId: PROVIDER_SESSION_ID,
       resumeLeafUuid: null,
       resumesTranscript: false,
       continuesChain: false
     }),
-    onEvent: (event) => events.push(event),
+    onEvent: () => {},
     openConnection: claude.openConnection,
     readProcessStartTime: async () => 1_700_000_000_000,
-    persistHandle: async () => {},
-    modelCatalog: store
+    persistHandle: async () => {}
   })
-  return { store, access, claude, events, adapter }
+  return { adapter }
 }
 
 describe('Claude unknown current model persistence', () => {
   it.each(['empty', 'error'] as const)(
     'keeps an effort-only choice off future model flags after an %s listing',
     async (listing) => {
-      const { adapter } = fixture(true, listing)
+      const { adapter } = fixture(listing)
       try {
         await adapter.acquire({ identity: identityFor(), fence: 7, spawnToken: 'spawn-9' })
         await claudeStartupSettled(adapter, 'session-1')
@@ -94,11 +67,10 @@ describe('Claude unknown current model persistence', () => {
           CLAUDE_SESSION_OPTION_CATALOG,
           result
         )
-        expect(result.current.model).toBe('')
+        expect(result.current.model).toBeUndefined()
         const [model] = structuredAgentSessionOptionSnapshot(state)
         expect(model).toMatchObject({ valueSource: 'unknown' })
         expect(model.kind).not.toHaveProperty('currentValue')
-        expect(state.catalog?.models.map((row) => row.id)).toEqual([SAVED_MODEL.id])
         const committed = await adapter.setOption({
           sessionId: 'session-1',
           key: 'effort',
@@ -118,7 +90,7 @@ describe('Claude unknown current model persistence', () => {
         const selection = await adapter.setOption({
           sessionId: 'session-1',
           key: 'model',
-          value: SAVED_MODEL.id,
+          value: PICKED_MODEL,
           fence: 7
         })
         const selected = applyNativeChatSessionOptionPicks({
@@ -126,7 +98,7 @@ describe('Claude unknown current model persistence', () => {
           agent: 'claude',
           picks: structuredAgentSessionOptionPicks(state, selection ?? {})
         })
-        expect(resolveStructuredLaunchSeedOptions(selected, 'claude')?.model).toBe(SAVED_MODEL.id)
+        expect(resolveStructuredLaunchSeedOptions(selected, 'claude')?.model).toBe(PICKED_MODEL)
       } finally {
         await adapter.closeAll()
       }

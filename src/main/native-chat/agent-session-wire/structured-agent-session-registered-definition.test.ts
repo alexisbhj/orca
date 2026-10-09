@@ -29,10 +29,10 @@ const NON_DEFAULT: StructuredAgentDefinition = {
   capabilities: { ...CLAUDE_STRUCTURED_AGENT.capabilities, threadGoal: true },
   restingOptions: {
     acceptsKey: (key) => key === 'pilotOption',
-    projectOptions: (_catalog, current) => ({
-      models: [{ id: 'pilot-model', label: 'Pilot', isDefault: true, efforts: [] }],
-      current: { ...current, effort: 'low' }
-    })
+    fallbackModels: () => [
+      { id: 'pilot-model', label: 'Pilot', isDefault: true, defaultEffort: 'low', efforts: [] }
+    ],
+    effortDefaultsToModel: true
   }
 }
 
@@ -71,7 +71,7 @@ function readAtRest(agents: StructuredAgentRegistry) {
   const resting = {
     child: null,
     params: { provider: RECORD.provider },
-    journal: { threadGoal: () => null, contextUsage: () => null }
+    journal: { threadGoal: () => null, contextUsage: () => null, context: { floor: () => null } }
   }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the resting read touches only these members.
   const context = {
@@ -119,7 +119,7 @@ describe('a registered definition', () => {
 
     const options = await readAtRest(agents)
     expect(options.models.map((model) => model.id)).toEqual(['pilot-model'])
-    // No pick for effort: the registered projection answers it.
+    // No pick for effort: the registered rules read the model's default.
     expect(options.current).toEqual({ model: 'pilot-model', effort: 'low' })
     expect(options.threadGoal).toEqual({ current: null })
   })

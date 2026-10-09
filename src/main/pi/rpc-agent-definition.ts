@@ -14,6 +14,8 @@ export const PI_RPC_AGENT: DirectoryAccountAgentDefinition = {
     approvalEnforcement: 'provider'
   },
   restingOptions: {
-    acceptsKey: (key) => key === 'model' || key === 'effort'
+    acceptsKey: (key) => key === 'model' || key === 'effort',
+    fallbackModels: () => null,
+    effortDefaultsToModel: false
   }
 }

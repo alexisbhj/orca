@@ -23,7 +23,9 @@ function declaringNothing(definition: StructuredAgentDefinition): StructuredAgen
       approvalEnforcement: definition.capabilities.approvalEnforcement
     },
     restingOptions: {
-      acceptsKey: () => false
+      acceptsKey: () => false,
+      fallbackModels: () => null,
+      effortDefaultsToModel: false
     }
   }
 }

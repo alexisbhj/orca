@@ -183,17 +183,14 @@ describe('Claude picker before the provider starts', () => {
   )
 
   it.each(['local', 'paired'] as const)(
-    'keeps the selection on %s without inventing efforts while the list cannot be verified',
+    'replaces nothing on %s and invents no efforts while the list cannot be verified',
     async (host) => {
       const chat = startingChat({ host })
       try {
         await waitFor(() => expect(chat.probe).toHaveBeenCalledOnce())
-        await waitFor(() =>
-          expect(chat.row('model')?.kind).toMatchObject({
-            currentValue: 'opus',
-            choices: expect.arrayContaining([{ value: 'sonnet', label: 'Sonnet' }])
-          })
-        )
+        await waitFor(() => expect(chat.catalogReads()).toBe(2))
+        // A saved pick the list doesn't name shows the quiet placeholder, never the default.
+        expect(chat.row('model')?.kind).not.toHaveProperty('currentValue')
         expect(chat.row('effort')).toBeUndefined()
         let accepted = true
         await act(async () => {
@@ -229,13 +226,8 @@ describe('Claude picker before the provider starts', () => {
     const chat = startingChat({ host: 'paired', relists: [SONNET], olderHost: true })
     try {
       await waitFor(() => expect(chat.probe).toHaveBeenCalledOnce())
-      await waitFor(() =>
-        expect(chat.row('model')?.kind).toMatchObject({
-          currentValue: 'opus',
-          choices: expect.arrayContaining([{ value: 'sonnet', label: 'Sonnet' }])
-        })
-      )
-      expect(chat.row('model')).toMatchObject({ valueSource: 'dispatched' })
+      await waitFor(() => expect(chat.catalogReads()).toBe(2))
+      expect(chat.row('model')?.kind).not.toHaveProperty('currentValue')
       expect(chat.row('effort')).toBeUndefined()
     } finally {
       chat.hook.unmount()

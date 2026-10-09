@@ -50,7 +50,9 @@ const GROK: StructuredAgentDefinition = {
     threadGoal: false
   },
   restingOptions: {
-    acceptsKey: () => false
+    acceptsKey: () => false,
+    fallbackModels: () => null,
+    effortDefaultsToModel: false
   }
 }
 

@@ -6,10 +6,7 @@
 
 import type { AgentSessionCapabilities } from '../../../shared/agent-session-capabilities'
 import type { AgentSessionStoredAgent } from '../../../shared/agent-session-stored-agent'
-import type {
-  AgentSessionModelCatalogResult,
-  AgentSessionOptionsResult
-} from '../../../shared/agent-session-wire'
+import type { AgentSessionModelOption } from '../../../shared/agent-session-wire'
 
 /** `agent` names the Orca agent whose sessions this describes; the storage fields bound its records. */
 export type StructuredAgentDefinition = AgentSessionStoredAgent & {
@@ -18,14 +15,13 @@ export type StructuredAgentDefinition = AgentSessionStoredAgent & {
   restingOptions: {
     /** Whether the agent takes a pick of this option key. */
     acceptsKey: (key: string) => boolean
+    /** The models a running child falls back to with no catalog; null when it has none. */
+    fallbackModels: () => AgentSessionModelOption[] | null
+    /** An unpicked effort reads as the model's default effort, as a running child reports it. */
+    effortDefaultsToModel: boolean
     /** A selected model the account's current list no longer offers gives way to the listed
      *  default, at rest and at the next start, instead of failing the chat's next turn. */
     replacesUnlistedModel?: true
-    /** The agent's own picker projection of the catalog and the chat's selection at rest. */
-    projectOptions?: (
-      catalog: AgentSessionModelCatalogResult,
-      current: AgentSessionOptionsResult['current']
-    ) => Pick<AgentSessionOptionsResult, 'models' | 'fastModeSupport' | 'current'>
   }
 }
 

@@ -10,6 +10,15 @@ import {
   HOST_TEST_SESSION as SESSION
 } from './structured-agent-session-host-test-data'
 
+function catalogFake() {
+  return {
+    recordLiveListing: vi.fn(),
+    prewarm: vi.fn(async () => {}),
+    stop: vi.fn(),
+    providerStarted: vi.fn()
+  }
+}
+
 let host: StructuredAgentSessionHost
 let acquire: Mock<StructuredAgentSessionAdapter['acquire']>
 
@@ -37,7 +46,7 @@ describe('the model a start launches', () => {
         fetchedAt: NOW,
         ...(verified ? { unlistedModelReplacement: 'sonnet' } : {})
       }))
-      host.deps.modelCatalog = { read, providerStarted: vi.fn() }
+      host.deps.modelCatalog = { ...catalogFake(), read }
 
       const params = attachParams({ options: { model: 'opus', effort: 'high' } })
       expect(await host.attach(CALLER, params)).toMatchObject({ ok: true })
@@ -50,10 +59,10 @@ describe('the model a start launches', () => {
 
   it('starts on the saved options when the catalog cannot be read', async () => {
     host.deps.modelCatalog = {
+      ...catalogFake(),
       read: vi.fn(async () => {
         throw new Error('catalog unavailable')
-      }),
-      providerStarted: vi.fn()
+      })
     }
     const params = attachParams({ options: { model: 'opus', effort: 'high' } })
     expect(await host.attach(CALLER, params)).toMatchObject({ ok: true })

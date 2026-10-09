@@ -99,7 +99,7 @@ describe('Claude model before the first turn', () => {
   it('keeps the model unknown when the CLI reports no applied model', async () => {
     const current = await readCurrent({ effective: {}, sources: [] })
 
-    expect(current.model).toBe('')
+    expect(current.model).toBeUndefined()
     expect(current.effort).toBeUndefined()
   })
 
@@ -135,7 +135,7 @@ describe('Claude model before the first turn', () => {
     const adapter = await acquired(startedWithoutATurn(SETTINGS.noOverride), {}, events)
 
     const started = events.find((event) => event.type === 'started')
-    expect(started).toMatchObject({ reportedOptions: { model: '' } })
+    expect(started?.type === 'started' ? started.reportedOptions : null).not.toHaveProperty('model')
     // Saved, it would be restored on every reopen past a later settings.json change.
     expect(started?.type === 'started' ? started.reportedOptions : null).not.toHaveProperty(
       'effort'

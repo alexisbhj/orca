@@ -6,6 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { AgentModelCatalogLiveListing } from '../agent-model-catalog/agent-model-catalog-store'
 import type { AgentSessionStatusEvent } from '../../../shared/agent-session-wire'
 import { ClaudeStructuredSessionAdapter } from '../../claude/claude-structured-session-adapter'
 import {
@@ -38,6 +39,7 @@ let settings: ReturnType<typeof startupSettings>
 let initModels: unknown[]
 let lifecycle: Promise<void>[]
 let statuses: AgentSessionStatusEvent[]
+let savedListings: { sessionId: string; listing: AgentModelCatalogLiveListing }[]
 
 function startupSettings() {
   const effective: Record<string, unknown> = {
@@ -57,6 +59,7 @@ beforeEach(async () => {
   resetHostTestOperationIds()
   lifecycle = []
   statuses = []
+  savedListings = []
   // A CLI whose own default is not the catalog's: startup reports it through get_settings,
   // since system/init arrives only with the first command.
   settings = startupSettings()
@@ -100,6 +103,13 @@ beforeEach(async () => {
     journalDatabase: openTestJournalHostDatabase(root),
     claimKeyId: 'key-1',
     mintSpawnToken: () => 'spawn-a',
+    modelCatalog: {
+      read: async () => ({ origin: 'unknown' }),
+      recordLiveListing: (sessionId, listing) => savedListings.push({ sessionId, listing }),
+      prewarm: async () => {},
+      stop: () => {},
+      providerStarted: () => {}
+    },
     now: () => NOW
   })
   host.subscribeStatus({ id: 'status-1', emit: (event) => statuses.push(event) })
@@ -219,5 +229,21 @@ describe('a publish-first Claude create whose init is slow', () => {
 
     expect(store.getRecord(SESSION)?.options?.model).toBe('opus')
     expect(lastPhase()).toBe('ready')
+  })
+  it('saves the account listing the child read at startup, though no view asks for options', async () => {
+    await host.attach(CALLER, claudeParams())
+    expect(savedListings).toEqual([])
+
+    await claudeStartupSettled(adapter, SESSION)
+    await Promise.all(lifecycle)
+
+    expect(savedListings).toEqual([
+      {
+        sessionId: SESSION,
+        listing: expect.objectContaining({
+          models: [expect.objectContaining({ id: 'claude-sonnet' })]
+        })
+      }
+    ])
   })
 })

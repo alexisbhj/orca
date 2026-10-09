@@ -8,11 +8,9 @@ import {
   resolveEffectiveNativeChatModelId,
   withTrackedNativeChatModel
 } from './native-chat-session-option-snapshot'
-import { verifiedListReplacementRecord } from './agent-session-model-fallback'
 import {
   applyNativeChatReportedSessionOptions,
   clearTrackedSessionOption,
-  cloneNativeChatSessionOptionRecord,
   createNativeChatSessionOptionRecord,
   setTrackedSessionOption,
   type NativeChatSessionOptionRecord
@@ -93,8 +91,10 @@ export function structuredAgentSessionOptionCatalog(
 
 export type StructuredAgentSessionOptionState = {
   catalog: AgentSessionOptionCatalog | null
-  /** What produced `catalog`; a weaker source never replaces a stronger one. */
-  catalogSource: 'seed' | 'host' | 'live' | null
+  /** What produced `catalog`; a weaker source never replaces a stronger one. `seed` is the
+   *  built-in list before the host answered (shown as the quiet placeholder); `builtin` is the
+   *  same list once the host said it has none, usable but naming nothing the host may replace. */
+  catalogSource: 'seed' | 'builtin' | 'host' | 'live' | null
   /** What the host starts a chat on whose selection its current list lacks (`host` source only);
    *  absent while that list is unverified. */
   hostModelReplacement?: string
@@ -102,8 +102,8 @@ export type StructuredAgentSessionOptionState = {
   pendingId: string | null
 }
 
-/** With `seedCatalog`, the picker renders (and accepts picks against) the
- *  static seed from the first frame; every later source only upgrades it. */
+/** With `seedCatalog`, the state holds the static seed from the first frame, but the picker shows
+ *  the quiet placeholder until the host answers; every later source only upgrades it. */
 export function createStructuredAgentSessionOptionState(
   agent = 'codex',
   seedCatalog?: AgentSessionOptionCatalog | null
@@ -116,33 +116,12 @@ export function createStructuredAgentSessionOptionState(
   }
 }
 
-/**
- * What the picker shows before the host has confirmed this session's values:
- * `seed` (the selection a launch seeds) stands in until the record names a
- * model, and `held` picks outrank both until the host settles them. Both show
- * as `dispatched`, and a selection the host's current list lacks as its
- * `default` replacement; derived on every read, never written into the record.
- */
-export function structuredAgentSessionOptionView(
-  state: StructuredAgentSessionOptionState,
-  seed: Readonly<Record<string, string>> | undefined,
-  held: Readonly<Record<string, string>>
+/** The host answered with no list (none saved, a failed read, or an older host): the built-in
+ *  list becomes usable, still naming nothing until a host or session list does. */
+export function settleStructuredAgentSessionBuiltinCatalog(
+  state: StructuredAgentSessionOptionState
 ): StructuredAgentSessionOptionState {
-  const seeded = seed !== undefined && state.record.model === undefined
-  if (!state.catalog || (!seeded && Object.keys(held).length === 0)) {
-    return withVerifiedModelReplacement(state)
-  }
-  let view: StructuredAgentSessionOptionState = {
-    ...state,
-    record: cloneNativeChatSessionOptionRecord(state.record)
-  }
-  if (seeded) {
-    view = commitStructuredAgentSessionOptionValues(view, seed)
-  }
-  return withVerifiedModelReplacement({
-    ...commitStructuredAgentSessionOptionValues(view, held),
-    pendingId: state.pendingId
-  })
+  return state.catalogSource === 'seed' ? { ...state, catalogSource: 'builtin' } : state
 }
 
 /**
@@ -155,17 +134,27 @@ export function applyStructuredAgentSessionModelCatalog(
   state: StructuredAgentSessionOptionState,
   seed: AgentSessionOptionCatalog,
   catalog: AgentSessionModelCatalogResult,
-  options: { namesDefault: boolean }
+  options: { newLaunch: boolean }
 ): StructuredAgentSessionOptionState {
-  if (state.catalogSource === 'live' || catalog.origin === 'unknown') {
+  if (state.catalogSource === 'live') {
     return state
   }
-  const models = catalog.models.map((model) =>
-    discoveredModel(model, catalog.fastModeSupport?.supported === true)
-  )
-  if (models.length === 0) {
-    return state
+  const models =
+    catalog.origin === 'unknown'
+      ? []
+      : catalog.models.map((model) =>
+          discoveredModel(model, catalog.fastModeSupport?.supported === true)
+        )
+  if (catalog.origin === 'unknown' || models.length === 0) {
+    const settled = settleStructuredAgentSessionBuiltinCatalog(state)
+    // No list to judge by: any replacement an earlier answer named is doubt now.
+    return settled.hostModelReplacement ? { ...settled, hostModelReplacement: undefined } : settled
   }
+  // The host says whether its listed default is what this launch runs; an older host never says,
+  // so the client's own knowledge of the agent stands in. A reopened chat may keep its own model.
+  const namesDefault =
+    options.newLaunch &&
+    (catalog.listingNamesConfiguredModel ?? seed.hostListingNamesConfiguredModel === true)
   return {
     ...state,
     // `isDefault` came from a real listing, so a launch's CLI default is nameable —
@@ -173,23 +162,11 @@ export function applyStructuredAgentSessionModelCatalog(
     catalog: {
       ...seed,
       models,
-      ...(options.namesDefault ? { defaultModelIsCliDefault: true } : {})
+      ...(namesDefault ? { defaultModelIsCliDefault: true } : {})
     },
     catalogSource: 'host',
     hostModelReplacement: catalog.unlistedModelReplacement
   }
-}
-
-/** Shows what the host starts the chat on once its current list lacks the selection. */
-function withVerifiedModelReplacement(
-  state: StructuredAgentSessionOptionState
-): StructuredAgentSessionOptionState {
-  const { catalog, record, hostModelReplacement } = state
-  const shown =
-    catalog && state.catalogSource === 'host'
-      ? verifiedListReplacementRecord(catalog, record, hostModelReplacement)
-      : record
-  return shown === record ? state : { ...state, record: shown }
 }
 
 export function applyStructuredAgentSessionOptions(
@@ -198,12 +175,12 @@ export function applyStructuredAgentSessionOptions(
   result: AgentSessionOptionsResult
 ): StructuredAgentSessionOptionState {
   if (result.current.fastMode === undefined) {
-    clearTrackedSessionOption(state.record, result.current.model, 'fastMode')
+    clearTrackedSessionOption(state.record, result.current.model ?? null, 'fastMode')
   }
   applyNativeChatReportedSessionOptions(
     state.record,
     {
-      model: result.current.model,
+      ...(result.current.model ? { model: result.current.model } : {}),
       ...(result.current.effort ? { effort: result.current.effort } : {}),
       ...(result.current.fastMode !== undefined ? { fastMode: result.current.fastMode } : {})
     },
@@ -216,13 +193,30 @@ export function applyStructuredAgentSessionOptions(
   }
 }
 
+/** Before the host answers, or an agent with no list reports, the quiet model pill: never
+ *  pickable, so displaying it can never become a launch pick. */
+const PROVIDER_DEFAULT_MODEL_PLACEHOLDER: SessionOptionDescriptor = {
+  id: 'model',
+  label: 'Model',
+  category: 'model',
+  kind: { type: 'select', choices: [] },
+  valueSource: 'unknown',
+  transport: 'agent-session',
+  settable: false,
+  disabledReason: 'available-after-session-start'
+}
+
 export function structuredAgentSessionOptionSnapshot(
   state: StructuredAgentSessionOptionState
 ): SessionOptionDescriptor[] {
   if (!state.catalog) {
     return []
   }
-  return buildNativeChatSessionOptionSnapshot({
+  // Until the host answers, the built-in list would paint a label its list may replace.
+  if (state.catalogSource === 'seed') {
+    return [PROVIDER_DEFAULT_MODEL_PLACEHOLDER]
+  }
+  const snapshot = buildNativeChatSessionOptionSnapshot({
     catalog: state.catalog,
     // A seeded default can name a model the static seed does not list yet.
     models: withTrackedNativeChatModel(state.catalog, state.catalog.models, state.record),
@@ -231,6 +225,9 @@ export function structuredAgentSessionOptionSnapshot(
     modelLabel: 'Model',
     liveTransport: 'agent-session'
   })
+  return snapshot.length > 0 || state.catalogSource === 'live'
+    ? snapshot
+    : [PROVIDER_DEFAULT_MODEL_PLACEHOLDER]
 }
 
 /** No launch holds a pick and no fence can carry one yet, so the picker only shows. */
@@ -242,17 +239,6 @@ export function lockedStructuredAgentSessionOptionSnapshot(
     settable: false,
     disabledReason: 'available-after-session-start'
   }))
-}
-
-/** While the host runs its first model listing, nothing is picked from the stand-in list. */
-export function pendingModelListStructuredAgentSessionOptionSnapshot(
-  snapshot: readonly SessionOptionDescriptor[]
-): SessionOptionDescriptor[] {
-  return snapshot.map((descriptor) =>
-    descriptor.category === 'model'
-      ? { ...descriptor, settable: false, choicesPending: true }
-      : descriptor
-  )
 }
 
 export function canSetStructuredAgentSessionOption(

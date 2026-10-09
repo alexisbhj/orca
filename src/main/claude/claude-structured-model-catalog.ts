@@ -1,11 +1,9 @@
 import type {
   AgentSessionModelOption,
-  AgentSessionOptionChoice,
-  AgentSessionOptionsResult
+  AgentSessionOptionChoice
 } from '../../shared/agent-session-wire'
 import { CLAUDE_SESSION_OPTION_CATALOG } from '../../shared/agent-session-option-catalog-claude-codex'
-import type { CatalogOption } from '../../shared/agent-session-option-catalog-types'
-import { structuredAgentSessionOptionModels } from '../native-chat/agent-session-wire/structured-agent-session-option-models'
+import type { CatalogModel } from '../../shared/agent-session-option-catalog-types'
 
 export type ListedModel = Omit<AgentSessionModelOption, 'resolvedModel'> & {
   resolvedModel: string | null
@@ -82,23 +80,28 @@ export function matchListedModel(
   )
 }
 
-function seedEfforts(options: readonly CatalogOption[]): AgentSessionOptionChoice[] {
-  const effort = options.find((option) => option.id === 'effort')
+function seedEfforts(model: CatalogModel): AgentSessionOptionChoice[] {
+  const effort = model.options.find((option) => option.id === 'effort')
   return effort?.kind.type === 'select' ? effort.kind.choices : []
 }
 
-function seedModels(): ListedModel[] {
+export function seedModels(): ListedModel[] {
   return CLAUDE_SESSION_OPTION_CATALOG.models.map((model) => ({
     id: model.id,
     label: model.label,
     ...(model.description ? { description: model.description } : {}),
     isDefault: model.isDefault === true,
-    efforts: seedEfforts(model.options),
+    efforts: seedEfforts(model),
     resolvedModel: null
   }))
 }
 
-function currentModelId(models: readonly ListedModel[], reportedModel: string | undefined): string {
+/** The listed row the child runs, else the id it reports; absent when nothing identifies it, since
+ *  a catalog default cannot say what environment or settings made this child run. */
+export function currentModelId(
+  models: readonly ListedModel[],
+  reportedModel: string | undefined
+): string | undefined {
   const matched = reportedModel
     ? models.find(
         (model) =>
@@ -107,61 +110,5 @@ function currentModelId(models: readonly ListedModel[], reportedModel: string | 
           (reportedModel === 'default' && model.isDefault)
       )
     : undefined
-  // A catalog default cannot identify what environment or settings made this child run.
-  return matched?.id ?? reportedModel ?? ''
-}
-
-export function wireClaudeModel(entry: ListedModel): AgentSessionModelOption {
-  return {
-    id: entry.id,
-    label: entry.label,
-    ...(entry.description ? { description: entry.description } : {}),
-    isDefault: entry.isDefault,
-    efforts: entry.efforts,
-    ...(entry.defaultEffort ? { defaultEffort: entry.defaultEffort } : {}),
-    ...(entry.supportsFastMode !== undefined ? { supportsFastMode: entry.supportsFastMode } : {}),
-    ...(entry.resolvedModel ? { resolvedModel: entry.resolvedModel } : {})
-  }
-}
-
-export function wireClaudeModels(models: readonly ListedModel[]): AgentSessionModelOption[] {
-  return models.map(wireClaudeModel)
-}
-
-type ClaudeSessionModelSources = {
-  liveModels?: readonly ListedModel[]
-  savedModels?: readonly AgentSessionModelOption[]
-}
-
-/** The running child's own list, else the account's saved one, else the built-in seed. */
-export function claudeSessionModelRows(input: ClaudeSessionModelSources): ListedModel[] {
-  const live = input.liveModels ?? []
-  if (live.length > 0) {
-    return [...live]
-  }
-  return (
-    input.savedModels?.map(({ resolvedModel, ...row }) => ({
-      ...row,
-      resolvedModel: resolvedModel ?? null
-    })) ?? seedModels()
-  )
-}
-
-/** The rows of `claudeSessionModelRows`, each with its own efforts. A current model none of them
- *  lists offers none: nothing says which it takes. */
-export function projectClaudeSessionModelOptions(
-  input: ClaudeSessionModelSources & { current: AgentSessionOptionsResult['current'] }
-): Pick<AgentSessionOptionsResult, 'models' | 'current'> {
-  const listed = claudeSessionModelRows(input)
-  const model = currentModelId(listed, input.current.model || undefined)
-  const models = structuredAgentSessionOptionModels(listed, model, (row) => ({
-    ...row,
-    resolvedModel: null
-  }))
-  return {
-    models: wireClaudeModels(
-      input.current.model ? models : models.map((row) => ({ ...row, isDefault: false }))
-    ),
-    current: { ...input.current, model }
-  }
+  return matched?.id ?? reportedModel
 }

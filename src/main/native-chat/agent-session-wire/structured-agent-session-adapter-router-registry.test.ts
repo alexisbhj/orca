@@ -71,7 +71,9 @@ const PILOT: StructuredAgentDefinition = {
     approvalEnforcement: 'orca'
   },
   restingOptions: {
-    acceptsKey: () => false
+    acceptsKey: () => false,
+    fallbackModels: () => null,
+    effortDefaultsToModel: false
   }
 }
 
@@ -200,10 +202,12 @@ describe('structured agent definitions', () => {
   it('keeps each agent’s resting option rules with its definition', () => {
     const claude = CLAUDE_STRUCTURED_AGENT.restingOptions
     const codex = CODEX_STRUCTURED_AGENT.restingOptions
+    expect(claude.fallbackModels()?.length).toBeGreaterThan(0)
+    expect(codex.fallbackModels()).toBeNull()
+    expect(claude.effortDefaultsToModel).toBe(true)
+    expect(codex.effortDefaultsToModel).toBe(false)
     expect(claude.replacesUnlistedModel).toBe(true)
     expect(codex.replacesUnlistedModel).toBeUndefined()
-    expect(claude.projectOptions).toBeTypeOf('function')
-    expect(codex.projectOptions).toBeUndefined()
     expect(claude.acceptsKey('model')).toBe(true)
     expect(codex.acceptsKey('model')).toBe(true)
     expect(claude.acceptsKey('no-such-option')).toBe(false)

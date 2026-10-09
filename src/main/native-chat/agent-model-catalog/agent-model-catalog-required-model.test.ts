@@ -7,6 +7,8 @@ import { CODEX_STRUCTURED_AGENT } from '../../codex/codex-structured-agent-defin
 import { agentModelCatalogFingerprint } from './agent-model-catalog-fingerprint'
 import { createAgentModelCatalogService } from './agent-model-catalog-service'
 import { settledAgentModelSelection } from './agent-model-catalog-selection'
+import type { AgentSessionRecord } from '../../../shared/agent-session-record'
+import { agentSessionRecordFixture } from '../../../shared/agent-session-record.test-fixture'
 import {
   AGENT_MODEL_CATALOG_CURRENT_MS,
   AGENT_MODEL_CATALOG_FAILURE_TTL_MS,
@@ -31,19 +33,21 @@ function catalog(input: {
   relists?: () => Promise<AgentModelCatalogSuccess>
   /** A named workspace's own config may pick another model, so reads for it name no default. */
   workspaceOverrides?: boolean
+  /** The chat whose running child saves its listing. */
+  record?: AgentSessionRecord
 }) {
   const agent = input.agent ?? 'claude'
   const clock = { now: 1_000 }
   const store = new AgentModelCatalogStore({ now: () => clock.now })
   const fingerprint = agentModelCatalogFingerprint({ agent, accountHome: HOME, wslDistro: null })
   if (input.saved !== null) {
-    store.recordSuccess(fingerprint, agent, input.saved ?? listing('sonnet'))
+    store.recordSuccess(fingerprint, agent, input.saved ?? listing('sonnet'), 'discovery')
   }
   clock.now += input.ageMs ?? AGENT_MODEL_CATALOG_CURRENT_MS
   const probe = vi.fn(input.relists ?? (async () => listing('sonnet', 'opus')))
   const service = createAgentModelCatalogService({
     store,
-    getRecord: () => undefined,
+    getRecord: () => input.record,
     drivesRecord: () => true,
     agents: {
       definition: (id) => (id === 'claude' ? CLAUDE_STRUCTURED_AGENT : CODEX_STRUCTURED_AGENT)
@@ -177,17 +181,22 @@ describe('the catalog read for a selected model', () => {
   })
 
   it("never lets a running child's list from before a model existed make that pick look gone", async () => {
-    const { clock, fingerprint, probe, service, store } = catalog({
-      relists: async () => listing('sonnet', 'fable-6')
-    })
-    // A child started five minutes ago keeps answering options reads with its start's list.
-    store.recordSuccess(fingerprint, 'claude', {
-      ...listing('sonnet'),
-      origin: 'live-session',
-      listedAt: clock.now - 5 * AGENT_MODEL_CATALOG_CURRENT_MS
-    })
+    const record = agentSessionRecordFixture()
+    record.provider = 'claude'
+    record.accountHome = HOME
+    const { clock, fingerprint, probe, service, store } = catalog({ record })
+    // Chat B's child starts and saves the list it got at its start, before fable-6 existed.
+    const frozen = { models: listing('sonnet').models, frozenListingOf: 'chat-b-child' }
+    service.recordLiveListing(record.sessionId, frozen)
+    clock.now += 4 * AGENT_MODEL_CATALOG_CURRENT_MS
+    store.recordSuccess(fingerprint, 'claude', listing('sonnet', 'fable-6'), 'discovery')
+    clock.now += AGENT_MODEL_CATALOG_CURRENT_MS / 2
+    // Its options read saves that same frozen list again.
+    service.recordLiveListing(record.sessionId, frozen)
+
     const answer = await service.read({ agent: 'claude', requiredModel: 'fable-6', forStart: true })
-    expect(probe).toHaveBeenCalledOnce()
+    expect(probe).not.toHaveBeenCalled()
+    expect(answer).toMatchObject({ models: [{ id: 'sonnet' }, { id: 'fable-6' }] })
     expect(settledAgentModelSelection(answer, { model: 'fable-6' })).toEqual({ model: 'fable-6' })
   })
 
