@@ -104,7 +104,7 @@ jobs:
         run: |
           {
             echo "### Relay cell flags: ${MODE} ${CELL_ID}"
-            echo "Actor: ${GITHUB_ACTOR}, run ${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}"
+            echo "Triggered by: ${GITHUB_TRIGGERING_ACTOR}, run ${GITHUB_RUN_ID} attempt ${GITHUB_RUN_ATTEMPT}"
             echo '```json'
             cat "${RUNNER_TEMP}/relay-cell-flags.jsonl" 2>/dev/null || echo '(no output)'
             echo '```'

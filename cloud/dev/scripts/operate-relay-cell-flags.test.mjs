@@ -136,6 +136,33 @@ test('refuses a stale expected generation, and a concurrent writer between read 
   await assert.rejects(run(parseCellFlagsRequest(values()), racing).result, /changed since/)
 })
 
+test('a dry run against a stale generation still shows the plan, then refuses', async () => {
+  const fake = fakeGoogleAndCell({
+    stored: { generation: '7', object: { v: 1, cellId: CELL, flags: {} } }
+  })
+  const { result, lines } = run(parseCellFlagsRequest(values({ mode: 'dry-run' })), fake)
+  await assert.rejects(result, /current generation is 7/)
+  assert.equal(lines[0].event, 'orca_relay_cell_flags_plan')
+  assert.equal(lines[0].currentGeneration, '7')
+})
+
+test('rides out a transient 5xx on the first read and during the read-back', async () => {
+  const fake = fakeGoogleAndCell()
+  const inner = fake.fetchImpl
+  let runtimeCalls = 0
+  fake.fetchImpl = async (url, init) => {
+    if (new URL(url).pathname === '/v1/admin/runtime-status') {
+      runtimeCalls += 1
+      // The first call, and the first read-back poll after the write.
+      if (runtimeCalls === 1 || runtimeCalls === 3) return new Response(null, { status: 503 })
+    }
+    return await inner(url, init)
+  }
+  const outcome = await run(parseCellFlagsRequest(values()), fake).result
+  assert.equal(outcome.written, true)
+  assert.equal(outcome.generation, '1001')
+})
+
 test('refuses an origin that is not the named cell, or an image without the flag channel', async () => {
   await assert.rejects(
     run(parseCellFlagsRequest(values()), fakeGoogleAndCell({ cellId: 'production-gce-c25' })).result,

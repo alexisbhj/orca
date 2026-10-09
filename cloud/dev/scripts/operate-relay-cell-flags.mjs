@@ -7,6 +7,7 @@
 //          the cell's runtime status to report the new generation applied.
 import { parseArgs } from 'node:util'
 import { pathToFileURL } from 'node:url'
+import { fetchAdminOnceMore } from './relay-admin-transient-retry.mjs'
 
 export const CELL_ID_PATTERN = /^(production|staging)-gce-c[0-9]{1,3}$/
 export const WRITE_CONFIRMATION = 'WRITE_RELAY_CELL_FLAGS'
@@ -65,13 +66,18 @@ function objectUrl(request, suffix = '') {
   )}${suffix}`
 }
 
-async function readRuntime(fetchImpl, request, idToken) {
-  const response = await fetchImpl(`${request.cellOrigin}/v1/admin/runtime-status`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${idToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ v: 1 }),
-    signal: AbortSignal.timeout(10_000)
-  })
+// One transient 5xx or network failure is retried once, as every relay admin step does.
+async function readRuntime(fetchImpl, request, idToken, wait) {
+  const response = await fetchAdminOnceMore(
+    fetchImpl,
+    `${request.cellOrigin}/v1/admin/runtime-status`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${idToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ v: 1 })
+    },
+    { wait, timeoutMs: 10_000, retryDelayMs: 1_000 }
+  )
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined)
     throw new Error(`cell runtime status returned ${response.status}`)
@@ -143,18 +149,13 @@ export async function operateCellFlags(request, dependencies) {
   const { fetchImpl = fetch, accessToken, idToken, audit, log = console.log } = dependencies
   const now = dependencies.now ?? Date.now
   const sleep = dependencies.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
-  const runtime = await readRuntime(fetchImpl, request, idToken)
+  const runtime = await readRuntime(fetchImpl, request, idToken, sleep)
   // Proves the origin is this cell, and that its image reads switch files at all.
   if (runtime.role !== 'cell' || runtime.cellId !== request.cellId) {
     throw new Error(`origin answers as ${runtime.role}/${runtime.cellId}, not ${request.cellId}`)
   }
   if (!runtime.flagsApplied) throw new Error('cell image has no flag channel (no flagsApplied)')
   const current = await readCurrentObject(fetchImpl, request, accessToken)
-  if (current.generation !== request.expectedGeneration) {
-    throw new Error(
-      `current generation is ${current.generation}, not expected ${request.expectedGeneration}`
-    )
-  }
   const plan = {
     event: 'orca_relay_cell_flags_plan',
     mode: request.mode,
@@ -164,7 +165,13 @@ export async function operateCellFlags(request, dependencies) {
     appliedBefore: runtime.flagsApplied,
     desired: request.object
   }
+  // Before the generation check, so a dry run always shows the generation to pass next.
   log(JSON.stringify(plan))
+  if (current.generation !== request.expectedGeneration) {
+    throw new Error(
+      `current generation is ${current.generation}, not expected ${request.expectedGeneration}`
+    )
+  }
   if (request.mode === 'dry-run') return { ...plan, written: false }
   const generation = await writeObject(fetchImpl, request, accessToken, audit)
   log(JSON.stringify({ event: 'orca_relay_cell_flags_written', cellId: request.cellId, generation }))
@@ -172,7 +179,12 @@ export async function operateCellFlags(request, dependencies) {
   let last = runtime.flagsApplied
   while (now() < deadline) {
     await sleep(READ_BACK_INTERVAL_MS)
-    last = (await readRuntime(fetchImpl, request, idToken)).flagsApplied
+    try {
+      last = (await readRuntime(fetchImpl, request, idToken, sleep)).flagsApplied
+    } catch {
+      // The object is written; a failed poll only delays the read-back until the deadline.
+      continue
+    }
     if (String(last?.generation) === generation && sameFlags(last.flags, request.object.flags)) {
       const result = { ...plan, written: true, generation, applied: last }
       log(JSON.stringify({ ...result, event: 'orca_relay_cell_flags_applied_read_back' }))
@@ -200,17 +212,29 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
       ].map((name) => [name, { type: 'string' }])
     )
   })
-  const request = parseCellFlagsRequest(values)
-  const accessToken = process.env.ORCA_RELAY_CONTROL_ACCESS_TOKEN
-  const idToken = process.env.ORCA_RELAY_ADMIN_ID_TOKEN
-  if (!accessToken || !idToken) throw new Error('both tokens are required')
-  await operateCellFlags(request, {
-    accessToken,
-    idToken,
-    audit: {
-      writtenBy: process.env.GITHUB_ACTOR ?? 'unknown',
-      runId: process.env.GITHUB_RUN_ID ?? 'local',
-      runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '0'
-    }
-  })
+  try {
+    const request = parseCellFlagsRequest(values)
+    const accessToken = process.env.ORCA_RELAY_CONTROL_ACCESS_TOKEN
+    const idToken = process.env.ORCA_RELAY_ADMIN_ID_TOKEN
+    if (!accessToken || !idToken) throw new Error('both tokens are required')
+    await operateCellFlags(request, {
+      accessToken,
+      idToken,
+      audit: {
+        // The person who started this attempt, which differs from GITHUB_ACTOR on a re-run.
+        writtenBy: process.env.GITHUB_TRIGGERING_ACTOR ?? process.env.GITHUB_ACTOR ?? 'unknown',
+        runId: process.env.GITHUB_RUN_ID ?? 'local',
+        runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? '0'
+      }
+    })
+  } catch (error) {
+    // On stdout, so the job summary's copy of the run carries the reason.
+    console.log(
+      JSON.stringify({
+        event: 'orca_relay_cell_flags_failed',
+        message: error instanceof Error ? error.message : String(error)
+      })
+    )
+    process.exitCode = 1
+  }
 }
