@@ -26,11 +26,11 @@ const STOPPED: Record<AgentSessionOrcaStopCause, (machine: string) => string> = 
     )
 }
 
-// A remote host's graceful stop is no one closing Orca, and it is back by the time this shows.
+// A remote graceful stop is a server stop or a shared desktop's quit; "stopped" is true of both.
 const remoteQuit = (machine: string): string =>
   translate(
-    'components.native-chat.notices.orcaStopRemoteRestart',
-    'Orca on {{machine}} restarted while this response was in progress.',
+    'components.native-chat.notices.orcaStopRemote',
+    'Orca on {{machine}} stopped while this response was in progress.',
     { machine }
   )
 

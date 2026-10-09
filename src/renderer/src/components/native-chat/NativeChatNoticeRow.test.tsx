@@ -78,11 +78,11 @@ describe('the row an Orca stop leaves', () => {
     ).toBeInTheDocument()
   })
 
-  it("says a remote host's Orca restarted, not that it was closed", () => {
+  it("says a remote host's Orca stopped, not that it was closed", () => {
     renderStatus(orcaStopRow('quit'), 'QA SSH', true, true)
     expect(
-      screen.getByText('Orca on QA SSH restarted while this response was in progress.')
-        .parentElement?.parentElement
+      screen.getByText('Orca on QA SSH stopped while this response was in progress.').parentElement
+        ?.parentElement
     ).toHaveClass('text-muted-foreground')
     expect(screen.queryByText(/was closed/)).toBeNull()
   })

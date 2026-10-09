@@ -21,7 +21,7 @@ import type { NativeChatComposerNoticeContent } from './native-chat-composer-not
 type ContinueAnswer = { outcome?: string }
 
 export type NativeChatInterruptedContinuation = {
-  /** What the chat's rows are told: the machine's name and whether its host can continue a cut. */
+  /** Told to the chat's rows: the machine's name, whether it is remote, and if it can continue. */
   view: NativeChatOrcaStopView
   /** The cut turn Continue is offered on right now, if any. */
   offeredTurnItemId: string | null
