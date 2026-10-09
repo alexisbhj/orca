@@ -24,7 +24,8 @@ import {
   closeProviderTimelineRigs,
   openProviderTimelineRig
 } from '../native-chat/agent-session-timeline/provider-timeline-assembler-test-support'
-import { createPiModelCatalogProbe } from './rpc-model-catalog-probe'
+import { agentModelCatalogFingerprint } from '../native-chat/agent-model-catalog/agent-model-catalog-fingerprint'
+import { createPiModelCatalogProbe, piModelCatalogFromListing } from './rpc-model-catalog-probe'
 import type { PiRpcConnection } from './rpc-session'
 import { PiRpcSessionAdapter } from './rpc-session-adapter'
 
@@ -37,7 +38,14 @@ const LISTING = [
 ].join('\n')
 const AVAILABLE = [
   { provider: 'anthropic', id: 'claude-sonnet-4', name: 'Claude Sonnet 4', reasoning: true },
-  { provider: 'openai', id: 'gpt-6', name: 'GPT-6', reasoning: true }
+  // Its thinking map adds xhigh, which `--list-models` never shows.
+  {
+    provider: 'openai',
+    id: 'gpt-6',
+    name: 'GPT-6',
+    reasoning: true,
+    thinkingLevelMap: { xhigh: 'xhigh' }
+  }
 ]
 const RUNS = AVAILABLE[1]!
 
@@ -65,9 +73,15 @@ function workspace(name: string, files: Record<string, string> = {}): string {
   return dir
 }
 
-/** A Pi child that starts on GPT-6 at high thinking; a signed-out one lists no model. */
-function piChild(available: readonly object[]): PiRpcConnection {
+type PiChild = { connection: PiRpcConnection; switchTo: (modelId: string) => void }
+
+/** A Pi child that starts on GPT-6 at `thinking`; a signed-out one lists no model. `switchTo` is
+ *  a switch Orca didn't send, as an extension's `setModel` makes. */
+function piChild(available: readonly object[], thinking: string): PiChild {
   let model: object | null = RUNS
+  const switchTo = (modelId: string): void => {
+    model = AVAILABLE.find((entry) => entry.id === modelId) ?? model
+  }
   const connection: PiRpcConnection = {
     pid: 4123,
     closed: false,
@@ -81,14 +95,14 @@ function piChild(available: readonly object[]): PiRpcConnection {
           isStreaming: false,
           isCompacting: false,
           model,
-          thinkingLevel: 'high'
+          thinkingLevel: thinking
         }
       }
       if (command === 'get_available_models') {
         return { models: available }
       }
       if (command === 'set_model') {
-        model = AVAILABLE.find((entry) => entry.id === params?.modelId) ?? model
+        switchTo(String(params?.modelId))
       }
       return command === 'get_commands' ? { commands: [] } : {}
     },
@@ -98,14 +112,30 @@ function piChild(available: readonly object[]): PiRpcConnection {
     resumeReading: () => {},
     onExit: () => {}
   }
-  return connection
+  return { connection, switchTo }
+}
+
+type ChatOptions = {
+  saved?: Record<string, string>
+  resumed?: boolean
+  forked?: boolean
+  available?: object[]
+  thinking?: string
+  /** What happens between the chat's start and the pane's options read. */
+  afterStart?: (chat: {
+    child: PiChild
+    adapter: PiRpcSessionAdapter
+    sessionId: string
+  }) => Promise<void>
 }
 
 /** A host with Pi's real probe and catalog service, and one Pi chat in `workspacePath`. */
 async function piHost() {
   const records = new Map<string, AgentSessionRecord>()
+  const clock = { now: 1_000 }
+  const store = new AgentModelCatalogStore({ now: () => clock.now })
   const catalog = createAgentModelCatalogService({
-    store: new AgentModelCatalogStore(),
+    store,
     getRecord: (sessionId) => records.get(sessionId),
     drivesRecord: () => true,
     resolveAccountHome: async () => PI_HOME,
@@ -125,11 +155,9 @@ async function piHost() {
 
   let chats = 0
   /** A Pi chat in `workspacePath` whose options the pane reads once, as the host's step does. */
-  async function chat(
-    workspacePath: string,
-    opts: { saved?: Record<string, string>; resumed?: boolean; available?: object[] } = {}
-  ) {
+  async function chat(workspacePath: string, opts: ChatOptions = {}) {
     const sessionId = `pi-${++chats}`
+    let child: PiChild | undefined
     // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the catalog service reads only these fields.
     records.set(sessionId, {
       sessionId,
@@ -150,10 +178,14 @@ async function piHost() {
         cwd: workspacePath,
         fullAccess: true,
         previous: null,
-        ...(opts.resumed ? { sessionFile: '/homes/pi/sessions/one.jsonl' } : {})
+        ...(opts.resumed ? { sessionFile: '/homes/pi/sessions/one.jsonl' } : {}),
+        ...(opts.forked ? { forkFile: '/homes/pi/sessions/elsewhere.jsonl' } : {})
       }),
       readProcessStartTime: async () => 1,
-      openConnection: () => piChild(opts.available ?? AVAILABLE),
+      openConnection: () => {
+        child = piChild(opts.available ?? AVAILABLE, opts.thinking ?? 'high')
+        return child.connection
+      },
       onLifecycle: vi.fn(),
       onSettled: vi.fn(),
       onIdle: vi.fn(),
@@ -173,6 +205,9 @@ async function piHost() {
       options: opts.saved ?? {},
       events: rig.eventSink
     })
+    if (opts.afterStart && child) {
+      await opts.afterStart({ child, adapter, sessionId })
+    }
     const { catalogListing } = await adapter.readOptions({ sessionId, fence: 1 })
     if (!catalogListing) {
       throw new Error('a Pi options read hands the host its listing')
@@ -180,7 +215,7 @@ async function piHost() {
     catalog.recordLiveListing(sessionId, catalogListing)
     return catalogListing
   }
-  return { catalog, chat }
+  return { catalog, chat, store, clock }
 }
 
 /** What a new Pi chat's composer paints first from a host answer. */
@@ -264,6 +299,67 @@ describe('Pi’s default comes from what a chat with no pick runs', () => {
     expect(firstFrame(await catalog.read({ agent: 'pi', workspacePath: clean }))).toEqual({
       model: 'openai/gpt-6',
       effort: 'high'
+    })
+  })
+
+  it('teaches the model the chat started on, not one an extension switched to later', async () => {
+    const { catalog, chat } = await piHost()
+    const clean = workspace('clean')
+    await catalog.read({ agent: 'pi', waitForListing: true })
+    await chat(clean, { afterStart: async ({ child }) => child.switchTo('claude-sonnet-4') })
+    expect(firstFrame(await catalog.read({ agent: 'pi', workspacePath: clean }))).toEqual({
+      model: 'openai/gpt-6',
+      effort: 'high'
+    })
+  })
+
+  it('teaches the start model after a pick made in the chat, never the pick', async () => {
+    const { catalog, chat } = await piHost()
+    const clean = workspace('clean')
+    await catalog.read({ agent: 'pi', waitForListing: true })
+    await chat(clean, {
+      afterStart: async ({ adapter, sessionId }) => {
+        await adapter.setOption({
+          sessionId,
+          fence: 1,
+          key: 'model',
+          value: 'anthropic/claude-sonnet-4'
+        })
+      }
+    })
+    expect(firstFrame(await catalog.read({ agent: 'pi', workspacePath: clean }))).toEqual({
+      model: 'openai/gpt-6',
+      effort: 'high'
+    })
+  })
+
+  it('learns nothing from a chat forked from a conversation in another folder', async () => {
+    const { catalog, chat } = await piHost()
+    await catalog.read({ agent: 'pi', waitForListing: true })
+    const clean = workspace('clean')
+    expect(await chat(clean, { forked: true })).not.toHaveProperty('configuredDefault')
+    expect(firstFrame(await catalog.read({ agent: 'pi', workspacePath: clean }))).toEqual(NOTHING)
+  })
+
+  it('keeps a learned thinking level only the chat’s menu offers when a later listing is newer', async () => {
+    const { catalog, chat, store, clock } = await piHost()
+    const clean = workspace('clean')
+    await chat(clean, { thinking: 'xhigh' })
+    // A background re-list after the chat: `--list-models` offers no xhigh.
+    clock.now = 2_000
+    store.recordSuccess(
+      agentModelCatalogFingerprint({ agent: 'pi', accountHome: PI_HOME, wslDistro: null }),
+      'pi',
+      {
+        models: piModelCatalogFromListing(LISTING),
+        fastModeTierByModel: new Map(),
+        origin: 'probe'
+      },
+      'discovery'
+    )
+    expect(firstFrame(await catalog.read({ agent: 'pi', workspacePath: clean }))).toEqual({
+      model: 'openai/gpt-6',
+      effort: 'xhigh'
     })
   })
 })

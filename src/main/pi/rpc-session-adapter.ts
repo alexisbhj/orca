@@ -224,7 +224,6 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
     )
   setOption: StructuredAgentSessionAdapter['setOption'] = (input) => {
     const session = this.session(input.sessionId, input.fence)
-    session.picked.add(input.key)
     return applyPiRpcSessionOption(session.connection, session.selected, input.key, input.value)
   }
   readOptions: NonNullable<StructuredAgentSessionAdapter['readOptions']> = async (input) =>
