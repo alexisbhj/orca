@@ -38,7 +38,7 @@ const incarnation = '11111111-1111-4111-8111-111111111111'
 // The published v1 shape, so a field rename fails here before it reaches a director.
 const SeatChangeSchema = z.object({
   seq: z.number(),
-  kind: z.enum(['join', 'leave', 'drain-only']),
+  kind: z.enum(['join', 'leave', 'drain-only', 'active']),
   userId: z.string(),
   relayHostId: z.string(),
   epoch: z.number(),
@@ -109,15 +109,18 @@ function config(overrides: Partial<RelayConfig> = {}): RelayConfig {
   }
 }
 
-function hostIdentity(index: number): RelayTokenClaims {
+function hostIdentity(index: number, exp = 4_102_444_800): RelayTokenClaims {
   return {
     sub: `user-${index}`,
     prof: 'profile-1',
     relayHostId: `host${String(index).padStart(12, '0')}`,
     purpose: 'host-control',
-    exp: 4_102_444_800
+    exp
   }
 }
+
+// What a host's auth-refresh token verifies as.
+const verifyRelayToken = vi.fn<(token: string) => Promise<RelayTokenClaims | null>>()
 
 function createCell(relayConfig = config()) {
   const assignments = {
@@ -135,7 +138,7 @@ function createCell(relayConfig = config()) {
   } satisfies RelayRuntimeObserver
   const registry = new HostSessionRegistry(
     relayConfig,
-    vi.fn(),
+    verifyRelayToken,
     {} as RelayCredentialStore,
     assignments,
     new ProcessQueuedByteBudget(),
@@ -159,10 +162,10 @@ function createCell(relayConfig = config()) {
   ).activate.bind(registry)
   const connect = async (
     index: number,
-    options: { generation?: number; epoch?: number; rebind?: boolean } = {}
+    options: { generation?: number; epoch?: number; rebind?: boolean; exp?: number } = {}
   ): Promise<FakeSocket> => {
     const socket = new FakeSocket()
-    const identity = hostIdentity(index)
+    const identity = hostIdentity(index, options.exp)
     await activate(
       socket as unknown as WebSocket,
       identity,
@@ -259,6 +262,27 @@ describe('cell seat feed', () => {
     })
     // The second connect landed after the drain, so the cell refused it: no join.
     expect(body.seq).toBe(seq + 2)
+  })
+
+  it('reports an auth expiry as drain-only and the refresh that clears it as active', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { connect, read } = createCell()
+    const exp = Math.floor(Date.now() / 1000) + 5
+    const socket = await connect(1, { exp })
+    const { seq } = await read()
+    // The 15 s heartbeat finds the token expired, inside its grace.
+    await vi.advanceTimersByTimeAsync(15_000)
+    verifyRelayToken.mockResolvedValueOnce(hostIdentity(1, exp + 3_600))
+    socket.emit(
+      'message',
+      Buffer.from(JSON.stringify({ type: 'auth-refresh', relayJwt: 'refreshed' })),
+      false
+    )
+    await vi.waitFor(() => expect(verifyRelayToken).toHaveBeenCalled())
+    const body = await read(`${incarnation}:${seq}`)
+    expect(body.changes?.map((change) => change.kind)).toEqual(['drain-only', 'active'])
+    expect(body.counts.seats).toBe(1)
+    expect((await read()).full).toEqual([expect.objectContaining({ state: 'active' })])
   })
 
   it('does not report a rebind as a leave, and joins the rebound socket', async () => {

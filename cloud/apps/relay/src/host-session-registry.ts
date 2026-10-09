@@ -29,7 +29,7 @@ import type WebSocket from 'ws'
 import type { RawData } from 'ws'
 import type { RelayConfig } from './config.js'
 import type { RelayAssignmentStore } from './assignment-store.js'
-import { CellSeatLog, type CellSeatFeedPage } from './cell-seat-log.js'
+import { CellSeatLog, type CellSeatChange, type CellSeatFeedPage } from './cell-seat-log.js'
 import { ControlRenewalBatch } from './control-renewal-batch.js'
 import { RelayCredentialStore, type CredentialReservation } from './credential-store.js'
 import { HostCloseReasonMemory } from './host-close-reason-memory.js'
@@ -1304,7 +1304,7 @@ export class HostSessionRegistry {
 
   private appendSeatChange(
     session: HostSession,
-    kind: 'join' | 'leave' | 'drain-only',
+    kind: CellSeatChange['kind'],
     closeCode?: number
   ): void {
     this.seatLog.append({
@@ -1326,6 +1326,13 @@ export class HostSessionRegistry {
     const changed = session.state !== 'drain-only'
     session.state = 'drain-only'
     if (changed && session.socket) this.appendSeatChange(session, 'drain-only')
+  }
+
+  // A refreshed token lifts an auth-expiry drain-only; a regional drain is never lifted here.
+  private markSeatActive(session: HostSession): void {
+    const changed = session.state !== 'active'
+    session.state = 'active'
+    if (changed && session.socket) this.appendSeatChange(session, 'active')
   }
 
   private wireActiveControl(session: HostSession): void {
@@ -1437,7 +1444,7 @@ export class HostSessionRegistry {
       return
     }
     session.identity = refreshed
-    if (!session.regionalDrainAttemptId) session.state = 'active'
+    if (!session.regionalDrainAttemptId) this.markSeatActive(session)
   }
 
   private heartbeat(session: HostSession): void {
@@ -1559,7 +1566,7 @@ export class HostSessionRegistry {
       session.socket.close(RELAY_CLOSE_CODE.BAD_OUTER_CREDENTIAL, 'relay authorization expired')
       return
     }
-    if (now > expiresAt) session.state = 'drain-only'
+    if (now > expiresAt) this.markSeatDrainOnly(session)
     if (now > session.leaseExpiresAt) {
       send(session.socket, 'drain', { graceMs: 0, recovery: 'resolve-director' })
       session.socket.close(RELAY_CLOSE_CODE.DRAINING, 'control lease expired')

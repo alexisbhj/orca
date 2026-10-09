@@ -11,7 +11,8 @@ export type CellSeatState = 'active' | 'drain-only'
 
 export type CellSeatChange = {
   seq: number
-  kind: 'join' | 'leave' | 'drain-only'
+  // `active` lifts a drain-only the host cleared itself (a refreshed token after it expired).
+  kind: 'join' | 'leave' | 'drain-only' | 'active'
   userId: string
   relayHostId: string
   epoch: number
@@ -92,7 +93,7 @@ export class CellSeatLog {
     } else if (change.kind === 'leave') {
       this.seats.delete(key)
     } else if (seat) {
-      seat.state = 'drain-only'
+      seat.state = change.kind === 'active' ? 'active' : 'drain-only'
     }
   }
 }
