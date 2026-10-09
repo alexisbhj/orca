@@ -100,7 +100,7 @@ export class AgentLaunchStructuredSessionRefusedError extends Error {
 
 /** Creating the workspace, when the intent asks for one. Injected so orchestration keeps recording
  *  its own worktree stages and residual-resource effects around the same call. */
-export type AgentLaunchWorktreeFactory = {
+export type AgentLaunchWorkspaceFactory = {
   createWorktree(args: {
     create: Readonly<Record<string, unknown>>
     /** Set only when the settled mode is a terminal agent: agent-first creation sequences the
@@ -123,8 +123,9 @@ export type AgentLaunchWorktreeFactory = {
     options?: Readonly<Record<string, unknown>>
   }): Promise<{
     worktreeId: string
-    /** The new workspace's SSH connection; `null` is local. Decides what its agent tab can show. */
-    connectionId: string | null
+    /** The new workspace's SSH connection; `null` is local. The executor carries it but nothing
+     *  reads it yet; absent when the factory did not resolve it. */
+    connectionId?: string | null
     startupTerminalHandle: string | undefined
     /** The pane minted with the startup terminal, when the runtime reported one. */
     startupTerminalPaneKey?: string
@@ -133,11 +134,9 @@ export type AgentLaunchWorktreeFactory = {
     /** Reported by the create that built the startup command's typed line. */
     promptRodeLaunchCommand?: boolean
   }>
-}
-
-export type AgentLaunchWorkspaceFactory = AgentLaunchWorktreeFactory & {
-  /** A folder workspace has no startup terminal: the launch starts its agent there afterwards. */
-  createFolderWorkspace(args: {
+  /** A folder workspace has no startup terminal: the launch starts its agent there afterwards.
+   *  Only `agent.launch` creates folders; callers that only create worktrees omit it. */
+  createFolderWorkspace?(args: {
     create: Readonly<Record<string, unknown>>
   }): Promise<{ worktreeId: string; connectionId: string | null }>
 }

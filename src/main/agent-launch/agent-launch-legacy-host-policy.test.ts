@@ -138,10 +138,8 @@ describe('the legacy-host prompt policy', () => {
       workspaces: factory,
       surfaces
     })
-    // Every other launch may be asked for a folder workspace, so its factory must create one too.
-    const anyWorkspace = { ...factory, createFolderWorkspace: vi.fn() }
     // @ts-expect-error every other launch builds its own surface, so it must bring the factory
-    accepts({ runtime, intent, workspaces: anyWorkspace })
-    expect(accepts({ runtime, intent, surfaces, workspaces: anyWorkspace }).surfaces).toBe(surfaces)
+    accepts({ runtime, intent, workspaces: factory })
+    expect(accepts({ runtime, intent, surfaces, workspaces: factory }).surfaces).toBe(surfaces)
   })
 })

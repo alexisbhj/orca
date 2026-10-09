@@ -28,6 +28,8 @@ function harness(options: {
   /** Whether the surface reports that its typed line took the offered prompt. */
   lineCarriesPrompt?: boolean
   onSurfacePublished?: AgentLaunchExecution['onSurfacePublished']
+  /** A worktree-only factory, as orchestration workers and `worktree.create` pass. */
+  worktreeOnlyFactory?: boolean
 }) {
   const calls: string[] = []
   const carried = (startupPrompt: string | undefined) =>
@@ -101,7 +103,9 @@ function harness(options: {
           deliverStructuredPrompt,
           deliverTerminalPrompt
         },
-        workspaces: { createWorktree, createFolderWorkspace },
+        workspaces: options.worktreeOnlyFactory
+          ? { createWorktree }
+          : { createWorktree, createFolderWorkspace },
         ...(options.onSurfacePublished ? { onSurfacePublished: options.onSurfacePublished } : {})
       })
   }
@@ -247,6 +251,17 @@ describe('a structured launch that creates its own worktree', () => {
 
     expect(h.calls).toEqual(['createFolderWorkspace', 'createTerminalAgent'])
     expect(result).toMatchObject({ worktreeId: 'folder:fw-new', outcome: { kind: 'terminal' } })
+  })
+
+  it('refuses a folder create from a factory that cannot make one, before anything is created', async () => {
+    const h = harness({ worktreeOnlyFactory: true })
+    await expect(
+      h.run({
+        agent: 'claude',
+        target: { kind: 'create-folder-workspace', create: { projectGroupId: 'group-1' } }
+      })
+    ).rejects.toThrow('agent_launch_workspace_factory_required')
+    expect(h.calls).toEqual([])
   })
 
   it('strips a stale startupAgent out of a migrated create payload', async () => {
