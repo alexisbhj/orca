@@ -13,17 +13,17 @@ import {
 /** Mounted rows own their height; only unloaded gaps use cached measurements. */
 export function NativeChatTranscriptItems({
   slots,
-  loadedRowKeys,
+  loadedMessageIds,
   context,
   window
 }: {
   slots: readonly NativeChatTranscriptSlot[]
-  loadedRowKeys: ReadonlySet<string>
+  loadedMessageIds: ReadonlySet<string>
   context: NativeChatTranscriptRowContext
   window: NativeChatTranscriptWindow
 }): React.JSX.Element {
   const rowKeys = useMemo(() => slots.map(nativeChatSlotKey), [slots])
-  const replyReveals = useNativeChatReplyReveals(rowKeys, loadedRowKeys)
+  const replyReveals = useNativeChatReplyReveals(rowKeys, loadedMessageIds)
   return (
     <NativeChatReplyRevealsContext.Provider value={replyReveals}>
       <div ref={window.sizerRef} data-native-chat-window className="relative w-full">

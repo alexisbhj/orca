@@ -35,7 +35,6 @@ import {
 import { useNativeChatTranscriptSlots } from './use-native-chat-transcript-slots'
 import { useNativeChatTranscriptWindow } from './use-native-chat-transcript-window'
 import { useNativeChatSubagentSections } from './use-native-chat-subagent-sections'
-import { nativeChatLoadedRowKeys } from './native-chat-transcript-row-inventory'
 import { toggleNativeChatExpandedKey } from './native-chat-expanded-keys'
 import { useNativeChatTurnMembership } from './use-native-chat-turn-membership'
 import { useNativeChatTranscriptScroll } from './use-native-chat-transcript-scroll'
@@ -158,8 +157,9 @@ export function NativeChatMessageList({
     subagentDisclosure,
     openSubagentSections
   } = useNativeChatSubagentSections(messages, subagentRows, subagentRoster)
-  const loadedRowKeys = useMemo(
-    () => nativeChatLoadedRowKeys(messages, subagentSections),
+  // Folded subagent rows stay loaded, so a reopened reply keeps its reveal.
+  const loadedMessageIds = useMemo(
+    () => new Set([...messages.map(({ id }) => id), ...subagentSections.pathOf.keys()]),
     [messages, subagentSections]
   )
   const taskListPredecessors = useMemo(() => nativeChatTaskListPredecessors(messages), [messages])
@@ -394,7 +394,7 @@ export function NativeChatMessageList({
               >
                 <NativeChatTranscriptItems
                   slots={slots}
-                  loadedRowKeys={loadedRowKeys}
+                  loadedMessageIds={loadedMessageIds}
                   context={rowContext}
                   window={transcriptWindow}
                 />

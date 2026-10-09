@@ -52,7 +52,7 @@ export function CommentMarkdownDocumentPre({
       {children}
     </pre>
   )
-  return (keepSource || renderMermaid) &&
+  return keepSource &&
     isMermaidPre(children) &&
     React.isValidElement<{ children?: React.ReactNode }>(child)
     ? renderMermaidFence(child.props.children, diagramClassName, code, renderMermaid)

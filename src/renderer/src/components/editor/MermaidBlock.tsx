@@ -64,15 +64,11 @@ export default function MermaidBlock({
   const id = useId().replace(/:/g, '_')
   const [rendered, setRendered] = useState<{
     content: string
-    isDark: boolean
-    htmlLabels: boolean
     result: { svg: string } | { error: string }
   } | null>(null)
+  // Why: new source waits as source, but a theme change keeps the old diagram until it re-renders.
   const result =
-    pendingContent !== undefined &&
-    (rendered?.content !== content ||
-      rendered.isDark !== isDark ||
-      rendered.htmlLabels !== htmlLabels)
+    pendingContent !== undefined && rendered?.content !== content
       ? null
       : (rendered?.result ?? null)
 
@@ -101,8 +97,6 @@ export default function MermaidBlock({
           // behaviour changes or a mermaid version ships without sanitization.
           setRendered({
             content,
-            isDark,
-            htmlLabels,
             result: { svg: DOMPurify.sanitize(svg, { USE_PROFILES: { svg: true } }) }
           })
         }
@@ -110,8 +104,6 @@ export default function MermaidBlock({
         if (!cancelled) {
           setRendered({
             content,
-            isDark,
-            htmlLabels,
             result: { error: err instanceof Error ? err.message : 'Invalid mermaid syntax' }
           })
           // Mermaid leaves an error element in the DOM on failure — clean it up.

@@ -19,21 +19,22 @@ export const NativeChatReplyRevealsContext = createContext<NativeChatReplyReveal
 /** This transcript's reveals, for the rows it has now. The same object every render. */
 export function useNativeChatReplyReveals(
   rowKeys: readonly string[],
-  loadedRowKeys: ReadonlySet<string>
+  loadedMessageIds: ReadonlySet<string>
 ): NativeChatReplyReveals {
   const [state] = useState<{
     reveals: NativeChatReplyReveals
     rowKeys: readonly string[]
-    loadedRowKeys: ReadonlySet<string> | null
+    loadedMessageIds: ReadonlySet<string> | null
     known: Set<string>
   }>(() => ({
     reveals: { begun: new Set(), drawn: new Map() },
     rowKeys: [],
-    loadedRowKeys: null,
+    loadedMessageIds: null,
     known: new Set()
   }))
-  // In render, so a row's first draw already knows. Once per change of rows, so it is idempotent.
-  if (state.rowKeys !== rowKeys || state.loadedRowKeys !== loadedRowKeys) {
+  // In render, so a row's first draw already knows. Once per change of rows or loaded messages,
+  // so it is idempotent.
+  if (state.rowKeys !== rowKeys || state.loadedMessageIds !== loadedMessageIds) {
     const present = new Set(rowKeys)
     const lastKey = rowKeys.at(-1)
     const { begun, drawn } = state.reveals
@@ -44,12 +45,14 @@ export function useNativeChatReplyReveals(
         drawn.delete(key)
       }
     }
+    // Known while loaded, so a row that leaves and returns (a section closed and reopened) is not
+    // taken for a reply beginning.
     if (lastKey !== undefined && !state.known.has(lastKey) && state.known.size > 0) {
       begun.add(lastKey)
     }
-    // Folded replies remain loaded; retired replies no longer need to be remembered.
+    // Only message rows reveal, and only loaded ones can return, so nothing else is kept.
     for (const key of state.known) {
-      if (!loadedRowKeys.has(key)) {
+      if (!loadedMessageIds.has(key)) {
         state.known.delete(key)
       }
     }
@@ -57,7 +60,7 @@ export function useNativeChatReplyReveals(
       state.known.add(key)
     }
     state.rowKeys = rowKeys
-    state.loadedRowKeys = loadedRowKeys
+    state.loadedMessageIds = loadedMessageIds
   }
   return state.reveals
 }
