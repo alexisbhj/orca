@@ -105,12 +105,13 @@ async function stillRunning(
 }
 
 /** Terminates each terminal, then confirms against the thread's own list. Resolves with how many
- *  are gone; throws when one still runs, or a request failed, after trying every other. */
+ *  are gone and whether the list shows one still running; throws when a request failed with no
+ *  survivor listed, after trying every other, since the effect is then unknown. */
 export async function terminateCodexBackgroundTerminals(
   rpc: CodexTerminalRpc,
   terminals: readonly CodexBackgroundTerminal[],
   options: { timeoutMs: number | undefined; isCurrent: () => boolean }
-): Promise<{ stopped: number }> {
+): Promise<{ stopped: number; survived: boolean }> {
   const timeoutMs = boundedTimeout(options.timeoutMs)
   let failure: { error: unknown } | undefined
   // An app-server that is not answering would make every later request wait out its own deadline.
@@ -120,6 +121,7 @@ export async function terminateCodexBackgroundTerminals(
   }
   const unconfirmed = new Map<string, Set<string>>()
   let stopped = 0
+  let survived = false
   let timedOut = false
   for (const { threadId, processId } of terminals) {
     if (timedOut || !options.isCurrent()) {
@@ -150,7 +152,7 @@ export async function terminateCodexBackgroundTerminals(
       const running = await stillRunning(rpc, threadId, timeoutMs)
       for (const processId of processIds) {
         if (running.has(processId)) {
-          fail(new Error(`codex background terminal ${processId} still runs after its stop`))
+          survived = true
         } else {
           stopped += 1
         }
@@ -163,10 +165,10 @@ export async function terminateCodexBackgroundTerminals(
       }
     }
   }
-  if (failure) {
+  if (failure && !survived) {
     throw failure.error
   }
-  return { stopped }
+  return { stopped, survived }
 }
 
 /** A backgrounded command stops through its app-server's background terminals, once that
@@ -216,14 +218,14 @@ export async function stopCodexBackgroundCommands(
   sessions: Map<string, CodexSession>,
   input: { sessionId: string; fence: number; taskIds: readonly string[] },
   timeoutMs: number | undefined
-): Promise<{ cancelled: boolean }> {
+): Promise<{ cancelled: boolean; stillRunning?: true }> {
   const session = requireLiveCodexSession(sessions, input.sessionId)
   const terminals = session.backgroundTasks.backgroundProcesses(input.taskIds)
   if (terminals.length === 0) {
     return { cancelled: false }
   }
   const { acquisitionGeneration } = session
-  const { stopped } = await terminateCodexBackgroundTerminals(session.connection, terminals, {
+  const { stopped, survived } = await terminateCodexBackgroundTerminals(session.connection, terminals, {
     timeoutMs,
     isCurrent: () =>
       sessions.get(input.sessionId) === session &&
@@ -231,5 +233,5 @@ export async function stopCodexBackgroundCommands(
       session.fence === input.fence &&
       session.acquisitionGeneration === acquisitionGeneration
   })
-  return { cancelled: stopped > 0 }
+  return { cancelled: stopped > 0, ...(survived ? { stillRunning: true as const } : {}) }
 }

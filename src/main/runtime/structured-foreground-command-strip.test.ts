@@ -223,4 +223,27 @@ describe('foreground commands in the background-task channel', () => {
       children: [{ providerId: 'codex-command:primary:server', stoppable: true }]
     })
   })
+
+  it('answers a Stop that lost contact with Codex as unconfirmed, and keeps the row stoppable', async () => {
+    const { host, rosters, turn, command, fence } = await rig({
+      'thread/backgroundTerminals/list': () => ({
+        data: [{ processId: '4242' }],
+        nextCursor: null
+      }),
+      'thread/backgroundTerminals/terminate': () => {
+        throw new Error('codex app-server connection closed')
+      }
+    })
+    await turn('turn/started', 'turn-1')
+    await command('item/started', 'server', 'turn-1', '4242')
+    await turn('turn/completed', 'turn-1')
+
+    await expect(stopFromStrip(host, fence, '4')).resolves.toMatchObject({
+      ok: false,
+      refusal: { code: 'agent_session_operation_unknown' }
+    })
+    expect(rosters.at(-1)).toMatchObject({
+      children: [{ providerId: 'codex-command:primary:server', stoppable: true }]
+    })
+  })
 })

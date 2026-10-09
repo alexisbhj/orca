@@ -268,13 +268,13 @@ describe('performCancel', () => {
     expect(journal.snapshot().items).toEqual([])
   })
 
-  it('refuses a background Stop the agent could not carry out, so the person hears it failed', async () => {
+  async function backgroundStopWith(
+    stopBackgroundTasks: StructuredAgentSessionAdapter['stopBackgroundTasks'],
+    operation: string
+  ) {
     root = await mkdtemp(join(tmpdir(), 'orca-background-task-failed-cancel-'))
     const journal = await journals.open({ identity: IDENTITY, stateDirectory: root })
     const cancelTurn = vi.fn(async () => ({ cancelled: true }))
-    const stopBackgroundTasks = vi.fn(async () => {
-      throw new Error('codex background terminal 71831 still runs after its stop')
-    })
     const ctx: AgentSessionTurnContext = {
       logger: createStructuredAgentSessionLogger(),
       sessionId: 'session-1',
@@ -288,22 +288,44 @@ describe('performCancel', () => {
       publish: vi.fn(),
       now: () => 1
     }
-
     const result = await performCancel(ctx, {
-      clientOperationId: 'cancel-background-task-failed',
+      clientOperationId: operation,
       turnId: 'background-tasks',
       scope: 'background-tasks',
       taskId: 'task-1',
       childWork: () => [liveTask('task-1')]
     })
+    expect(cancelTurn).not.toHaveBeenCalled()
+    expect(journal.snapshot().items).toEqual([])
+    return result
+  }
+
+  it('refuses a background Stop the agent shows still running, so the person hears it failed', async () => {
+    const result = await backgroundStopWith(
+      async () => ({ cancelled: false, stillRunning: true }),
+      'cancel-background-task-survived'
+    )
 
     expect(result).toMatchObject({
       ok: false,
       refusal: { code: 'agent_session_operation_invalid' }
     })
     expect(result.ok ? undefined : result.refusal.details).toBeUndefined()
-    expect(cancelTurn).not.toHaveBeenCalled()
-    expect(journal.snapshot().items).toEqual([])
+  })
+
+  it.each([
+    ['timed out', 'codex app-server request timed out'],
+    ['lost the agent', 'codex app-server connection closed']
+  ])('answers a background Stop that %s as unconfirmed, never not stopped', async (_, message) => {
+    const result = await backgroundStopWith(async () => {
+      throw new Error(message)
+    }, 'cancel-background-task-unconfirmed')
+
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: { code: 'agent_session_operation_unknown' }
+    })
+    expect(result.ok ? undefined : result.refusal.details).toBeUndefined()
   })
 })
 

@@ -312,10 +312,10 @@ describe('terminateCodexBackgroundTerminals', () => {
         [{ threadId: THREAD_ID, processId: PROCESS_ID }],
         always
       )
-    ).resolves.toEqual({ stopped: 1 })
+    ).resolves.toEqual({ stopped: 1, survived: false })
   })
 
-  it('fails a stop the list shows survived, after trying the others', async () => {
+  it('answers a survivor the list shows, after trying the others', async () => {
     const { rpc, calls } = fakeRpc({
       'thread/backgroundTerminals/terminate': () => ({ terminated: true }),
       'thread/backgroundTerminals/list': () => ({
@@ -332,7 +332,7 @@ describe('terminateCodexBackgroundTerminals', () => {
         ],
         always
       )
-    ).rejects.toThrow(`codex background terminal ${PROCESS_ID} still runs after its stop`)
+    ).resolves.toEqual({ stopped: 1, survived: true })
     expect(
       calls.filter((call) => call.method === 'thread/backgroundTerminals/terminate')
     ).toHaveLength(2)
@@ -352,7 +352,29 @@ describe('terminateCodexBackgroundTerminals', () => {
         [{ threadId: THREAD_ID, processId: PROCESS_ID }],
         always
       )
-    ).rejects.toThrow('still runs after its stop')
+    ).resolves.toEqual({ stopped: 0, survived: true })
+  })
+
+  it('answers a listed survivor even when another request timed out', async () => {
+    const { rpc } = fakeRpc({
+      'thread/backgroundTerminals/terminate': () => ({ terminated: true }),
+      'thread/backgroundTerminals/list': (params) => {
+        if (params?.threadId === 'thread-2') {
+          throw new CodexAppServerTimeoutError('codex app-server timed out')
+        }
+        return { data: [{ processId: PROCESS_ID }], nextCursor: null }
+      }
+    })
+    await expect(
+      terminateCodexBackgroundTerminals(
+        rpc,
+        [
+          { threadId: THREAD_ID, processId: PROCESS_ID },
+          { threadId: 'thread-2', processId: '71832' }
+        ],
+        always
+      )
+    ).resolves.toEqual({ stopped: 0, survived: true })
   })
 
   it('counts a thread Codex unloaded as stopped', async () => {
@@ -367,7 +389,7 @@ describe('terminateCodexBackgroundTerminals', () => {
         [{ threadId: THREAD_ID, processId: PROCESS_ID }],
         always
       )
-    ).resolves.toEqual({ stopped: 1 })
+    ).resolves.toEqual({ stopped: 1, survived: false })
   })
 
   it('never counts a dropped connection as stopped', async () => {
