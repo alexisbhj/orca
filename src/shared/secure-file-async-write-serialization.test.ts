@@ -33,7 +33,7 @@ vi.mock('node:fs/promises', async () => {
   }
 })
 
-import { pendingPathWriteCountForTests } from './path-write-serializer'
+import { pendingPathWriteCountForTests, serializePathWrite } from './path-write-serializer'
 import { writeSecureFileAsync } from './secure-file-async-write'
 
 const directories: string[] = []
@@ -120,7 +120,6 @@ it('releases a failed writer so the next write can publish', async () => {
   const directory = freshDirectory('orca-secure-async-recover-')
   const target = join(directory, 'secret.json')
   const before = pendingPathWriteCountForTests()
-  const { serializePathWrite } = await import('./path-write-serializer')
   const failed = serializePathWrite(target, async () => {
     throw new Error('write failed')
   })
