@@ -14,7 +14,7 @@ import {
   mapTerminalFilePath,
   terminalLinkWslDistro,
   terminalPathWslDistro
-} from './terminal-file-open-routing'
+} from './terminal-file-path-mapping'
 import type { createTerminalPathExistenceBatch } from './terminal-path-existence-batch'
 import {
   getTerminalPathExistsCacheKey,
