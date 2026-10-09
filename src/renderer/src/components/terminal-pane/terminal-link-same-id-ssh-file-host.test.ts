@@ -22,7 +22,7 @@ vi.mock('@/lib/worktree-activation', () => ({
 }))
 
 import { buildFileLinkActions } from './terminal-file-link-actions'
-import { openDetectedFilePath } from './terminal-file-open-routing'
+import { getTerminalFileContext, openDetectedFilePath } from './terminal-file-open-routing'
 
 const id = 'repo::/home/u/proj'
 const deps = { worktreeId: id, worktreePath: '/home/u/proj', runtimeEnvironmentId: null }
@@ -117,6 +117,36 @@ describe('same-id SSH terminal file links', () => {
     expect(actions.alternate).toBeUndefined()
     expect(actions.secondaryActions).toBeUndefined()
 
+    openDetectedFilePath('/tmp/desktop-root', null, null, {
+      ...deps,
+      openWithSystemDefault: true,
+      onOpenFailure
+    })
+    await settle()
+
+    expect(mocks.stat).not.toHaveBeenCalled()
+    expect(mocks.openFilePath).not.toHaveBeenCalled()
+    expect(onOpenFailure).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'unverifiable' }))
+  })
+
+  it('keeps a registered-vs-detected owner conflict unresolved instead of local', async () => {
+    // Registered catalog says local, detected catalog says SSH; a different workspace is active.
+    mocks.state.value = {
+      ...sameIdState('local'),
+      activeWorktreeId: 'other',
+      worktreesByRepo: {
+        repo: [{ id, repoId: 'repo', path: '/home/u/proj', hostId: 'local' }]
+      },
+      detectedWorktreesByRepo: {
+        repo: { worktrees: [{ id, repoId: 'repo', path: '/home/u/proj', hostId: 'ssh:box' }] }
+      }
+    }
+    // Precondition: the connection lookup alone would read this as local.
+    expect(getConnectionId(id)).toBeNull()
+    expect(getTerminalFileContext(id, '/home/u/proj', null).sourceHostResolved).toBe(false)
+
+    const onOpenFailure = vi.fn()
+    openDetectedFilePath('/tmp/desktop-root', null, null, { ...deps, onOpenFailure })
     openDetectedFilePath('/tmp/desktop-root', null, null, {
       ...deps,
       openWithSystemDefault: true,

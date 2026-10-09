@@ -1,5 +1,6 @@
 import { useAppStore } from '@/store'
 import { getConnectionId } from '@/lib/connection-context'
+import { resolveWorktreeOperationRouteResult } from '@/lib/worktree-operation-route'
 import { buildWorkspaceFileContext } from '@/lib/workspace-file-host-routing'
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
@@ -19,10 +20,18 @@ export function getTerminalFileContext(
   runtimeEnvironmentId?: string | null
 ): TerminalFileContext {
   const context = buildWorkspaceFileContext(worktreeId, worktreePath, runtimeEnvironmentId)
-  const sourceHost = terminalFileSourceHost(useAppStore.getState(), context)
+  const state = useAppStore.getState()
+  const sourceHost = terminalFileSourceHost(state, context)
   if (!sourceHost) {
-    // Why: `null` is a positive local answer; only `undefined` means the owner is unknown.
-    return { ...context, sourceHostResolved: getConnectionId(worktreeId || null) === null }
+    // Why: the connection lookup ignores detected rows, so its local `null` must not override an
+    // owner the full resolver found ambiguous; only a missing route may defer to it.
+    const ambiguous =
+      Boolean(worktreeId) &&
+      resolveWorktreeOperationRouteResult(state, worktreeId).kind === 'ambiguous'
+    return {
+      ...context,
+      sourceHostResolved: !ambiguous && getConnectionId(worktreeId || null) === null
+    }
   }
   // Why: same-id rows on several hosts leave connectionId unset, which reads downstream as local;
   // the resolved owner names the direct SSH host. A paired runtime keeps its own transport.
