@@ -24,6 +24,7 @@ function measureAnchorPosition(anchor: HTMLElement): AnchorPosition {
 /** Portals above the usage meters without taking focus or obscuring their menus. */
 export function StatusBarUsageChangeNoticeCard({
   children,
+  noticeKey,
   eligible,
   dismiss,
   title,
@@ -31,30 +32,31 @@ export function StatusBarUsageChangeNoticeCard({
   action
 }: {
   children: ReactNode
+  noticeKey: string
   eligible: boolean
   dismiss: () => void
   title: string
   description: ReactNode
   action?: { label: string; onClick: () => void }
 }): React.JSX.Element {
-  const [delayElapsed, setDelayElapsed] = useState(false)
+  const [elapsedNoticeKey, setElapsedNoticeKey] = useState<string | null>(null)
   const anchorRef = useRef<HTMLDivElement>(null)
   const [anchorPosition, setAnchorPosition] = useState<AnchorPosition | null>(null)
 
   useEffect(() => {
+    setElapsedNoticeKey(null)
     if (!eligible) {
-      setDelayElapsed(false)
       return
     }
     const timer = window.setTimeout(() => {
-      setDelayElapsed(true)
+      setElapsedNoticeKey(noticeKey)
     }, SHOW_DELAY_MS)
     return () => {
       window.clearTimeout(timer)
     }
-  }, [eligible])
+  }, [eligible, noticeKey])
 
-  const open = eligible && delayElapsed
+  const open = eligible && elapsedNoticeKey === noticeKey
 
   useLayoutEffect(() => {
     if (!open) {

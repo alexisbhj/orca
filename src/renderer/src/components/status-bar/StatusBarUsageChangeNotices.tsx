@@ -24,6 +24,7 @@ export function StatusBarUsageChangeNotices({
   const notice =
     !dismissed && mode === 'compact'
       ? {
+          noticeKey: 'compact',
           eligible: ready && visible && hasVisibleUsageMeters && modal === 'none',
           dismiss,
           title: translate(

@@ -34,6 +34,7 @@ export function useUsagePercentageDisplayChangeNotice(
   })
 
   return {
+    noticeKey: 'percentage',
     eligible,
     dismiss,
     title: translate(

@@ -196,4 +196,56 @@ describe('status bar usage change notices', () => {
     expect(document.querySelectorAll('[role="status"]')).toHaveLength(1)
     expect(document.body.textContent).not.toContain('Usage now shows % used')
   })
+
+  it.each([{ statusBarCompactChangeNoticeDismissed: true }, { statusBarUsageMode: 'verbose' }])(
+    'restarts the percentage notice delay after %o without remounting the menu',
+    (updates) => {
+      state.usagePercentageDisplayChangeNoticeDismissed = false
+      const menu = (
+        <DropdownMenu defaultOpen modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button>Usage</button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <button>Choose mode</button>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )
+      render(true, menu)
+      settle()
+      const trigger = container.querySelector('button')
+      const content = document.querySelector('[role="menu"]')
+      const selector = content?.querySelector('button')
+      expect(selector).toBeTruthy()
+      selector?.focus()
+
+      Object.assign(state, updates)
+      render(true, menu)
+      expect(document.querySelector('[role="status"]')).toBeNull()
+      act(() => vi.advanceTimersByTime(1_799))
+      render(true, menu)
+      expect(document.querySelector('[role="status"]')).toBeNull()
+      act(() => vi.advanceTimersByTime(1))
+      expect(document.querySelector('[role="status"]')?.textContent).toContain(
+        'Usage now shows % used'
+      )
+      expect(container.querySelector('button')).toBe(trigger)
+      expect(document.querySelector('[role="menu"]')).toBe(content)
+      expect(document.activeElement).toBe(selector)
+    }
+  )
+
+  it('cancels the pending Compact timer when switching to the percentage notice', () => {
+    state.usagePercentageDisplayChangeNoticeDismissed = false
+    render()
+    act(() => vi.advanceTimersByTime(900))
+    state.statusBarUsageMode = 'verbose'
+    render()
+    act(() => vi.advanceTimersByTime(900))
+    expect(document.querySelector('[role="status"]')).toBeNull()
+    act(() => vi.advanceTimersByTime(900))
+    expect(document.querySelector('[role="status"]')?.textContent).toContain(
+      'Usage now shows % used'
+    )
+  })
 })
