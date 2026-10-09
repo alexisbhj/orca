@@ -208,6 +208,25 @@ describe('startShadowSeatPoller', () => {
     expect(directory.cellState('cell-a')).toMatchObject({ lastFailure: 'cursor_gap' })
   })
 
+  it('checks the map against the cell seat count, with controls only as a cross-check', () => {
+    const directory = new ShadowSeatDirectory()
+    directory.setCells(['cell-a', 'cell-b'])
+    directory.apply(
+      'cell-a',
+      feed({ seq: 1, counts: { seats: 2, controls: 1 }, full: [seat('host-1'), seat('host-2')] }),
+      10
+    )
+    directory.apply(
+      'cell-b',
+      feed({ cellId: 'cell-b', seq: 1, counts: { seats: 3, controls: 3 }, full: [seat('host-3')] }),
+      10
+    )
+    expect(directory.summary(10)).toMatchObject({
+      seatsMismatchedCells: 1,
+      controlsBelowMapCells: 1
+    })
+  })
+
   it('ignores a leave for an older generation than the seat', () => {
     const directory = new ShadowSeatDirectory()
     directory.setCells(['cell-a'])

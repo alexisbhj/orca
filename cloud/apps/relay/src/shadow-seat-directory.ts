@@ -54,7 +54,15 @@ const SeatFeedSchema = z.object({
   seq: z.number().int().nonnegative(),
   at: z.number(),
   draining: z.boolean().optional(),
-  counts: z.object({ controls: z.number().int().nonnegative() }).partial().optional(),
+  counts: z
+    .object({
+      // Seats in the cell's own log, under the same generation rule: equals the map exactly.
+      seats: z.number().int().nonnegative(),
+      // Drops at the start of a close handshake, up to ~30 s before the leave lands.
+      controls: z.number().int().nonnegative()
+    })
+    .partial()
+    .optional(),
   flagsApplied: z
     .object({ generation: z.union([z.string(), z.number()]), flags: z.record(z.unknown()) })
     .optional(),
@@ -105,6 +113,7 @@ export type SeatFeedCellState = {
   lastLiveAt?: number
   lastFailure?: string
   draining?: boolean
+  reportedSeats?: number
   reportedControls?: number
   flagsApplied?: SeatFeedResponse['flagsApplied']
 }
@@ -177,6 +186,7 @@ export class ShadowSeatDirectory {
     cursor.lastLiveAt = now
     cursor.lastFailure = undefined
     cursor.draining = response.draining
+    cursor.reportedSeats = response.counts?.seats
     cursor.reportedControls = response.counts?.controls
     cursor.flagsApplied = response.flagsApplied
   }
@@ -233,14 +243,20 @@ export class ShadowSeatDirectory {
       'no-feed': 0
     }
     let seats = 0
-    let controlsMismatchedCells = 0
+    let seatsMismatchedCells = 0
+    let controlsBelowMapCells = 0
     let oldestLiveAgeMs = 0
     for (const cursor of this.cells.values()) {
       statuses[cursor.status] += 1
       seats += cursor.seats.size
       if (cursor.status === 'live') {
-        const reported = cursor.reportedControls
-        if (reported !== undefined && reported !== cursor.seats.size) controlsMismatchedCells += 1
+        const seatCount = cursor.seats.size
+        if (cursor.reportedSeats !== undefined && cursor.reportedSeats !== seatCount) {
+          seatsMismatchedCells += 1
+        }
+        // A cross-check only: closing sockets keep it briefly below the map.
+        const controls = cursor.reportedControls
+        if (controls !== undefined && controls < seatCount) controlsBelowMapCells += 1
         oldestLiveAgeMs = Math.max(oldestLiveAgeMs, now - (cursor.lastLiveAt ?? now))
       }
     }
@@ -250,7 +266,8 @@ export class ShadowSeatDirectory {
       seats,
       hosts: this.hosts.size,
       recentlyLeftHosts: this.recentlyLeft.size,
-      controlsMismatchedCells,
+      seatsMismatchedCells,
+      controlsBelowMapCells,
       oldestLiveAgeMs,
       complete: this.isComplete()
     }
