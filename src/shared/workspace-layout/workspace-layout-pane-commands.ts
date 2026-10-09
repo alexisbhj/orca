@@ -7,7 +7,7 @@ import {
   insertLeafBeside,
   layoutContainsLeafId,
   removeLayoutLeaf,
-  sameLayoutShape
+  samePanesIgnoringRatios
 } from './terminal-pane-tree'
 import {
   applied,
@@ -140,7 +140,7 @@ export function setPaneRatios(
   if (!tab) {
     return refuse('tab_not_found')
   }
-  if (!sameLayoutShape(tab.panes.root!, command.root)) {
+  if (!samePanesIgnoringRatios(tab.panes.root!, command.root)) {
     return refuse('pane_structure_changed')
   }
   return updateTab(model, command.workspace, {

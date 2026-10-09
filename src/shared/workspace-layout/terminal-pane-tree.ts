@@ -80,7 +80,7 @@ export function insertLeafBeside(
 }
 
 /** Same splits, directions and panes in the same places; only ratios may differ. */
-export function sameLayoutShape(
+export function samePanesIgnoringRatios(
   left: TerminalPaneLayoutNode,
   right: TerminalPaneLayoutNode
 ): boolean {
@@ -94,8 +94,8 @@ export function sameLayoutShape(
   }
   return (
     left.direction === right.direction &&
-    sameLayoutShape(left.first, right.first) &&
-    sameLayoutShape(left.second, right.second)
+    samePanesIgnoringRatios(left.first, right.first) &&
+    samePanesIgnoringRatios(left.second, right.second)
   )
 }
 

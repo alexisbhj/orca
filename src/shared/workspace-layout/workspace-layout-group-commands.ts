@@ -158,14 +158,14 @@ export function createGroup(
   )
 }
 
-function sameGroupShape(left: TabGroupLayoutNode, right: TabGroupLayoutNode): boolean {
+function sameGroupsIgnoringRatios(left: TabGroupLayoutNode, right: TabGroupLayoutNode): boolean {
   if (left.type === 'leaf' || right.type === 'leaf') {
     return left.type === 'leaf' && right.type === 'leaf' && left.groupId === right.groupId
   }
   return (
     left.direction === right.direction &&
-    sameGroupShape(left.first, right.first) &&
-    sameGroupShape(left.second, right.second)
+    sameGroupsIgnoringRatios(left.first, right.first) &&
+    sameGroupsIgnoringRatios(left.second, right.second)
   )
 }
 
@@ -175,7 +175,7 @@ export function setGroupRatios(
 ): Applied {
   const workspace = model.workspaces[command.workspace]!
   const current = groupTreeOf(workspace)
-  if (!current || !sameGroupShape(current, command.groupLayout)) {
+  if (!current || !sameGroupsIgnoringRatios(current, command.groupLayout)) {
     return refuse('group_set_changed')
   }
   return applied(
