@@ -13,23 +13,23 @@ import {
   commitStructuredAgentSessionOption,
   commitStructuredAgentSessionOptionValues,
   createStructuredAgentSessionOptionState,
+  reseedStructuredAgentSessionOptionState,
   structuredAgentSessionOptionSnapshot,
   type StructuredAgentSessionOptionState
 } from '../../../src/shared/structured-agent-session-options'
 import { structuredAgentSessionOptionPicks } from '../../../src/shared/structured-agent-session-option-picks'
 import { persistMobileStructuredOptionPicks } from './mobile-native-chat-session-option-persistence'
 import { useMobileHostModelCatalogUpgrade } from './use-mobile-host-model-catalog-upgrade'
-import {
-  forgetMobileCreatedStructuredSession,
-  mobileCreatedStructuredSession
-} from './mobile-created-structured-sessions'
+import { forgetMobileCreatedStructuredSession } from './mobile-created-structured-sessions'
 import { encodeStructuredAgentSessionOptionValue } from '../../../src/shared/structured-agent-session-option-codec'
 import {
   AGENT_CHAT_PERMISSION_MODE_OPTION_ID,
   isAgentChatPermissionMode
 } from '../../../src/shared/agent-chat-permission-mode'
-import type { MobileNativeChatPermissionPickerState } from './MobileNativeChatPermissionPicker'
-import { useMobileStructuredPermissionState } from './use-mobile-structured-permission-state'
+import {
+  useMobilePermissionPicker,
+  useMobileStructuredPermissionState
+} from './use-mobile-structured-permission-state'
 import { useMobileStructuredOptionSurface } from './use-mobile-structured-option-surface'
 import { readMobileStructuredOptions } from './mobile-structured-options-read'
 
@@ -87,13 +87,11 @@ export function useMobileStructuredAgentOptions(
     const identity = JSON.stringify([args.sessionKey, agent, sessionId])
     const sameSession = optionIdentityRef.current === identity
     optionIdentityRef.current = identity
-    const previous = optionStateRef.current
-    const seeded = createStructuredAgentSessionOptionState(agent ?? 'codex', optionCatalog)
-    // A host answer is the account's, not the fence's: keep it rather than fall back to the placeholder.
-    const next =
-      sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
-        ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
-        : seeded
+    const next = reseedStructuredAgentSessionOptionState(
+      optionStateRef.current,
+      createStructuredAgentSessionOptionState(agent ?? 'codex', optionCatalog),
+      sameSession
+    )
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null
     optionStateRef.current = next
@@ -101,19 +99,12 @@ export function useMobileStructuredAgentOptions(
     setOptionState(next)
   }, [agent, enabled, fence, optionCatalog, sessionId, args.sessionKey])
 
-  // A chat this phone created runs the listed default, as a desktop chat its own view launched does.
-  const createdHere = useMemo(
-    () => (sessionId ? mobileCreatedStructuredSession(sessionId) : undefined),
-    [sessionId]
-  )
   useMobileHostModelCatalogUpgrade({
     agent,
     client,
     sessionId,
     enabled,
     fence,
-    newLaunch: createdHere !== undefined,
-    ...(createdHere ? { worktree: createdHere.worktree } : {}),
     optionCatalog,
     activeOptionRecordRef,
     updateOptionState
@@ -300,17 +291,11 @@ export function useMobileStructuredAgentOptions(
   const { optionPickerRequest, invokeStructuredOption, optionSurface } =
     useMobileStructuredOptionSurface(optionSnapshot, optionStateRef, setStructuredOption)
 
-  const permissionPicker = useMemo<MobileNativeChatPermissionPickerState | null>(
-    () =>
-      permission
-        ? {
-            provider: agent,
-            ...permission,
-            pending: pending || optionState.pendingId !== null,
-            setMode: (mode) => setStructuredOption(AGENT_CHAT_PERMISSION_MODE_OPTION_ID, mode)
-          }
-        : null,
-    [agent, optionState.pendingId, permission, pending, setStructuredOption]
+  const permissionPicker = useMobilePermissionPicker(
+    agent,
+    permission,
+    pending || optionState.pendingId !== null,
+    setStructuredOption
   )
 
   return {

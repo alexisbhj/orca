@@ -119,6 +119,18 @@ export function createStructuredAgentSessionOptionState(
   }
 }
 
+/** A fence or session reset: a host answer is the account's, not the fence's, so the same
+ *  session keeps it rather than fall back to the placeholder. */
+export function reseedStructuredAgentSessionOptionState(
+  previous: StructuredAgentSessionOptionState,
+  seeded: StructuredAgentSessionOptionState,
+  sameSession: boolean
+): StructuredAgentSessionOptionState {
+  return sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
+    ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
+    : seeded
+}
+
 /** The host answered with no list (none saved, a failed read, or an older host): the built-in
  *  list becomes usable, still naming nothing until a host or session list does. */
 export function settleStructuredAgentSessionBuiltinCatalog(

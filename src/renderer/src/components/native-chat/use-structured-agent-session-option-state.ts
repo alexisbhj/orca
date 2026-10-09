@@ -10,6 +10,7 @@ import {
   applyStructuredAgentSessionModelCatalog,
   applyStructuredAgentSessionOptions,
   createStructuredAgentSessionOptionState,
+  reseedStructuredAgentSessionOptionState,
   type StructuredAgentSessionOptionState
 } from '../../../../shared/structured-agent-session-options'
 import type { RuntimeClientTarget } from '@/runtime/runtime-rpc-client'
@@ -123,11 +124,7 @@ export function useStructuredAgentSessionOptionState(args: {
       seedsModel: launch.seedsModel,
       ...(launch.worktree ? { worktree: launch.worktree } : {})
     })
-    // A host answer is the account's, not the fence's: keep it rather than blank the default.
-    const next =
-      sameSession && (previous.catalogSource === 'host' || previous.catalogSource === 'builtin')
-        ? { ...seeded, catalog: previous.catalog, catalogSource: previous.catalogSource }
-        : seeded
+    const next = reseedStructuredAgentSessionOptionState(previous, seeded, sameSession)
     optionMutationGeneration.current += 1
     pendingOptionRef.current = null
     optionStateRef.current = next
