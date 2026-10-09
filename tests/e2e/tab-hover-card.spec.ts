@@ -72,6 +72,42 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   await expect(card).toHaveText('Review changes')
   await orcaPage.waitForTimeout(500)
 
+  await orcaPage.mouse.move(firstBox.x + 3, firstBox.y + firstBox.height / 2)
+  await expect(card).toHaveText('Build and test the hover cards', { timeout: 150 })
+  await orcaPage.waitForTimeout(600)
+  await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)
+  await expect(card).toHaveText('Review changes', { timeout: 150 })
+
+  for (let index = 0; index < 12; index += 1) {
+    const target = index % 2 === 0 ? firstBox : secondBox
+    const title = index % 2 === 0 ? 'Build and test the hover cards' : 'Review changes'
+    await orcaPage.mouse.move(target.x + 3, target.y + target.height / 2)
+    await expect(card).toHaveText(title, { timeout: 150 })
+    await orcaPage.waitForTimeout(30)
+    await expect(card).toHaveCount(1)
+    expect(
+      await card.evaluate((element) =>
+        element
+          .getAnimations()
+          .some((animation) =>
+            animation.effect?.getKeyframes().some((frame) => frame.translate !== undefined)
+          )
+      )
+    ).toBe(true)
+  }
+
+  await first.locator('[data-tab-close-button]').hover()
+  await orcaPage.waitForTimeout(100)
+  await expect(card).toHaveText('Build and test the hover cards')
+  await expect(orcaPage.locator('[data-tab-hover-card], [data-tab-close-tooltip]')).toHaveCount(1)
+  await orcaPage.waitForTimeout(500)
+  await expect(card).toHaveText('Build and test the hover cards')
+  await expect(orcaPage.locator('[data-tab-hover-card], [data-tab-close-tooltip]')).toHaveCount(1)
+  await expect(orcaPage.locator('[data-tab-close-tooltip]')).toBeVisible()
+  await expect(card).toHaveCount(0)
+  await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)
+  await expect(card).toHaveText('Review changes')
+
   await orcaPage.emulateMedia({ reducedMotion: 'reduce' })
   await orcaPage.mouse.move(firstBox.x + 3, firstBox.y + firstBox.height / 2)
   await expect(card).toHaveText('Build and test the hover cards')

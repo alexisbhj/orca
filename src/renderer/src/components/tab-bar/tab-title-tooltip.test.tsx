@@ -27,6 +27,7 @@ vi.mock('@dnd-kit/sortable', () => ({
 }))
 
 vi.mock('@/components/ui/tooltip', () => ({
+  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children: ReactNode }) => <div data-tooltip-root>{children}</div>,
   TooltipContent: ({
     children,

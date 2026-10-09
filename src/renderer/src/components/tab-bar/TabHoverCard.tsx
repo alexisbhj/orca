@@ -1,6 +1,10 @@
-import { useContext, useRef, type ReactNode } from 'react'
+import { useCallback, useContext, useId, useRef, type ReactNode } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { TabCardPlacementContext, TAB_TOOLTIP_SKIP_DELAY_MS } from './TabStripTooltipProvider'
+import {
+  TabCardOpenContext,
+  TabCardPlacementContext,
+  TAB_TOOLTIP_SKIP_DELAY_MS
+} from './TabStripTooltipProvider'
 
 export function TabHoverCard({
   children,
@@ -15,6 +19,26 @@ export function TabHoverCard({
 }): React.JSX.Element {
   const placement = useContext(TabCardPlacementContext)
   const content = useRef<HTMLDivElement>(null)
+  const cardId = useId()
+  const openContext = useContext(TabCardOpenContext)
+  const notifyOpenChange = openContext?.onOpenChange
+
+  const setContentElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      const previous = content.current
+      if (!element && previous) {
+        notifyOpenChange?.(cardId, false)
+      }
+      if (!element && previous && placement?.current?.element === previous) {
+        const rect = previous.getBoundingClientRect()
+        placement.current.left = rect.left
+        placement.current.top = rect.top
+        placement.current.closedAt = performance.now()
+      }
+      content.current = element
+    },
+    [placement, cardId, notifyOpenChange]
+  )
 
   const handlePlaced = (): void => {
     const element = content.current
@@ -46,8 +70,14 @@ export function TabHoverCard({
 
   return (
     <Tooltip
+      delayDuration={openContext?.isWarm ? 0 : undefined}
       onOpenChange={(open) => {
-        if (!open && placement?.current?.element === content.current) {
+        openContext?.onOpenChange(cardId, open)
+        if (
+          !open &&
+          content.current?.isConnected &&
+          placement?.current?.element === content.current
+        ) {
           const rect = content.current?.getBoundingClientRect()
           if (rect) {
             placement.current.left = rect.left
@@ -59,7 +89,7 @@ export function TabHoverCard({
     >
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent
-        ref={content}
+        ref={setContentElement}
         variant="tab-preview"
         showArrow={false}
         side="bottom"
