@@ -288,6 +288,7 @@ describe('launchAgentInNewTab Windows shell quoting', () => {
   it('does not use the local Windows shell setting for remote Windows launches', async () => {
     store.settings.terminalWindowsShell = 'cmd.exe'
     store.repos = [{ id: 'repo-1', connectionId: 'ssh-1', path: 'C:\\remote\\repo' }]
+    store.sshConnectionStates = new Map([['ssh-1', { status: 'connected' }]])
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     const result = launchAgentInNewTab({

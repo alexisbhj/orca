@@ -187,7 +187,7 @@ describe('launchAgentInNewTab main-window surface', () => {
     expect(store.getState().pendingStartupByTabId).toEqual({})
   })
 
-  it('admits SSH through the local desktop host with no renderer execution fallback', async () => {
+  it('admits a connected SSH target through the local desktop host with no renderer fallback', async () => {
     const store = seedMainWindowOnEditor()
     store.setState({
       repos: store.getState().repos.map((repo) => ({
@@ -204,7 +204,13 @@ describe('launchAgentInNewTab main-window surface', () => {
             hostId: 'ssh:ssh-owned'
           })
         ]
-      }
+      },
+      sshConnectionStates: new Map([
+        [
+          'ssh-owned',
+          { targetId: 'ssh-owned', status: 'connected', error: null, reconnectAttempt: 0 }
+        ]
+      ])
     })
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
     const result = launchAgentInNewTab({
