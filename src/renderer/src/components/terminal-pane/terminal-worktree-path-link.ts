@@ -103,8 +103,8 @@ function routeExecutionHostId(route: WorktreeOperationRoute): ExecutionHostId | 
   )
 }
 
-function terminalFileSourceHost(
-  state: WorktreeRootPathState,
+export function terminalFileSourceHost(
+  state: WorktreeOperationRouteState,
   context: RuntimeFileOperationArgs | undefined
 ): ExecutionHostId | null {
   const target = getActiveRuntimeTarget(context?.settings)

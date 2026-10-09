@@ -7,7 +7,7 @@ import {
   UNVERIFIABLE_RETRY_DELAYS_MS
 } from './native-chat-file-link-existence'
 
-const connection = vi.hoisted(() => ({ resolved: true }))
+const connection = vi.hoisted(() => ({ resolved: true, sourceHostResolved: true }))
 
 vi.mock('@/lib/connection-context', () => ({
   isWorktreeConnectionResolved: () => connection.resolved
@@ -19,7 +19,7 @@ vi.mock('@/components/terminal-pane/terminal-file-link-target', async (importOri
     absolutePath: /^[\\/]{2}/.test(link.pathText) ? link.pathText : `/repo/${link.pathText}`,
     line: null,
     column: null,
-    fileContext: {},
+    fileContext: { sourceHostResolved: connection.sourceHostResolved },
     isRemoteRuntimePath: false,
     cacheKey: link.pathText,
     isKnownWorktreeRoot: link.pathText === 'ROOT'
@@ -69,6 +69,7 @@ describe('createNativeChatFileLinkExistence', () => {
   afterEach(() => {
     vi.useRealTimers()
     connection.resolved = true
+    connection.sourceHostResolved = true
   })
 
   it('underlines a path only after the host confirms it, asking once', async () => {
@@ -311,6 +312,17 @@ describe('createNativeChatFileLinkExistence', () => {
     const { watcher } = watching(
       createNativeChatFileLinkExistence({ ...host, connectionId: undefined }, pathExists)
     )
+
+    expect(watcher.getSnapshot().check(link('src/App.tsx'))).toBe(false)
+    await settle()
+
+    expect(pathExists).not.toHaveBeenCalled()
+  })
+
+  it('never checks on this machine when same-id owners leave the source host unresolved', async () => {
+    connection.sourceHostResolved = false
+    const { pathExists } = hostWith(() => true)
+    const { watcher } = watching(createNativeChatFileLinkExistence(host, pathExists))
 
     expect(watcher.getSnapshot().check(link('src/App.tsx'))).toBe(false)
     await settle()

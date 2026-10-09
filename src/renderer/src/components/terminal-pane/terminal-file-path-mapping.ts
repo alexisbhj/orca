@@ -1,14 +1,38 @@
+import { useAppStore } from '@/store'
+import { getConnectionId } from '@/lib/connection-context'
 import { buildWorkspaceFileContext } from '@/lib/workspace-file-host-routing'
 import type { RuntimeFileOperationArgs } from '@/runtime/runtime-file-client'
+import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
 import { parseWslUncPath, toWindowsWslPath } from '../../../../shared/wsl-paths'
+import { terminalFileSourceHost } from './terminal-worktree-path-link'
+
+export type TerminalFileContext = RuntimeFileOperationArgs & {
+  /** False when no single owner names the terminal's host; file operations must refuse, not go local. */
+  sourceHostResolved: boolean
+}
 
 // Why its own module: resolving a link's host path must not load the open flow (worktree activation).
 export function getTerminalFileContext(
   worktreeId: string,
   worktreePath: string,
   runtimeEnvironmentId?: string | null
-): RuntimeFileOperationArgs {
-  return buildWorkspaceFileContext(worktreeId, worktreePath, runtimeEnvironmentId)
+): TerminalFileContext {
+  const context = buildWorkspaceFileContext(worktreeId, worktreePath, runtimeEnvironmentId)
+  const sourceHost = terminalFileSourceHost(useAppStore.getState(), context)
+  if (!sourceHost) {
+    // Why: `null` is a positive local answer; only `undefined` means the owner is unknown.
+    return { ...context, sourceHostResolved: getConnectionId(worktreeId || null) === null }
+  }
+  // Why: same-id rows on several hosts leave connectionId unset, which reads downstream as local;
+  // the resolved owner names the direct SSH host. A paired runtime keeps its own transport.
+  const sshHost =
+    getActiveRuntimeTarget(context.settings).kind === 'environment'
+      ? null
+      : parseExecutionHostId(sourceHost)
+  return sshHost?.kind === 'ssh' && !context.connectionId
+    ? { ...context, connectionId: sshHost.targetId, sourceHostResolved: true }
+    : { ...context, sourceHostResolved: true }
 }
 
 /** The WSL distro a workspace's paths live in; `null` from the pane runtime means none. */

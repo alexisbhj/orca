@@ -6,15 +6,13 @@ import {
 } from '@/lib/terminal-links'
 import { normalizeAbsolutePath } from '@/lib/terminal-path-normalization'
 import { parseWslUncPath } from '../../../../shared/wsl-paths'
-import {
-  isRemoteRuntimeFileOperation,
-  type RuntimeFileOperationArgs
-} from '@/runtime/runtime-file-client'
+import { isRemoteRuntimeFileOperation } from '@/runtime/runtime-file-client'
 import {
   getTerminalFileContext,
   mapTerminalFilePath,
   terminalLinkWslDistro,
-  terminalPathWslDistro
+  terminalPathWslDistro,
+  type TerminalFileContext
 } from './terminal-file-path-mapping'
 import type { createTerminalPathExistenceBatch } from './terminal-path-existence-batch'
 import {
@@ -39,7 +37,7 @@ export type FileLinkTarget = {
   absolutePath: string
   line: number | null
   column: number | null
-  fileContext: RuntimeFileOperationArgs
+  fileContext: TerminalFileContext
   isRemoteRuntimePath: boolean
   cacheKey: string
   isKnownWorktreeRoot: boolean
@@ -126,6 +124,10 @@ export async function fileLinkTargetExists(
   // stale local paths even when filesystem probing says "missing".
   if (target.isKnownWorktreeRoot) {
     return true
+  }
+  if (!target.fileContext.sourceHostResolved) {
+    // Why: no owner means no host to ask; a local stat would answer for the wrong machine.
+    throw new Error('The terminal workspace host could not be determined')
   }
   const exists =
     readTerminalPathExistsCache(cache, target.cacheKey) ??

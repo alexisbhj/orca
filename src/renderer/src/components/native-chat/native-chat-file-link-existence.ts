@@ -163,7 +163,8 @@ export function createNativeChatFileLinkExistence(
   const hostUnresolved =
     host.connectionId === undefined && !isWorktreeConnectionResolved(host.worktreeId)
   const isHostUnresolved = (target: FileLinkTarget): boolean =>
-    hostUnresolved && !target.fileContext.connectionId && !target.isRemoteRuntimePath
+    !target.fileContext.sourceHostResolved ||
+    (hostUnresolved && !target.fileContext.connectionId && !target.isRemoteRuntimePath)
 
   const lookup = (
     link: ParsedTerminalFileLink,
