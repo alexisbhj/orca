@@ -19,12 +19,18 @@ export type ShadowCompareClass =
   | 'epoch-mismatch'
   | 'duplicate-seat'
   | 'map-only'
+  // The map seats the host on a cell the database does not call live, so resolve answered null.
+  | 'map-only-cell-unlive'
 
 export type ShadowCompareVerdict = { class: ShadowCompareClass; explained: boolean }
 
 export type ShadowCompareDatabaseAnswer = { cellId: string; assignmentEpoch: number } | null
 
 export const SHADOW_COMPARE_FLUSH_MS = 60_000
+// One poll, its timeout, and a reconnect (p95 ~6 s on 10-02). A seat the map has
+// not heard about for longer is not "the map catching up": a lost leave must not
+// read as explained forever.
+export const SHADOW_COMPARE_LAG_BOUND_MS = 10_000
 // Per class per flush window, so a systemic fault cannot flood the log.
 export const SHADOW_COMPARE_SAMPLES_PER_CLASS = 10
 
@@ -37,9 +43,11 @@ export function classifyShadowSeat(
   if (!directory.isComplete()) return { class: 'map-incomplete', explained: true }
   const seats = directory.seatsOf(identity.userId, identity.relayHostId)
   if (!answer) {
-    return seats.length === 0
-      ? { class: 'agree-absent', explained: true }
-      : { class: 'map-only', explained: false }
+    if (seats.length === 0) return { class: 'agree-absent', explained: true }
+    if (seats.some((seat) => !directory.isHeartbeatLive(seat.cellId))) {
+      return { class: 'map-only-cell-unlive', explained: true }
+    }
+    return { class: 'map-only', explained: false }
   }
   if (directory.cellState(answer.cellId)?.status !== 'live') {
     return { class: 'cell-unpolled', explained: true }
@@ -55,8 +63,10 @@ export function classifyShadowSeat(
       .some((entry) => entry.cellId === answer.cellId)
     return { class: left ? 'db-only-left' : 'db-only-unseen', explained: true }
   }
-  // The map trails the cells by a poll, so a newer database epoch is it catching up.
-  const mapBehind = answer.assignmentEpoch > seat.epoch
+  // The map trails the cells by a poll: a newer database epoch on a recently
+  // seen seat is it catching up.
+  const mapBehind =
+    answer.assignmentEpoch > seat.epoch && now - seat.observedAt <= SHADOW_COMPARE_LAG_BOUND_MS
   if (seat.cellId !== answer.cellId) return { class: 'cell-mismatch', explained: mapBehind }
   if (seat.epoch !== answer.assignmentEpoch) {
     return { class: 'epoch-mismatch', explained: mapBehind }
@@ -128,7 +138,7 @@ export class ShadowDirectoryCompare {
         route,
         class: verdict.class,
         host: relayHostLogDigest(identity.relayHostId),
-        db: answer,
+        db: answer ? { cellId: answer.cellId, assignmentEpoch: answer.assignmentEpoch } : null,
         seats: seats.map((seat) => ({
           cellId: seat.cellId,
           epoch: seat.epoch,

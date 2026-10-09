@@ -77,6 +77,8 @@ export type SeatFeedCell = {
   cellId: string
   cellUrl: string
   region: RelayRegion
+  // Ready and heartbeat-fresh: what the database's resolve calls live.
+  heartbeatLive: boolean
   // Heartbeat-fresh, with capacity, and not roll-isolated: completeness waits only on these.
   requiredForComplete: boolean
 }
@@ -130,12 +132,18 @@ export class ShadowSeatDirectory {
   // Insertion order is age order: a touched host is re-inserted at the end.
   private readonly recentlyLeft = new Map<string, RecentlyLeftSeat[]>()
   private required = new Set<string>()
+  private heartbeatLive = new Set<string>()
 
   // Cells no longer listed are forgotten with their seats; new ones start pending.
-  // `required` defaults to every listed cell.
-  setCells(cellIds: readonly string[], required: Iterable<string> = cellIds): void {
+  // `required` and `heartbeatLive` default to every listed cell.
+  setCells(
+    cellIds: readonly string[],
+    required: Iterable<string> = cellIds,
+    heartbeatLive: Iterable<string> = cellIds
+  ): void {
     const wanted = new Set(cellIds)
     this.required = new Set([...required].filter((cellId) => wanted.has(cellId)))
+    this.heartbeatLive = new Set(heartbeatLive)
     for (const [cellId, cursor] of this.cells) {
       if (wanted.has(cellId)) continue
       for (const key of cursor.seats.keys()) this.unindex(key, cellId)
@@ -216,6 +224,11 @@ export class ShadowSeatDirectory {
       if (this.cells.get(cellId)?.lastAnsweredAt === undefined) return false
     }
     return true
+  }
+
+  // As of the last cell-list read (at most 30 s old).
+  isHeartbeatLive(cellId: string): boolean {
+    return this.heartbeatLive.has(cellId)
   }
 
   seatsOf(userId: string, relayHostId: string): ShadowSeat[] {
@@ -402,15 +415,17 @@ export async function readSeatFeedCells(
   )
   return rows.map((row) => {
     const region = RelayRegionSchema.safeParse(row.region)
+    const heartbeatLive =
+      Number(row.ready) === 1 && Number(row.last_heartbeat_at) > now - heartbeatTtlMs
     return {
       cellId: String(row.cell_id),
       cellUrl: String(row.cell_url),
       region: region.success ? region.data : RELAY_DEFAULT_REGION,
+      heartbeatLive,
       requiredForComplete:
+        heartbeatLive &&
         Number(row.capacity_requests) > 0 &&
-        (row.roll_isolated_at === null || row.roll_isolated_at === undefined) &&
-        Number(row.ready) === 1 &&
-        Number(row.last_heartbeat_at) > now - heartbeatTtlMs
+        (row.roll_isolated_at === null || row.roll_isolated_at === undefined)
     }
   })
 }
@@ -487,7 +502,8 @@ export function startShadowSeatPoller(
         selection === 'all' ? listed : listed.filter((cell) => selection.includes(cell.cellId))
       directory.setCells(
         cells.map((cell) => cell.cellId),
-        cells.filter((cell) => cell.requiredForComplete).map((cell) => cell.cellId)
+        cells.filter((cell) => cell.requiredForComplete).map((cell) => cell.cellId),
+        cells.filter((cell) => cell.heartbeatLive).map((cell) => cell.cellId)
       )
       cellsReadAt = now()
       cellListFailures = 0

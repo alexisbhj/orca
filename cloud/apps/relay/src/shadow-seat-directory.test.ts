@@ -16,12 +16,14 @@ const CELLS: SeatFeedCell[] = [
     cellId: 'cell-a',
     cellUrl: 'https://cell-a.example.test',
     region: 'us-central1',
+    heartbeatLive: true,
     requiredForComplete: true
   },
   {
     cellId: 'cell-b',
     cellUrl: 'https://cell-b.example.test',
     region: 'asia-east2',
+    heartbeatLive: true,
     requiredForComplete: true
   }
 ]
@@ -468,12 +470,14 @@ describe('readSeatFeedCells', () => {
 
     const cells = await readSeatFeedCells(database, 100_000)
 
-    expect(cells.map((cell) => [cell.cellId, cell.requiredForComplete])).toEqual([
-      ['cell-empty', false],
-      ['cell-isolated', false],
-      ['cell-live', true],
-      ['cell-nobeat', false],
-      ['cell-stale', false]
+    expect(
+      cells.map((cell) => [cell.cellId, cell.heartbeatLive, cell.requiredForComplete])
+    ).toEqual([
+      ['cell-empty', true, false],
+      ['cell-isolated', true, false],
+      ['cell-live', true, true],
+      ['cell-nobeat', false, false],
+      ['cell-stale', false, false]
     ])
   })
 })

@@ -31,9 +31,18 @@ function seat(epoch: number, state = 'active', relayHostId = HOST) {
   return { userId: 'user-a', relayHostId, epoch, generation: 1, state, joinedAt: 1 }
 }
 
-function directoryWith(seats: Record<string, ReturnType<typeof seat>[]>, noFeed: string[] = []) {
+function directoryWith(
+  seats: Record<string, ReturnType<typeof seat>[]>,
+  noFeed: string[] = [],
+  unlive: string[] = []
+) {
   const directory = new ShadowSeatDirectory()
-  directory.setCells([...Object.keys(seats), ...noFeed])
+  const cellIds = [...Object.keys(seats), ...noFeed]
+  directory.setCells(
+    cellIds,
+    cellIds,
+    cellIds.filter((cellId) => !unlive.includes(cellId))
+  )
   for (const [cellId, full] of Object.entries(seats)) {
     directory.apply(cellId, feed(cellId, { full }), 10)
   }
@@ -87,6 +96,26 @@ describe('classifyShadowSeat', () => {
     }
   })
 
+  it('reads a null answer for a seat on a cell the database calls dead as its own class', () => {
+    const directory = directoryWith({ 'cell-a': [seat(3)] }, [], ['cell-a'])
+    expect(classifyShadowSeat(directory, IDENTITY, null, 20)).toEqual({
+      class: 'map-only-cell-unlive',
+      explained: true
+    })
+  })
+
+  it('stops explaining a map-behind seat once it is older than the lag bound', () => {
+    const directory = directoryWith({ 'cell-b': [seat(2)], 'cell-a': [] })
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10 + 10_000)).toEqual({
+      class: 'cell-mismatch',
+      explained: true
+    })
+    expect(classifyShadowSeat(directory, IDENTITY, at('cell-a', 3), 10 + 10_001)).toEqual({
+      class: 'cell-mismatch',
+      explained: false
+    })
+  })
+
   it('reads a host that left the named cell as db-only-left', () => {
     const directory = directoryWith({ 'cell-a': [seat(3)] })
     const leave = { seq: 2, kind: 'leave', ...IDENTITY, epoch: 3, generation: 1, at: 15 }
@@ -119,12 +148,11 @@ describe('ShadowDirectoryCompare', () => {
     for (let index = 0; index < SHADOW_COMPARE_SAMPLES_PER_CLASS + 5; index += 1) {
       compare.compare('resolve', IDENTITY, null)
     }
-    compare.compare('sticky-verify', IDENTITY, { cellId: 'cell-a', assignmentEpoch: 3 })
+    compare.compare('sticky-verify', IDENTITY, assignment('cell-a'))
     const samples = lines.filter((line) => line.event === 'orca_relay_shadow_compare_unexplained')
     expect(samples).toHaveLength(SHADOW_COMPARE_SAMPLES_PER_CLASS)
-    expect(JSON.stringify(lines)).not.toContain(HOST)
     now = SHADOW_COMPARE_FLUSH_MS
-    compare.compare('sticky-verify', IDENTITY, { cellId: 'cell-a', assignmentEpoch: 3 })
+    compare.compare('sticky-verify', IDENTITY, assignment('cell-a'))
     expect(lines.filter((line) => line.event === 'orca_relay_shadow_compare')).toEqual([
       {
         event: 'orca_relay_shadow_compare',
@@ -143,6 +171,27 @@ describe('ShadowDirectoryCompare', () => {
         windowMs: SHADOW_COMPARE_FLUSH_MS
       }
     ])
+  })
+})
+
+describe('unexplained samples', () => {
+  it('log only the cell and epoch of the real database record, never raw ids', () => {
+    const lines: Record<string, unknown>[] = []
+    const compare = new ShadowDirectoryCompare(
+      directoryWith({ 'cell-a': [seat(3)] }),
+      () => 20,
+      (line) => lines.push(JSON.parse(line))
+    )
+    // Map ahead of the database: unexplained, so it is sampled.
+    compare.compare('sticky-verify', IDENTITY, { ...assignment('cell-a'), assignmentEpoch: 2 })
+    compare.flush(20)
+    const sample = lines.find((line) => line.event === 'orca_relay_shadow_compare_unexplained')
+    expect(sample).toMatchObject({
+      class: 'epoch-mismatch',
+      db: { cellId: 'cell-a', assignmentEpoch: 2 }
+    })
+    expect(JSON.stringify(lines)).not.toContain(HOST)
+    expect(JSON.stringify(lines)).not.toContain('user-a')
   })
 })
 
