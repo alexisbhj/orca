@@ -1,5 +1,6 @@
 import { createAgentSessionKeyboardOptions } from '@/runtime/agent-session-keyboard-capability'
 import { withRemoteReattachInputBuffer } from './remote-reattach-input-buffer'
+import { createRemoteRuntimeDisconnectedInputGrace } from './remote-runtime-disconnected-input-grace'
 import {
   createRemoteRuntimeRecoveryInputHold,
   type RemoteRuntimeInputEndpoint
@@ -316,15 +317,19 @@ export function createRemoteRuntimePtyTransport(
     // Why: a refusal that never clears would drop every keystroke behind a connected-looking pane.
     onRefusalsPersist: () => notifyWriteUnavailable()
   })
+  const disconnectedInputGrace = createRemoteRuntimeDisconnectedInputGrace()
   const recovery = new RemoteRuntimePtyRecoveryState(() => {
     if (recovery.currentPhase === 'disposed') {
       clearPublishedHandleWait()
-    }
-    if (recovery.currentPhase === 'disconnected' || recovery.currentPhase === 'disposed') {
-      // Why: once auto-recovery gives up, held keys would land at an arbitrary later reconnect.
+      disconnectedInputGrace.reset()
       discardPendingInput()
     }
+    if (recovery.isActive && discardExpiredDisconnectedInput()) {
+      // Why: a retry after the grace starts fresh; keys typed during it belong to this attempt.
+      disconnectedInputGrace.reset()
+    }
     if (recovery.currentPhase === 'disconnected') {
+      disconnectedInputGrace.start()
       // Why: only the wall-clock deadline is evidence the window was spent; a UI latch from a fatal
       // resubscribe must not license reattaching a fenced same handle (#12683).
       autoRecoveryWindowSpent ||= recovery.autoRecoveryDeadlineExpired
@@ -334,6 +339,9 @@ export function createRemoteRuntimePtyTransport(
     }
     if (recovery.currentPhase === 'idle') {
       autoRecoveryWindowSpent = false
+      // Why before the reset: input that outlived the grace must not release into the recovered pane.
+      discardExpiredDisconnectedInput()
+      disconnectedInputGrace.reset()
     }
     if (
       recovery.currentPhase === 'disconnected' ||
@@ -1478,14 +1486,23 @@ export function createRemoteRuntimePtyTransport(
   }
 
   // Why: a pane binding or auto-recovering a known handle holds typing for it instead of dropping it (#25784).
+  // Why 'disconnected' too: the same handle still reattaches on its own after the window, within the grace.
   function shouldHoldInput(): boolean {
-    return (
-      !destroyed &&
-      !terminalEnded &&
-      handle !== null &&
-      recovery.currentPhase !== 'disconnected' &&
-      (recovery.isActive || (connecting && !connected) || recoveryInputHold.isHolding())
-    )
+    if (destroyed || terminalEnded || handle === null) {
+      return false
+    }
+    if (recovery.currentPhase === 'disconnected') {
+      return !discardExpiredDisconnectedInput()
+    }
+    return recovery.isActive || (connecting && !connected) || recoveryInputHold.isHolding()
+  }
+
+  function discardExpiredDisconnectedInput(): boolean {
+    if (!disconnectedInputGrace.isExpired()) {
+      return false
+    }
+    discardPendingInput()
+    return true
   }
 
   function discardPendingInput(): void {
