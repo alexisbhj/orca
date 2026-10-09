@@ -79,9 +79,20 @@ export async function openStructuredAgentSessionConversation(
   return opened.session
 }
 
-/** The open itself, indexed by nobody yet: the caller adopts the result. */
+/** The open itself, indexed by nobody yet: the caller adopts the result. Any open that settles
+ *  needs the store, which names the runtimes this one replaced. */
 export async function openStructuredAgentSessionConversationJournal(
-  /** An acquisition's open settles nothing itself, so it needs no store. */
+  deps: StructuredAgentSessionConversationOpenDeps,
+  record: AgentSessionRecord,
+  options?: StructuredAgentSessionConversationOpenOptions
+): Promise<OpenedStructuredAgentSessionConversation>
+/** An acquisition's open settles nothing itself, so it needs no store. */
+export async function openStructuredAgentSessionConversationJournal(
+  deps: Omit<StructuredAgentSessionConversationOpenDeps, 'store'>,
+  record: AgentSessionRecord,
+  options: { acquisition: true }
+): Promise<OpenedStructuredAgentSessionConversation>
+export async function openStructuredAgentSessionConversationJournal(
   deps: Omit<StructuredAgentSessionConversationOpenDeps, 'store'> &
     Partial<Pick<StructuredAgentSessionConversationOpenDeps, 'store'>>,
   record: AgentSessionRecord,

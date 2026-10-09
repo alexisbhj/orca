@@ -5,6 +5,7 @@ import {
   type AgentJournalRenderItem
 } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionOwnerProbe } from '../../../shared/agent-session-lease-adjudication'
+import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import { readAgentJournalTurn } from '../../../shared/agent-session-turn-record'
 import {
   completedStructuredAgentTurnSeconds,
@@ -17,6 +18,10 @@ import {
   closeTestJournalHostDatabases,
   openTestJournalHostDatabase
 } from '../agent-session-journal/journal-host-database-test-support'
+import {
+  openStructuredAgentSessionConversationJournal,
+  type StructuredAgentSessionConversationOpenDeps
+} from './structured-agent-session-conversation-open'
 import { StructuredAgentSessionHost } from './structured-agent-session-host'
 import { HOST_TEST_NOW, hostTestAttachParams } from './structured-agent-session-host-test-data'
 import {
@@ -220,5 +225,17 @@ describe('a server replaced mid-turn on the same execution host', () => {
     await startServer({ newProcess: true })
     await rig.host.restoreReadableSessions()
     expect((await rig.host.journalSnapshot(SESSION)).items).toEqual(settled.items)
+  })
+
+  it('only lets an acquisition open a journal without the store', () => {
+    const open = (
+      deps: Omit<StructuredAgentSessionConversationOpenDeps, 'store'>,
+      record: AgentSessionRecord
+    ) => {
+      void openStructuredAgentSessionConversationJournal(deps, record, { acquisition: true })
+      // @ts-expect-error a reader open settles, so without the store its turns would stay unverifiable
+      void openStructuredAgentSessionConversationJournal(deps, record)
+    }
+    expect(open).toBeTypeOf('function')
   })
 })
