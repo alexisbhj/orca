@@ -14,6 +14,7 @@ import {
   ensureStructuredAgentSessionHost,
   stopStructuredAgentSessionRuntime
 } from './structured-agent-session-runtime'
+import { scriptedCodexTransport } from './scripted-codex-transport.test-fixture'
 
 vi.mock('../telemetry/client', () => ({ track: vi.fn() }))
 vi.mock('../telemetry/cohort-classifier', () => ({ getCohortAtEmit: vi.fn() }))
@@ -59,8 +60,7 @@ describe('foreground commands in the background-task channel', () => {
       resolveClaudeAuthPolicy: () => ({ stripAuthEnv: true }),
       resolveCodexCommand: () => 'codex',
       resolveEnvironment: async () => ({ PATH: process.env.PATH }),
-      openCodexConnection: codex.openConnection,
-      readProcessStartTime: async () => 1_700_000_000_000,
+      ...scriptedCodexTransport(codex.openConnection),
       statusSink: {
         publish: (summary, subject) => server.ingestStructuredStatus(summary, subject),
         forget: (subject) => server.dropStructuredStatus(subject),

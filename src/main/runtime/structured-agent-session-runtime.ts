@@ -26,6 +26,7 @@ import { AgentSessionRecoveryCapsule } from './agent-session-recovery-capsule'
 import type { CodexStructuredPermissionPolicy } from '../codex/codex-structured-permission-policy'
 import type { StructuredAgentCommandSettings } from '../native-chat/structured-agent-command-resolution'
 import type { CodexStructuredSessionAdapterDeps } from '../codex/codex-structured-session-adapter'
+import type { readCodexCliInstallation } from '../preflight/codex-cli-installation'
 import type { ClaudeStructuredSessionAdapterDeps } from '../claude/claude-structured-session-adapter'
 import {
   StructuredAgentSessionHost,
@@ -114,6 +115,9 @@ export type StructuredAgentSessionRuntimeDeps = {
   }
   /** Provider transports are overridden only to drive the runtime against scripted children. */
   openCodexConnection?: CodexStructuredSessionAdapterDeps['openConnection']
+  /** The Codex a scripted transport stands for; required with it, since the default check runs
+   *  the binary the real transport would spawn. */
+  readCodexInstallation?: typeof readCodexCliInstallation
   openClaudeConnection?: ClaudeStructuredSessionAdapterDeps['openConnection']
   /** Scripted app-servers carry fake pids the real start-time read cannot answer for. */
   readProcessStartTime?: CodexStructuredSessionAdapterDeps['readProcessStartTime']
@@ -170,6 +174,9 @@ export const CLAUDE_STRUCTURED_AUTH_POLICY_REQUIRED =
 
 export const STRUCTURED_AGENT_LAUNCH_ARGS_REQUIRED =
   'structured agent-session host requires a launch arguments resolver'
+
+export const SCRIPTED_CODEX_INSTALLATION_REQUIRED =
+  'a scripted Codex transport requires readCodexInstallation'
 
 /** Thrown when the host is installed without a logger: every failure it carries on past would
  *  otherwise reach nobody. */
@@ -261,6 +268,9 @@ async function install(deps: StructuredAgentSessionRuntimeDeps): Promise<Install
   }
   if (typeof deps.resolveLaunchArgs !== 'function') {
     throw new Error(STRUCTURED_AGENT_LAUNCH_ARGS_REQUIRED)
+  }
+  if (deps.openCodexConnection && !deps.readCodexInstallation) {
+    throw new Error(SCRIPTED_CODEX_INSTALLATION_REQUIRED)
   }
   const declared: Partial<StructuredAgentSessionLogger> | undefined = deps.logger
   if (typeof declared?.warn !== 'function' || typeof declared.error !== 'function') {

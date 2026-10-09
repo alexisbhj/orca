@@ -1,6 +1,7 @@
 // Each runtime registration owns its adapter, location support and account resolution at start.
 
 import { createCodexStructuredLaunchResolver } from '../codex/codex-structured-launch-resolution'
+import { requireSupportedCodexCli } from '../codex/codex-cli-installation-error'
 import { supportsCodexStructuredLocation } from '../codex/codex-structured-location-support'
 import { supportsClaudeStructuredLocation } from '../claude/claude-structured-location-support'
 import { supportsSupervisedProviderChildLocation } from '../provider-process/supervised-provider-child-location'
@@ -126,6 +127,7 @@ function nativeChatVisualsFor(deps: StructuredAgentSessionRuntimeDeps): {
 
 function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredAgentRuntimeAdapter {
   const { deps, store, followUps, host } = context
+  const { readCodexInstallation } = deps
   return new CodexStructuredSessionAdapter({
     resolveAccountKind: deps.resolveCodexAccountKind,
     resolveLaunch: createCodexStructuredLaunchResolver({
@@ -137,6 +139,9 @@ function createCodexAdapter(context: StructuredAgentAdapterContext): StructuredA
         ? { resolvePermissionPolicy: deps.resolveCodexPermissionPolicy }
         : {}),
       ...(deps.resolveCodexCommand ? { resolveCommand: deps.resolveCodexCommand } : {}),
+      ...(readCodexInstallation
+        ? { requireSupportedCli: (input) => requireSupportedCodexCli(input, readCodexInstallation) }
+        : {}),
       ...nativeChatVisualsFor(deps)
     }),
     ...(deps.openCodexConnection ? { openConnection: deps.openCodexConnection } : {}),

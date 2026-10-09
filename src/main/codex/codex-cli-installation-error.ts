@@ -31,9 +31,10 @@ export function codexInstallationProblemOf(
 }
 
 export async function requireSupportedCodexCli(
-  input: Parameters<typeof readCodexCliInstallation>[0]
+  input: Parameters<typeof readCodexCliInstallation>[0],
+  readInstallation: typeof readCodexCliInstallation = readCodexCliInstallation
 ): Promise<void> {
-  const result = await readCodexCliInstallation(input)
+  const result = await readInstallation(input)
   if (result.status === 'missing' || result.status === 'unsupported') {
     throw new CodexCliInstallationError({
       installedVersion: result.version,
