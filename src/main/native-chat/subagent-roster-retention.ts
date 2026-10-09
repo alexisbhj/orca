@@ -1,0 +1,67 @@
+import { BoundedMap } from '../../shared/bounded-map'
+import { isTerminalSubagentState } from '../../shared/native-chat-subagent-summary'
+import type { NativeChatSubagentEntry } from '../../shared/native-chat-types'
+
+type RetainedRosterGroup = {
+  groupId: string
+  entries: Map<string, NativeChatSubagentEntry>
+  lastSerialized: string | null
+}
+
+/** Bounds settled history; live children and refused final writes keep their ownership. */
+export class SubagentRosterRetention<Group extends RetainedRosterGroup> {
+  private readonly settledGroups = new Set<string>()
+  private readonly settledIdentities: BoundedMap<string, true>
+
+  constructor(
+    private readonly groups: Map<string, Group>,
+    private readonly options: {
+      maxGroups: number
+      maxSettledIdentities: number
+      identities: (group: Group) => Iterable<string>
+      onEvict?: (group: Group) => void
+    }
+  ) {
+    this.settledIdentities = new BoundedMap({ maxEntries: options.maxSettledIdentities })
+  }
+
+  hasSettled(identity: string): boolean {
+    return this.settledIdentities.has(identity)
+  }
+
+  trim(changed: Iterable<Group>): void {
+    for (const group of changed) {
+      if (
+        group.lastSerialized !== null &&
+        [...group.entries.values()].every((entry) => isTerminalSubagentState(entry.state))
+      ) {
+        this.settledGroups.add(group.groupId)
+      } else {
+        this.settledGroups.delete(group.groupId)
+      }
+    }
+    for (const groupId of this.settledGroups) {
+      if (this.groups.size <= this.options.maxGroups) {
+        break
+      }
+      const group = this.groups.get(groupId)
+      if (group) {
+        for (const identity of this.options.identities(group)) {
+          this.settledIdentities.set(identity, true)
+        }
+        this.options.onEvict?.(group)
+      }
+      this.groups.delete(groupId)
+      this.settledGroups.delete(groupId)
+    }
+  }
+
+  sizes(): { groups: number; settledIdentities: number } {
+    return { groups: this.groups.size, settledIdentities: this.settledIdentities.size }
+  }
+
+  clear(): void {
+    this.settledGroups.clear()
+    this.settledIdentities.clear()
+  }
+}
