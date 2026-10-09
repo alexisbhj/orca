@@ -5,6 +5,7 @@
 // records only that an operation happened. No mutation returns draft text:
 // the published list is the one authority a client renders.
 
+import { contextStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 import type { AgentJournalSubmission } from '../../../shared/agent-session-journal-types'
 import { agentSessionOperationKey } from '../../../shared/agent-session-operation-ledger'
 import type {
@@ -129,7 +130,10 @@ export function sendQueuedStructuredAgentMessage(
       // The one queue gate; Send-now's override set is exactly `working` (plus
       // FIFO order and the stored hold, which the consume below clears).
       const record = context.deps.store.getRecord(ctx.sessionId)
-      const hold = structuredQueueHold({ journal: ctx.journal, record, fence: ctx.fence })
+      const hold = structuredQueueHold({
+        record,
+        work: contextStructuredAgentSessionCurrentWork(ctx)
+      })
       if (hold === 'blocked') {
         return structuredAgentSessionSendBlock(record) ?? invalid('This conversation cannot send.')
       }

@@ -4,8 +4,12 @@ import {
   agentJournalSubmissionKey
 } from '../../../shared/agent-session-journal-item-key'
 import type { AgentJournalItemIdentity } from '../../../shared/agent-session-journal-types'
+import {
+  agentSessionWriteNoticeEnglish,
+  agentSessionWriteNoticeParts
+} from '../../../shared/agent-session-refusal-notice'
+import { agentSessionRefusalFailure } from '../../../shared/agent-session-write-failure'
 import { isSubagentGroupBlock } from '../../../shared/native-chat-types'
-import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
 import { projectStructuredAgentSessionStatusState } from '../../../shared/structured-agent-session-projection'
 import { codexSubagentGroupIdentity } from '../../codex/codex-subagent-roster'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
@@ -24,6 +28,7 @@ import { isMainAgentWorking } from './structured-agent-session-turns-cancel'
 import {
   APPROVAL,
   currentJournal,
+  currentWork,
   exitChild,
   exitWhileSettlementFails,
   leaveUnfinishedWork,
@@ -156,22 +161,16 @@ describe('a settlement that cannot commit never gates the user', () => {
     const journal = currentJournal(current)
     const record = current.store.getRecord(SESSION)
     const fence = record?.lease.runtimeFence ?? 0
+    const work = currentWork(current)
 
     // Still saved as running: only its settlement would end it.
     expect(turnState(current)).toBe('running')
-    expect(
-      isStructuredAgentSessionMainAgentWorking(
-        journal.activeTurnId(fence),
-        journal.submissions(),
-        fence
-      )
-    ).toBe(false)
-    expect(structuredQueueHold({ journal, record, fence })).toBeNull()
-    expect(isMainAgentWorking({ journal, fence })).toBe(false)
+    expect(work.working()).toBe(false)
+    expect(structuredQueueHold({ record, work })).toBeNull()
+    expect(isMainAgentWorking({ journal, fence, currentWork: () => work })).toBe(false)
     const { items, submissions } = journal.snapshot()
     expect(
-      projectStructuredAgentSessionStatusState(items, submissions, fence, journal.itemFence).summary
-        .status
+      projectStructuredAgentSessionStatusState(items, submissions, fence, work.scope).summary.status
     ).not.toBe('working')
 
     expect((await sendText(current, 'go on').result).ok).toBe(true)
@@ -196,7 +195,7 @@ describe('a settlement that cannot commit never gates the user', () => {
     expect(leftoverSettledAt(current)).toBeNull()
     expect(turnState(current)).toBe('running')
     // The successor's turn is the one that counts.
-    expect(session.journal.activeTurnId(session.child?.fence)).toBeNull()
+    expect(currentWork(current).activeTurnId()).toBeNull()
 
     database.db.exec('DROP TRIGGER reject_recovered')
     const marks = watchMarks(database.db)
@@ -242,10 +241,23 @@ describe('a stale prompt', () => {
     expect(session.journal.itemBody(prompt.itemId)).toMatchObject({
       resolution: { state: 'pending' }
     })
-    expect(await answer()).toMatchObject({
+    const refused = await answer()
+    expect(refused).toMatchObject({
       ok: false,
-      refusal: { details: { reason: 'promptGone' } }
+      refusal: { details: { reason: 'promptOwnerEnded' } }
     })
+    if (refused.ok) {
+      throw new Error('expected the answer refused')
+    }
+    // Plain words: what did not happen, that the agent stopped, and how to go on.
+    const words = agentSessionWriteNoticeEnglish(
+      agentSessionWriteNoticeParts(agentSessionRefusalFailure(refused.refusal), 'answer', {
+        agentName: 'Codex'
+      })
+    )
+    expect(words).toBe(
+      'Your answer was not sent. Codex stopped while this response was in progress. You can continue in this conversation.'
+    )
     expect(current.answerPrompt).not.toHaveBeenCalled()
 
     database.db.exec('DROP TRIGGER reject_recovered')

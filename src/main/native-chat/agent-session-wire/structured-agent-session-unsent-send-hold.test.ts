@@ -599,7 +599,7 @@ describe('what is not kept', () => {
     )
   })
 
-  it('the delivery step keeps one the open could not settle, and hands nothing over', async () => {
+  it('a failed keep rejects nothing: a fresh send is delivered, the earlier one is never handed over, and the next open keeps it', async () => {
     const id = await acceptWhileStarting(sendRequest('open write failed'))
     const resolve = AgentSessionJournal.prototype.resolveDispatch
     // The open's keep and its plain-rejection fallback both fail.
@@ -616,12 +616,20 @@ describe('what is not kept', () => {
       return resolve.apply(this, args)
     })
     await quitRestart()
-    // The open's write failed; a new send wakes the delivery loop, whose first step settles it.
+    // The open's keep failed. Delivery does not wait on that bookkeeping: what may be handed over
+    // is derived from where each send sits, so only this process's own send goes.
     const next = rig.send('wakes the loop')
-    await next.result
-    await eventually(async () => expect(await rig.drafts()).toEqual([{ messageId: id, ...KEPT }]))
+    expect(await next.result).toMatchObject({ ok: true })
     await eventually(() => expect(dispatchedTexts()).toEqual(['wakes the loop']))
+    const earlier = await rig.submission(id)
+    expect(earlier).toMatchObject({ dispatchState: 'pending', handoverRecorded: true })
+    expect(earlier).not.toHaveProperty('handedOverAt')
+    expect(await rig.drafts()).toEqual([])
+    // The next open's bookkeeping lands, and keeps it as a card.
+    await quitRestart()
+    await eventually(async () => expect(await rig.drafts()).toEqual([{ messageId: id, ...KEPT }]))
     expect(await rig.submission(id)).toMatchObject({ dispatchState: 'rejected', ...HOST_RESTARTED })
+    expect(dispatchedTexts()).toEqual(['wakes the loop'])
   })
 })
 

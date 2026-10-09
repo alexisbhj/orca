@@ -39,10 +39,7 @@ import { sha256 } from './sha256'
 import { readAgentMessageSource } from './agent-session-message-source'
 import { structuredAgentSessionStatusStartedAt } from './structured-agent-session-status-started-at'
 import { owesStructuredAgentSessionWork } from './structured-agent-session-owed-work'
-import {
-  isStructuredAgentSessionEndedGenerationWork,
-  type StructuredAgentSessionItemFence
-} from './structured-agent-session-main-agent-working'
+import type { StructuredAgentSessionWorkScope } from './structured-agent-session-main-agent-working'
 import { agentSessionCurrentContextRows } from './agent-session-context-clear'
 
 // Re-exported so the live-turn readers' and the unanswered-send rule's existing consumers keep one
@@ -215,31 +212,30 @@ export function structuredAgentSessionTabId(sessionId: string): string {
   return `structured-agent-session-${sessionId}`
 }
 
-/** A prompt waiting on the user, unless an ended generation raised it: nothing can take its answer. */
+/** A prompt waiting on the user, unless the host's scope says an ended generation raised it:
+ *  nothing can take its answer. */
 function pendingStructuredAgentSessionPrompt(
-  currentFence?: number | null,
-  itemFence?: StructuredAgentSessionItemFence
+  scope?: StructuredAgentSessionWorkScope
 ): (item: AgentJournalRenderItem) => boolean {
   return (item) =>
     (item.body.kind === 'approval' || item.body.kind === 'question') &&
     item.body.resolution.state === 'pending' &&
-    !(
-      itemFence && isStructuredAgentSessionEndedGenerationWork(itemFence(item.itemId), currentFence)
-    )
+    (!scope || scope.isCurrentItem(item.itemId))
 }
 
-/** `itemFence`: a host's, so work an ended generation left neither holds nor reads as Working. */
+/** `scope`: a host's (`StructuredAgentSessionWorkScope`), so work an ended generation left neither
+ *  holds nor reads as Working. */
 export function projectStructuredAgentSessionStatus(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[] = [],
   currentFence?: number | null,
-  itemFence?: StructuredAgentSessionItemFence
+  scope?: StructuredAgentSessionWorkScope
 ): StructuredAgentSessionProjectedStatus {
   ;({ items, submissions } = agentSessionCurrentContextRows(items, submissions))
-  if (items.some(pendingStructuredAgentSessionPrompt(currentFence, itemFence))) {
+  if (items.some(pendingStructuredAgentSessionPrompt(scope))) {
     return 'attention'
   }
-  return owesStructuredAgentSessionWork(items, submissions, currentFence, itemFence)
+  return owesStructuredAgentSessionWork(items, submissions, currentFence, scope)
     ? 'working'
     : 'idle'
 }
@@ -281,7 +277,7 @@ export function projectStructuredAgentSessionStatusState(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[] = [],
   currentFence?: number | null,
-  itemFence?: StructuredAgentSessionItemFence
+  scope?: StructuredAgentSessionWorkScope
 ): {
   summary: StructuredAgentSessionStatusProjection
   latestRequest: StructuredAgentSessionLatestRequest | null
@@ -300,7 +296,7 @@ export function projectStructuredAgentSessionStatusState(
     }
   }
   ;({ items, submissions } = agentSessionCurrentContextRows(items, submissions))
-  const status = projectStructuredAgentSessionStatus(items, submissions, currentFence, itemFence)
+  const status = projectStructuredAgentSessionStatus(items, submissions, currentFence, scope)
   const statusToolCall = status === 'working' ? statusStructuredAgentSessionToolCall(items) : null
   const toolName = statusToolCall
     ? normalizeOptionalField(statusToolCall.name, AGENT_STATUS_TOOL_NAME_MAX_LENGTH)
@@ -331,13 +327,10 @@ export function projectStructuredAgentSessionStatusState(
   return {
     latestRequest,
     owesWork:
-      status !== 'idle' &&
-      owesStructuredAgentSessionWork(items, submissions, currentFence, itemFence),
+      status !== 'idle' && owesStructuredAgentSessionWork(items, submissions, currentFence, scope),
     pendingPromptIds:
       status === 'attention'
-        ? items
-            .filter(pendingStructuredAgentSessionPrompt(currentFence, itemFence))
-            .map((item) => item.itemId)
+        ? items.filter(pendingStructuredAgentSessionPrompt(scope)).map((item) => item.itemId)
         : [],
     summary: {
       status,

@@ -7,6 +7,7 @@ import type { AgentChildWorkView } from '../../../shared/agent-status-child-work
 import { structuredChildWorkLegacyTasks } from '../../../shared/structured-agent-session-child-work-legacy'
 import { structuredRunningChildWork } from '../../../shared/agent-child-work-listing'
 import { readStructuredAgentSessionHistoryResult } from './structured-agent-session-history-result'
+import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 import {
   structuredQueueSendGate,
   tryReadQueuePublication
@@ -45,16 +46,24 @@ export class StructuredAgentSessionBackgroundTaskChannel {
     scope?: AgentSessionHistoryScope
   ): Promise<AgentSessionHistoryResult> {
     const journal = (await this.conversation(request.sessionId)).journal
+    const work = hostStructuredAgentSessionCurrentWork(
+      { store: this.deps.store, sessions: this.sessions },
+      request.sessionId
+    )
     const result = readStructuredAgentSessionHistoryResult({
       journal,
       record: this.deps.store.getRecord(request.sessionId),
       request,
-      scope
+      scope,
+      ...(work ? { work } : {})
     })
     const backgroundTasks = this.read(request.sessionId)
     const queue = tryReadQueuePublication(
       journal,
-      structuredQueueSendGate(this.deps.store, request.sessionId)
+      structuredQueueSendGate(
+        { store: this.deps.store, sessions: this.sessions },
+        request.sessionId
+      )
     )
     const hostNow = this.deps.now?.() ?? Date.now()
     return {

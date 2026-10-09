@@ -27,10 +27,6 @@ import { isRootAgentJournalItem } from './agent-session-journal-producer'
 import type { AgentSessionLatestTurn, AgentSessionSubscribeEvent } from './agent-session-wire'
 import { readAgentJournalTurn } from './agent-session-turn-record'
 import { isAgentSessionContextClear } from './agent-session-context-clear'
-import {
-  isStructuredAgentSessionEndedGenerationWork,
-  type StructuredAgentSessionItemFence
-} from './structured-agent-session-main-agent-working'
 import type { NativeChatToolCallBlock } from './native-chat-types'
 import {
   isRunningStructuredAgentSessionToolAction,
@@ -39,8 +35,8 @@ import {
   type StructuredAgentSessionToolAction
 } from './structured-agent-session-tool-call-block'
 
-/** `current`: whether the running turn's item is current work; one an ended generation opened is
- *  none (`isStructuredAgentSessionEndedGenerationWork`). */
+/** `current`: a host's answer to whether the running turn's item is current work
+ *  (`StructuredAgentSessionWorkScope`); one an ended generation opened is none. */
 export function activeStructuredAgentSessionTurnId(
   items: readonly AgentJournalRenderItem[],
   current?: (item: AgentJournalRenderItem) => boolean
@@ -110,20 +106,6 @@ export function runningStructuredAgentSessionTurnItemBySequence(
   return newest && turn?.state === 'running' ? { item: newest, turnId: turn.turnId } : null
 }
 
-/** The running turn by sequence, given the lease's fence: one an ended generation opened is none
- *  (`isStructuredAgentSessionEndedGenerationWork`). The host's one read of its active turn. */
-export function currentStructuredAgentSessionTurnId(
-  items: Iterable<AgentJournalRenderItem>,
-  itemFence: StructuredAgentSessionItemFence,
-  currentFence?: number | null
-): string | null {
-  const running = runningStructuredAgentSessionTurnItemBySequence(items)
-  return running &&
-    !isStructuredAgentSessionEndedGenerationWork(itemFence(running.item.itemId), currentFence)
-    ? running.turnId
-    : null
-}
-
 /** The newest turn record whatever state it ended in, STATE INCLUDED. Restart resume compares both
  *  halves against the teardown marker: the id alone cannot tell a turn that was interrupted from
  *  one that finished, and offering a finished chat is the failure this feature exists to avoid.
@@ -191,6 +173,45 @@ export function latestTurnAfterStructuredAgentSessionBatch(
   const { items, removedItemIds, submissions } = event.batch
   const carriesRows = items.length > 0 || removedItemIds.length > 0 || submissions.length > 0
   return carriesRows || event.latestTurn !== undefined ? event.latestTurn : previous
+}
+
+/** The host's actionable prompts once `event` applies, under `latestTurn`'s rule: a batch carrying
+ *  rows restates them, so one without them came from an older host and drops the claim. */
+export function actionablePromptIdsAfterStructuredAgentSessionBatch(
+  previous: string[] | undefined,
+  event: Extract<AgentSessionSubscribeEvent, { type: 'batch' }>
+): string[] | undefined {
+  const { items, removedItemIds, submissions } = event.batch
+  const carriesRows = items.length > 0 || removedItemIds.length > 0 || submissions.length > 0
+  return carriesRows || event.actionablePromptIds !== undefined
+    ? event.actionablePromptIds
+    : previous
+}
+
+/** Whether a frame's turn and prompts, when it names them, are what the state already holds: a
+ *  generation's end can change them with no row, so a frame that does is never a no-op. */
+export function restatesStructuredAgentSessionHostWork(
+  event: Pick<
+    Extract<AgentSessionSubscribeEvent, { type: 'batch' }>,
+    'latestTurn' | 'actionablePromptIds'
+  >,
+  state: { latestTurn?: AgentSessionLatestTurn | null; actionablePromptIds?: string[] }
+): boolean {
+  return (
+    (event.latestTurn === undefined ||
+      JSON.stringify(event.latestTurn) === JSON.stringify(state.latestTurn)) &&
+    (event.actionablePromptIds === undefined ||
+      event.actionablePromptIds.join('\n') === state.actionablePromptIds?.join('\n'))
+  )
+}
+
+/** Whether a pending prompt waits on the person: the host names the ones that do, and a prompt an
+ *  agent that has ended raised is not among them. An older host names none: every pending one. */
+export function isActionableStructuredAgentSessionPrompt(
+  itemId: string,
+  actionablePromptIds: readonly string[] | undefined
+): boolean {
+  return actionablePromptIds === undefined || actionablePromptIds.includes(itemId)
 }
 
 /**

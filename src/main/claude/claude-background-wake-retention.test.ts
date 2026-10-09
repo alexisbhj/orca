@@ -40,6 +40,9 @@ async function wiredSession() {
     },
     // No Stop was ever pressed here.
     stopMarks: { latest: () => null, revision: () => 0 },
+    // One generation produced everything here, and every send was accepted by this process.
+    itemFence: () => undefined,
+    wroteBeforeOpen: () => false,
     snapshot: () => ({
       items: [...run.journalItems.values()]
         .sort((a, b) => a.sequence - b.sequence)
@@ -53,7 +56,7 @@ async function wiredSession() {
       [
         parent.sessionId,
         {
-          // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies the feed's cursor, clock, Stop marks, snapshot, submissions and item reads.
+          // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fixture supplies the feed's cursor, clock, Stop marks, snapshot, submissions, item and provenance reads.
           journal: journal as unknown as Journal,
           params: {
             location: {

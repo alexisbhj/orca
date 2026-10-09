@@ -22,6 +22,7 @@ import { emptyAgentSessionBatch } from './agent-session-empty-batch'
 import { readAgentSessionHydrationPage } from './agent-session-history-page'
 import { rememberSessionActivity } from './structured-agent-session-activity-retention'
 import { refreshDerivedStopNotes } from './agent-session-stop-note-refresh'
+import type { StructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 
 export type AgentSessionSubscriberEmit = (event: AgentSessionSubscribeEvent) => void
 export type AgentSessionSubscribeInput = {
@@ -43,6 +44,9 @@ export type Subscriber = {
   queuePublication?: QueuePublication
   /** Fingerprint of the background-task roster last SENT. */
   backgroundTasks?: string
+  /** The live generation the last frame's current-work fields were read under; a change with no
+   *  row still owes this subscriber a frame. */
+  workLiveFence?: number | null
 }
 
 export type AgentSessionSubscribersHooks = {
@@ -53,6 +57,12 @@ export type AgentSessionSubscribersHooks = {
   readBackgroundTasks?: SubscriberFieldHooks['readBackgroundTasks']
   /** Fires after publications that can change journal content. */
   onJournalPublished?: (sessionId: string, journal: AgentSessionJournal) => void
+  /** The host's projection of current work (`structuredAgentSessionCurrentWork`), which every
+   *  page and frame states as its turn and prompt fields. */
+  readCurrentWork?: (
+    sessionId: string,
+    journal: AgentSessionJournal
+  ) => StructuredAgentSessionCurrentWork | undefined
   now?: () => number
 }
 
@@ -103,7 +113,9 @@ export class AgentSessionSubscribers {
         hostNow
       )
     } else {
-      const page = readAgentSessionHydrationPage(input.journal, input.fence)
+      const work = this.hooks.readCurrentWork?.(input.sessionId, input.journal)
+      const page = readAgentSessionHydrationPage(input.journal, input.fence, work)
+      subscriber.workLiveFence = work?.liveFence
       this.emit(subscriber, {
         type: 'snapshot',
         sessionId: input.sessionId,
@@ -144,20 +156,31 @@ export class AgentSessionSubscribers {
         this.activityBySession.delete(sessionId)
       }
     }
-    const hostNow = this.now()
-    for (const subscriber of this.subscribers(sessionId)) {
-      this.deliver(subscriber, journal, hostNow, false, activity)
-    }
+    this.deliverFrames(sessionId, journal, activity)
     if (activity === undefined) {
       this.hooks.onJournalPublished?.(sessionId, journal)
     }
   }
 
-  /** Every subscriber back to a bounded tail page. */
-  snapshot(sessionId: string, journal: AgentSessionJournal, fence: number): void {
-    const page = readAgentSessionHydrationPage(journal, fence)
+  /** Each subscriber's frame for what changed, with none of a journal write's other edges. */
+  deliverFrames(
+    sessionId: string,
+    journal: AgentSessionJournal,
+    activity?: AgentSessionTurnActivity | null
+  ): void {
     const hostNow = this.now()
     for (const subscriber of this.subscribers(sessionId)) {
+      this.deliver(subscriber, journal, hostNow, false, activity)
+    }
+  }
+
+  /** Every subscriber back to a bounded tail page. */
+  snapshot(sessionId: string, journal: AgentSessionJournal, fence: number): void {
+    const work = this.hooks.readCurrentWork?.(sessionId, journal)
+    const page = readAgentSessionHydrationPage(journal, fence, work)
+    const hostNow = this.now()
+    for (const subscriber of this.subscribers(sessionId)) {
+      subscriber.workLiveFence = work?.liveFence
       this.emit(subscriber, {
         type: 'snapshot',
         sessionId,

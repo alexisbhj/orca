@@ -1,5 +1,8 @@
 import type { AgentSessionSubscribeEvent } from './agent-session-wire'
-import { latestTurnAfterStructuredAgentSessionBatch } from './structured-agent-session-live-turn'
+import {
+  actionablePromptIdsAfterStructuredAgentSessionBatch,
+  latestTurnAfterStructuredAgentSessionBatch
+} from './structured-agent-session-live-turn'
 
 export const STRUCTURED_AGENT_SESSION_CLIENT_COALESCE_MS = 48
 
@@ -29,6 +32,10 @@ function mergeBatch(
   }
   // As applying both in turn would leave it, so an older host's rows still drop a stale claim.
   const latestTurn = latestTurnAfterStructuredAgentSessionBatch(left.latestTurn, right)
+  const actionablePromptIds = actionablePromptIdsAfterStructuredAgentSessionBatch(
+    left.actionablePromptIds,
+    right
+  )
   return {
     type: 'batch',
     ...(right.commands !== undefined || left.commands !== undefined
@@ -55,7 +62,8 @@ function mergeBatch(
     ...(right.activity !== undefined || left.activity !== undefined
       ? { activity: right.activity !== undefined ? right.activity : (left.activity ?? null) }
       : {}),
-    ...(latestTurn !== undefined ? { latestTurn } : {})
+    ...(latestTurn !== undefined ? { latestTurn } : {}),
+    ...(actionablePromptIds !== undefined ? { actionablePromptIds } : {})
   }
 }
 

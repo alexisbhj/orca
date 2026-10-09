@@ -38,6 +38,18 @@ async function midReply() {
     batches.push(batch)
     return append(batch)
   })
+  // A settlement plans its batch at its own turn in the write queue: recorded as it is planned.
+  const appendPlanned = journal.appendPlannedLifecycleBatch
+  vi.spyOn(journal, 'appendPlannedLifecycleBatch').mockImplementation((input) =>
+    appendPlanned({
+      ...input,
+      plan: () => {
+        const planned = input.plan()
+        batches.push({ ...input, mutations: planned.mutations })
+        return planned
+      }
+    })
+  )
   child.stderr = LAST_WORDS
   return { ...rig, child, batches }
 }

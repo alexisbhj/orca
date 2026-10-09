@@ -148,6 +148,11 @@ export type AgentSessionHistoryPage = {
   subagentRoster?: AgentSessionSubagentRosterEntry[]
   /** As of the page's read; a client applies it only from a page that replaces its state. */
   latestTurn?: AgentSessionLatestTurn | null
+  /** Rides with `latestTurn`: the approvals and questions still waiting on the person that the
+   *  agent running now raised, over the whole journal. One an agent that has ended raised is not
+   *  listed, since nothing can take its answer. Absent from an older host, whose clients read every
+   *  pending prompt they hold as waiting. */
+  actionablePromptIds?: string[]
 }
 
 export type AgentSessionHistoryResult =
@@ -207,6 +212,8 @@ export type AgentSessionSubscribeEvent =
       /** Rides every batch that carries rows, removals or submissions, so absent there means an
        *  older host; absent on one that carries none, which changes no turn. */
       latestTurn?: AgentSessionLatestTurn | null
+      /** Rides with `latestTurn` (`AgentSessionHistoryPage.actionablePromptIds`). */
+      actionablePromptIds?: string[]
     } & AgentSessionFrameFields)
   | ({
       type: 'reset'

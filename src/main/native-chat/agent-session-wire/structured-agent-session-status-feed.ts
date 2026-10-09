@@ -19,7 +19,10 @@ import type {
 import type { AgentChildWorkEvidence } from '../../../shared/agent-status-child-work-evidence'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
-import type { StructuredAgentSessionProviderChild } from './structured-agent-session-host-types'
+import type {
+  StructuredAgentSessionEndedChild,
+  StructuredAgentSessionProviderChild
+} from './structured-agent-session-host-types'
 import { structuredAgentSessionStatusSummary } from './structured-agent-session-status-summary'
 import { structuredStatusChildWork } from './structured-agent-session-status-child-work'
 import {
@@ -46,6 +49,8 @@ type StatusFeedSession = {
   journal: AgentSessionJournal
   params: { location: AgentSessionRecord['location']; provider: AgentSessionRecord['provider'] }
   child?: Pick<StructuredAgentSessionProviderChild, 'phase' | 'generation' | 'fence'> | null
+  /** What the current-work projection reads of the last child this host saw end. */
+  lastEndedChild?: Pick<StructuredAgentSessionEndedChild, 'fence' | 'rootGone'>
   restartResume?: AgentSessionStatusSummary['restartResume']
 }
 
@@ -208,8 +213,11 @@ export class StructuredAgentSessionStatusFeed {
     sessionId: string,
     journal?: AgentSessionJournal
   ): StructuredAgentSessionJournalProjection | null {
-    const source = journal ?? this.deps.sessions.get(sessionId)?.journal
-    return source ? this.projections.read(source, this.deps.getRecord(sessionId)) : null
+    const session = this.deps.sessions.get(sessionId)
+    const source = journal ?? session?.journal
+    return source
+      ? this.projections.read(source, this.deps.getRecord(sessionId), session?.lastEndedChild)
+      : null
   }
 
   /** Re-projects one session after its journal changed; equal projections are not re-sent. */
@@ -220,7 +228,7 @@ export class StructuredAgentSessionStatusFeed {
     }
     const source = journal ?? session.journal
     const record = this.deps.getRecord(sessionId)
-    const projection = this.projections.read(source, record)
+    const projection = this.projections.read(source, record, session.lastEndedChild)
     this.retireSettledChildrenOnNewTurn(sessionId, session, projection.acceptedSendKey)
     const summary = structuredAgentSessionStatusSummary({
       sessionId,

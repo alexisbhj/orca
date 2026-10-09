@@ -1,7 +1,10 @@
 // The Stop event a host stop writes (`JournalStopEvent`): whether it ends work its event must
 // record, and the write itself, issued before the kill.
 
-import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
+import {
+  structuredAgentSessionCurrentWork,
+  type StructuredAgentSessionCurrentWork
+} from './structured-agent-session-current-work'
 import { withTimeout } from '../../../shared/promise-timeout-fallback'
 import type { StructuredAgentSessionStopCause } from './structured-agent-session-adapter'
 import type { StructuredAgentSessionLifetimeContext } from './structured-agent-session-host-lifetime'
@@ -62,22 +65,25 @@ export async function stopEndsWork(
     STOP_EVENT_DRAIN_TIMEOUT_MS,
     'slow' as const
   )
+  // The child is live: the work its stop ends is its generation's.
+  const work = structuredAgentSessionCurrentWork(journal, {
+    record: context.deps.store.getRecord(sessionId),
+    ...(session.lastEndedChild ? { ended: session.lastEndedChild } : {})
+  })
   const working =
-    (drain === 'slow' && journal.stopMarks.latestAcceptedSendUnopened()) ||
-    isStructuredAgentSessionMainAgentWorking(
-      journal.activeTurnId(child.fence),
-      journal.submissions(),
-      child.fence
-    )
-  return working && (ending.cause === 'user-close' || !defersToPersonsStop(session, child.fence))
+    (drain === 'slow' && journal.stopMarks.latestAcceptedSendUnopened()) || work.working()
+  return working && (ending.cause === 'user-close' || !defersToPersonsStop(session, work))
 }
 
 /** A host stop of work a person's Stop is already ending must not supersede that Stop's reason:
  *  the turn it decides, or, with no turn running, the work under the queue pause it still holds,
  *  with nothing sent since, which a host's event would lift. */
-function defersToPersonsStop(session: StructuredAgentSessionHostSession, fence: number): boolean {
+function defersToPersonsStop(
+  session: StructuredAgentSessionHostSession,
+  work: StructuredAgentSessionCurrentWork
+): boolean {
   const { journal } = session
-  const live = journal.activeTurnId(fence)
+  const live = work.activeTurnId()
   if (live !== null) {
     return journal.stopMarks.personStopDecides(live)
   }
@@ -102,7 +108,10 @@ export function recordStopEvent(
     return Promise.resolve(null)
   }
   const fence = structuredAgentSessionConversationFence(context.deps.store, sessionId)
-  const turnId = session.journal.activeTurnId(fence)
+  const turnId = structuredAgentSessionCurrentWork(session.journal, {
+    record: context.deps.store.getRecord(sessionId),
+    ...(session.lastEndedChild ? { ended: session.lastEndedChild } : {})
+  }).activeTurnId()
   return session.journal
     .appendStopEvent({ reason: ending.cause, ...(turnId !== null ? { turnId } : {}) }, fence)
     .then(

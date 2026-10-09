@@ -8,6 +8,7 @@ import type {
   AgentJournalProducerLinkage,
   AgentJournalResetReason,
   AgentJournalRowAttribution,
+  AgentJournalSubmission,
   AgentJournalTurnScope,
   AgentSessionJournalIdentity
 } from '../../../shared/agent-session-journal-types'
@@ -57,6 +58,9 @@ export type JournalAppendResult = {
 
 export type JournalItemAppendOptions = AgentJournalRowAttribution & {
   fence: number
+  /** The generation whose execution produced the item: set by a provider's observation, and by
+   *  nothing else. Host bookkeeping leaves it out and keeps the item's (`journalItemOwnerFence`). */
+  ownerFence?: number
   observedAt?: number
   recovered?: true
 }
@@ -74,6 +78,9 @@ export type JournalLifecycleBatchInput = {
   settlementId: string
   mutations: readonly JournalLifecycleMutationInput[]
   fence: number
+  /** A provider's own batch: the generation that produced every item it writes
+   *  (`JournalItemAppendOptions.ownerFence`). */
+  ownerFence?: number
   recovered?: true
   /** Submission verdicts belonging to this settlement, committed before its item rows. */
   dispatches?: readonly ResolveDispatchInput[]
@@ -81,6 +88,8 @@ export type JournalLifecycleBatchInput = {
    *  follows the messages it failed, and no reader meets one without the other. With none still
    *  queued, the batch is not written either. */
   rejectsQueued?: AgentJournalDispatchRejection
+  /** Narrows `rejectsQueued` to the queued sends this names. */
+  rejectsQueuedOnly?: (submission: AgentJournalSubmission) => boolean
 }
 
 /** A lifecycle batch whose rows are chosen at its own turn in the write queue, so a write queued
@@ -99,7 +108,7 @@ export type JournalPlannedLifecycleBatchInput = Pick<
 
 export type JournalResolvedLifecycleBatchInput = Omit<
   JournalLifecycleBatchInput,
-  'mutations' | 'rejectsQueued' | 'dispatches'
+  'mutations' | 'rejectsQueued' | 'rejectsQueuedOnly' | 'dispatches'
 > & {
   /** Read from the fold with every earlier write landed; may return none. */
   resolve: () => readonly JournalLifecycleMutationInput[]

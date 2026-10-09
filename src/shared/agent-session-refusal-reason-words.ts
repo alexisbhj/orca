@@ -88,6 +88,8 @@ const REASON_WORDS = {
     rewindRefused: codeWords('hostFinding'),
     rewindUnconfirmed: codeWords('hostFinding'),
     promptGone: causeWords('questionChanged', 'nothingLeft'),
+    // Said as that agent's own stop, naming it, with the step on from there.
+    promptOwnerEnded: { fact: 'providerExited', action: 'nothingLeft' },
     optionRejected: causeWords('optionRejected', 'retry'),
     providerStarting: AGENT_STARTING,
     goalsUnsupported: causeWords('goalsUnsupported', 'hostFinding'),

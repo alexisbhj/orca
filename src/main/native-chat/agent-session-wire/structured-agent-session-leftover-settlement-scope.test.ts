@@ -4,7 +4,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
-import { isStructuredAgentSessionMainAgentWorking } from '../../../shared/structured-agent-session-main-agent-working'
 import { openTestJournalHostDatabase } from '../agent-session-journal/journal-host-database-test-support'
 import {
   HOST_TEST_NOW as NOW,
@@ -19,6 +18,7 @@ import { structuredQueueHold } from './structured-agent-session-queued-messages'
 import {
   APPROVAL,
   currentJournal,
+  currentWork,
   exitWhileSettlementFails,
   leaveUnfinishedWork,
   logEveryWrite,
@@ -43,18 +43,12 @@ function everyRow(db: ReturnType<typeof openTestJournalHostDatabase>['db']): unk
     .map((table) => [table.name, db.prepare(`SELECT * FROM main."${String(table.name)}"`).all()])
 }
 
-/** Whether the chat reads Working and holds a queue-if-active send, by its current fence. */
+/** Whether the chat reads Working and holds a queue-if-active send, by the host's projection. */
 function holds(current: QueuedMessageTestRig): { working: boolean; queueHeld: boolean } {
-  const journal = currentJournal(current)
-  const record = current.store.getRecord(SESSION)
-  const fence = record?.lease.runtimeFence ?? 0
+  const work = currentWork(current)
   return {
-    working: isStructuredAgentSessionMainAgentWorking(
-      journal.activeTurnId(fence),
-      journal.submissions(),
-      fence
-    ),
-    queueHeld: structuredQueueHold({ journal, record, fence }) !== null
+    working: work.working(),
+    queueHeld: structuredQueueHold({ record: current.store.getRecord(SESSION), work }) !== null
   }
 }
 

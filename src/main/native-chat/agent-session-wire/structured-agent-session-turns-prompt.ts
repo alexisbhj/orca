@@ -24,7 +24,7 @@ import {
   AgentSessionPromptUnavailableError
 } from './structured-agent-session-adapter'
 import { settledPrompt, validatePendingPrompt } from './structured-agent-session-prompt-state'
-import { isStructuredAgentSessionEndedGenerationWork } from '../../../shared/structured-agent-session-main-agent-working'
+import { contextStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 import type { AgentSessionTurnContext, TurnOutcome } from './structured-agent-session-turns'
 
 export type AgentSessionPromptRequest = {
@@ -98,9 +98,13 @@ export async function performPrompt(
     return held ? { ok: true, value: held } : validated
   }
   const { prompt } = validated
-  if (isStructuredAgentSessionEndedGenerationWork(ctx.journal.itemFence(input.itemId), ctx.fence)) {
-    // The agent that asked has ended: an answer would reach whichever agent runs now.
-    return invalid('promptGone', `Item ${input.itemId} was raised by an agent that has ended.`)
+  const work = contextStructuredAgentSessionCurrentWork(ctx)
+  if (!work.isCurrentItem(input.itemId)) {
+    // The agent that asked has ended: an answer would reach whichever agent runs now, or none.
+    return invalid(
+      'promptOwnerEnded',
+      `Item ${input.itemId} was raised by an agent that has ended.`
+    )
   }
   const choice = readPromptChoice(prompt, input)
   if (!choice) {
@@ -137,7 +141,7 @@ export async function performPrompt(
           identity,
           { ...prompt, resolution },
           // A revision: the prompt keeps the turn it was raised in.
-          { fence: ctx.fence, turnScope: ctx.journal.liveTurnScope() }
+          { fence: ctx.fence, turnScope: work.turnScope() }
         )
       }
     })
@@ -160,7 +164,7 @@ export async function performPrompt(
           surface: 'row'
         })
       },
-      { fence: ctx.fence, turnScope: ctx.journal.liveTurnScope() }
+      { fence: ctx.fence, turnScope: contextStructuredAgentSessionCurrentWork(ctx).turnScope() }
     )
   }
   const appended = committed.item

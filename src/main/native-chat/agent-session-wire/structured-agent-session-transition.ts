@@ -118,6 +118,7 @@ function transitionAppend(
                   batch: {
                     settlementId: step.settlementId,
                     fence,
+                    ownerFence: fence,
                     resolve: () => step.resolve(journal)
                   }
                 }

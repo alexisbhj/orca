@@ -21,6 +21,10 @@ import type Database from '../../sqlite/sync-database'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
 import type { StructuredAgentSessionHost } from './structured-agent-session-host'
 import {
+  hostStructuredAgentSessionCurrentWork,
+  type StructuredAgentSessionCurrentWork
+} from './structured-agent-session-current-work'
+import {
   HOST_TEST_SESSION as SESSION,
   HOST_TEST_THREAD as THREAD,
   hostTestMessage,
@@ -201,6 +205,18 @@ export function currentJournal(current: QueuedMessageTestRig) {
     throw new Error('expected the open conversation')
   }
   return journal
+}
+
+/** The host's projection of the chat's current work, as every host reader asks it. */
+export function currentWork(current: QueuedMessageTestRig): StructuredAgentSessionCurrentWork {
+  const work = hostStructuredAgentSessionCurrentWork(
+    { store: current.store, sessions: current.host.collaboratorsForTests().sessions },
+    SESSION
+  )
+  if (!work) {
+    throw new Error('expected the open conversation')
+  }
+  return work
 }
 
 export function turnState(current: QueuedMessageTestRig): string | undefined {

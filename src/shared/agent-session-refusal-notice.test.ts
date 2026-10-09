@@ -527,6 +527,12 @@ describe('the notice for every reason a host names', () => {
       'This question was already answered or has changed.'
     ],
     [
+      'agent_session_operation_invalid',
+      'promptOwnerEnded',
+      'answer',
+      'Your answer was not sent. The agent stopped while this response was in progress. You can continue in this conversation.'
+    ],
+    [
       'agent_session_checkpoint_stale',
       'fenceStale',
       'composer-send',

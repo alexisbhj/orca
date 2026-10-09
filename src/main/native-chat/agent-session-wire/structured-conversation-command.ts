@@ -69,6 +69,7 @@ export function runStructuredConversationCommand(
       // Starts the agent only to settle a rewind in doubt, as a send does; a /clear itself starts nothing.
       prepareSession: sendPreparation(context, envelope, { refusesInRun: true }),
       journal: () => context.sessions.get(sessionId)?.journal,
+      endedChild: () => context.sessions.get(sessionId)?.lastEndedChild,
       publish: (journal) => context.publish(sessionId, journal),
       now: context.now,
       plan: {

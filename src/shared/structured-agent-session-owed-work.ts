@@ -1,9 +1,8 @@
 import type { AgentJournalRenderItem, AgentJournalSubmission } from './agent-session-journal-types'
 import { activeStructuredAgentSessionTurnId } from './structured-agent-session-live-turn'
 import {
-  isStructuredAgentSessionEndedGenerationWork,
   isStructuredAgentSessionMainAgentWorking,
-  type StructuredAgentSessionItemFence
+  type StructuredAgentSessionWorkScope
 } from './structured-agent-session-main-agent-working'
 import { agentSessionCurrentContextRows } from './agent-session-context-clear'
 
@@ -13,17 +12,16 @@ export function owesStructuredAgentSessionWork(
   items: readonly AgentJournalRenderItem[],
   submissions: readonly AgentJournalSubmission[],
   currentFence?: number | null,
-  itemFence?: StructuredAgentSessionItemFence
+  scope?: StructuredAgentSessionWorkScope
 ): boolean {
   const current = agentSessionCurrentContextRows(items, submissions)
   return isStructuredAgentSessionMainAgentWorking(
     activeStructuredAgentSessionTurnId(
       current.items,
-      itemFence &&
-        ((item) =>
-          !isStructuredAgentSessionEndedGenerationWork(itemFence(item.itemId), currentFence))
+      scope && ((item) => scope.isCurrentItem(item.itemId))
     ),
     current.submissions,
-    currentFence
+    currentFence,
+    scope
   )
 }

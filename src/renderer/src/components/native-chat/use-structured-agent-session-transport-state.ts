@@ -22,6 +22,8 @@ export function useStructuredAgentSessionTransportState(
   const subagentRoster = (enabled ? state.subagentRoster : undefined) ?? NO_SUBAGENT_ROSTER
   const fence = enabled ? state.fence : null
   const latestTurn = enabled ? state.latestTurn : undefined
+  // The host's answer to which pending prompts still wait on the person; absent from an older host.
+  const actionablePromptIds = enabled ? state.actionablePromptIds : undefined
   const current = useMemo(
     () => agentSessionCurrentContextRows(journalItems, submissions),
     [journalItems, submissions]
@@ -58,6 +60,7 @@ export function useStructuredAgentSessionTransportState(
   return {
     journalItems,
     latestTurn,
+    actionablePromptIds,
     subagentRoster,
     submissions,
     fence,

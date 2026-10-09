@@ -13,7 +13,6 @@ import type {
   AgentJournalSubmission,
   AgentJournalThreadGoal,
   AgentJournalTurnLifecycle,
-  AgentJournalTurnScope,
   AgentSessionJournalIdentity
 } from '../../../shared/agent-session-journal-types'
 import { agentJournalItemKey } from '../../../shared/agent-session-journal-item-key'
@@ -21,9 +20,8 @@ import { currentAgentSessionThreadGoalBySequence } from '../../../shared/agent-s
 import type { AgentSessionContextUsage } from '../../../shared/agent-session-context-usage'
 import { latestStructuredAgentContextFacts } from '../../../shared/structured-agent-session-context-usage'
 import {
-  currentStructuredAgentSessionTurnId,
-  liveStructuredAgentSessionTurnScope,
-  newestStructuredAgentSessionTurnBySequence
+  newestStructuredAgentSessionTurnBySequence,
+  runningStructuredAgentSessionTurnItemBySequence
 } from '../../../shared/structured-agent-session-live-turn'
 import type { JournalReplacementItem } from './journal-epoch-replacement'
 import { readJournalSince } from './journal-cursor'
@@ -223,14 +221,14 @@ export class AgentSessionJournal {
     }
   }
 
-  /** The turn this journal has published as running — the same read a client's snapshot gives,
-   *  without materialising one. Given the lease's fence, only one a current generation opened. */
-  activeTurnId = (currentFence?: number | null): string | null =>
-    currentStructuredAgentSessionTurnId(this.state.items.values(), this.itemFence, currentFence)
+  /** The turn this journal records as running, whichever generation opened it — the same read a
+   *  client's snapshot gives, without materialising one. Whether it is current work is the host
+   *  projection's to say (`structuredAgentSessionCurrentWork`). */
+  activeTurnId = (): string | null => this.runningTurn()?.turnId ?? null
 
-  /** Where a row written now belongs: the running turn, or the conversation. */
-  liveTurnScope = (): AgentJournalTurnScope =>
-    liveStructuredAgentSessionTurnScope(this.state.items.values())
+  /** That turn with its record's item. */
+  runningTurn = (): { item: AgentJournalRenderItem; turnId: string } | null =>
+    runningStructuredAgentSessionTurnItemBySequence(this.state.items.values())
 
   /** The newest turn record whatever state it settled in, for readers that need the outcome. */
   newestTurn = (): AgentJournalTurnLifecycle | null =>
@@ -247,7 +245,7 @@ export class AgentSessionJournal {
   /** Includes revisions and completion tombstones, whose timestamps disappear from render items. */
   lastActivityAt = (): number => this.state.lastActivityAt
 
-  /** Fence of the writer that created the item, while it is in the timeline. */
+  /** The item's execution provenance (`JournalItemRow.ownerFence`), while it is in the timeline. */
   itemFence = (itemId: string): number | undefined => this.state.itemFences.get(itemId)
 
   submissions = (): AgentJournalSubmission[] => [...this.state.submissions.values()]

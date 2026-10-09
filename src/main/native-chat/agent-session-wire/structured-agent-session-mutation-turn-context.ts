@@ -4,6 +4,7 @@ import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import type { AgentSessionMutationRequest } from './structured-agent-session-mutation-admission'
 import type { AgentSessionTurnContext } from './structured-agent-session-turns'
+import { structuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 
 export function mutationTurnContext<TValue>(
   request: AgentSessionMutationRequest<TValue>,
@@ -11,11 +12,19 @@ export function mutationTurnContext<TValue>(
   record: AgentSessionRecord
 ): AgentSessionTurnContext {
   const fence = record.lease.runtimeFence
-  const persistedOptions = request.store.getRecord(request.envelope.sessionId)?.options
+  const { sessionId } = request.envelope
+  const persistedOptions = request.store.getRecord(sessionId)?.options
   return {
-    sessionId: request.envelope.sessionId,
+    sessionId,
     journal,
     fence,
+    currentWork: () => {
+      const ended = request.endedChild?.()
+      return structuredAgentSessionCurrentWork(journal, {
+        record: request.store.getRecord(sessionId),
+        ...(ended ? { ended } : {})
+      })
+    },
     adapter: request.adapter,
     agents: request.agents,
     agent: record.provider,

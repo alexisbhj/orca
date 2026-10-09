@@ -51,7 +51,12 @@ export function journalItemRowBuilder(
   state: () => JournalReducerState,
   address: AgentJournalItemIdentity | string,
   body: AgentJournalItemBody,
-  options: AgentJournalRowAttribution & { fence: number; observedAt?: number; recovered?: true },
+  options: AgentJournalRowAttribution & {
+    fence: number
+    ownerFence?: number
+    observedAt?: number
+    recovered?: true
+  },
   revisions?: Map<string, number>
 ): RowBuilder<JournalItemRow> {
   return (seq, ts) =>
@@ -61,6 +66,7 @@ export function journalItemRowBuilder(
       body,
       seq,
       fence: options.fence,
+      ownerFence: options.ownerFence,
       ts: options.observedAt ?? ts,
       recovered: options.recovered,
       linkage: options,
@@ -186,7 +192,11 @@ export function journalLifecycleBatchRowBuilder(
           ? { ...mutation, body: turnEndAfterStop(current, resolved, mutation.body) }
           : mutation,
         itemId,
-        revision
+        revision,
+        journalItemOwnerFence(current, resolved, {
+          fence: options.fence,
+          ownerFence: mutation.kind === 'item' ? mutation.ownerFence : undefined
+        })
       )
     })
     const row: JournalLifecycleBatchRow = {
@@ -219,12 +229,29 @@ export function journalRowBase(
   return { v: journalRowSchemaVersion(bodies), epoch, seq, fence, ts }
 }
 
+/** The provenance a row states: the writer's own claim when it has one — a provider's observation,
+ *  or history carried into a new epoch — else host bookkeeping's, which keeps the item's, and for
+ *  an item it creates is the fence it writes at. Every item row states it. */
+export function journalItemOwnerFence(
+  state: Pick<JournalReducerState, 'itemFences' | 'items'>,
+  resolvedItemId: string,
+  write: { fence: number; ownerFence?: number }
+): number {
+  if (write.ownerFence !== undefined) {
+    return write.ownerFence
+  }
+  const kept = state.items.has(resolvedItemId) ? state.itemFences.get(resolvedItemId) : undefined
+  return kept ?? write.fence
+}
+
 export function buildJournalItemRow(
   input: JournalItemAddress & {
     state: JournalReducerState
     body: AgentJournalItemBody
     seq: number
     fence: number
+    /** The writer's provenance claim (`journalItemOwnerFence`); absent for host bookkeeping. */
+    ownerFence?: number
     ts: number
     recovered?: true
     linkage?: AgentJournalProducerLinkage
@@ -244,6 +271,7 @@ export function buildJournalItemRow(
     revision,
     body,
     ...journalRowBase(input.state.epoch, input.seq, input.fence, input.ts, [body]),
+    ownerFence: journalItemOwnerFence(input.state, resolved, input),
     ...(input.recovered ? { recovered: input.recovered } : {}),
     turnScope: input.turnScope,
     ...agentJournalLinkageFields(input.linkage)

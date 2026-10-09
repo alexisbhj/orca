@@ -77,6 +77,7 @@ export async function rewindJournalContext(input: {
             seq,
             ts: item.observedAt ?? ts,
             fence: input.fence,
+            ownerFence: item.ownerFence,
             turnScope: item.turnScope ?? { kind: 'thread' }
           }),
           revision

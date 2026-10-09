@@ -7,6 +7,10 @@ import { isStructuredAgentSessionCommandEntry } from '../../../shared/structured
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import { projectStructuredAgentSessionStatusState } from '../../../shared/structured-agent-session-projection'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
+import {
+  structuredAgentSessionCurrentWork,
+  type StructuredAgentSessionWorkEvidence
+} from './structured-agent-session-current-work'
 import { newestAcceptedSendKey } from './structured-agent-session-status-child-work'
 import { structuredAgentSessionStopping } from './structured-agent-session-stopping'
 
@@ -18,6 +22,9 @@ export type StructuredAgentSessionJournalProjection = {
   epoch: string
   sequence: number
   fence: number | undefined
+  /** The live generation's fence (`structuredAgentSessionLiveFence`): an exit this host saw, or a
+   *  release, changes what is current without a journal row. */
+  liveFence: number | null
   /** The Stop marks' settle revision: a settle edge writes no row, so it is a key of its own. */
   stopRevision: number
   state: StructuredAgentSessionStatusState
@@ -37,11 +44,13 @@ export class StructuredAgentSessionJournalProjections {
 
   read(
     journal: AgentSessionJournal,
-    record: AgentSessionRecord | null
+    record: AgentSessionRecord | null,
+    ended?: StructuredAgentSessionWorkEvidence['ended']
   ): StructuredAgentSessionJournalProjection {
     const cursor = journal.cursor()
     // The conversation's fence, which a child's end moves: its unanswered sends stop counting.
     const fence = record?.lease.runtimeFence
+    const work = structuredAgentSessionCurrentWork(journal, { record, ...(ended ? { ended } : {}) })
     const stopRevision = journal.stopMarks.revision()
     let projection = this.byJournal.get(journal)
     if (
@@ -49,6 +58,7 @@ export class StructuredAgentSessionJournalProjections {
       projection.epoch !== cursor.epoch ||
       projection.sequence !== cursor.sequence ||
       projection.fence !== fence ||
+      projection.liveFence !== work.liveFence ||
       projection.stopRevision !== stopRevision
     ) {
       // A journalled submission bumps `lastSequence`, so the send-time working
@@ -81,16 +91,22 @@ export class StructuredAgentSessionJournalProjections {
         firstInputSubmissionKey,
         submissionCount: snapshot.submissions.length,
         fence,
+        liveFence: work.liveFence,
         stopRevision,
-        // The host knows who wrote each item: an ended generation's work is not Working.
+        // The host's projection of current work: an ended generation's is not Working.
         state: projectStructuredAgentSessionStatusState(
           snapshot.items,
           snapshot.submissions,
           fence,
-          journal.itemFence
+          work.scope
         ),
         acceptedSendKey: newestAcceptedSendKey(cursor.epoch, snapshot.submissions),
-        stopping: structuredAgentSessionStopping(journal, snapshot.items, snapshot.submissions)
+        stopping: structuredAgentSessionStopping(
+          journal,
+          snapshot.items,
+          snapshot.submissions,
+          work.scope
+        )
       }
       this.byJournal.set(journal, projection)
     }

@@ -50,7 +50,8 @@ export type JournalReducerState = {
   oldestSequence: number
   highestFence: number
   items: Map<string, AgentJournalRenderItem>
-  /** Fence of the writer that created each item: the generation a running turn belongs to. */
+  /** Each item's execution provenance (`JournalItemRow.ownerFence`): the generation whose work it
+   *  is, which decides whether it is current. */
   itemFences: Map<string, number>
   /** Revision of a removed item, so a late lower revision cannot resurrect it. */
   tombstones: Map<string, number>
@@ -107,7 +108,7 @@ export function applyJournalRow(state: JournalReducerState, row: JournalRow): vo
       itemId,
       row.revision,
       journalRenderItem(itemId, row.revision, row.body, row, statedOrDerivedTurnScope(state, row)),
-      row.fence
+      { fence: row.fence, ownerFence: row.ownerFence }
     )
     return
   }
@@ -137,7 +138,10 @@ export function applyJournalRow(state: JournalReducerState, row: JournalRow): vo
         const producer = journalBatchMutationProducer(row, mutation)
         const scope = statedOrDerivedTurnScope(state, mutation)
         const item = journalRenderItem(itemId, revision, body, row, scope, producer, sequenceIndex)
-        upsertJournalItem(state, itemId, revision, item, row.fence)
+        upsertJournalItem(state, itemId, revision, item, {
+          fence: row.fence,
+          ownerFence: mutation.ownerFence
+        })
       } else {
         removeJournalItem(state, resolveItemId(state, mutation.itemId), mutation.revision)
       }

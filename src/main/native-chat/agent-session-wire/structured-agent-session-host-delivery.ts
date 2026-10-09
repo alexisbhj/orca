@@ -2,7 +2,7 @@
 // messages to a provider child. Bundled because they share one invariant — a conversation open
 // with a message queued has a delivery loop — and the open is where a loop for leftovers wakes.
 
-import { isQueuedAgentJournalSubmission } from '../../../shared/agent-session-queued-submission'
+import { hostStructuredAgentSessionCurrentWork } from './structured-agent-session-current-work'
 import { holdClosedStructuredAgentSessionSends } from './structured-agent-session-host-lifetime'
 import type { AgentSessionJournal } from '../agent-session-journal/journal-store'
 import {
@@ -72,6 +72,8 @@ export function createStructuredAgentSessionConversationDelivery(input: {
         : sessions.get(sessionId)
       await retireSignedOutStructuredAgentSessionChild(sessionId, session, {
         work: {
+          currentWork: () =>
+            hostStructuredAgentSessionCurrentWork({ store: deps.store, sessions }, sessionId),
           childWork: () => input.clientDelivery.readChildWork(sessionId),
           hasOpenDispatch: () => {
             const record = deps.store.getRecord(sessionId)
@@ -118,10 +120,12 @@ export function createStructuredAgentSessionConversationDelivery(input: {
   }
   const wakesQueued = new Set<string>()
   const afterCommit = (sessionId: string, journal: AgentSessionJournal): void => {
+    const work = hostStructuredAgentSessionCurrentWork({ store: deps.store, sessions }, sessionId)
     if (
       wakesQueued.has(sessionId) ||
-      structuredAgentSessionCommandRunning(journal) ||
-      !journal.submissions().some(isQueuedAgentJournalSubmission)
+      !work ||
+      structuredAgentSessionCommandRunning(work) ||
+      !journal.submissions().some((submission) => work.handsOver(submission))
     ) {
       return
     }

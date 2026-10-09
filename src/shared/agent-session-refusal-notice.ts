@@ -125,6 +125,10 @@ function reasonParts(
     return undefined
   }
   if ('fact' in words) {
+    if (write === 'answer') {
+      // An answer to an agent that stopped: its row's sentence, which names it and says go on.
+      return [NOT_DONE[write], { failure: { kind: words.fact }, surface: 'row', context }]
+    }
     return write === 'send' || write === 'composer-send'
       ? [
           NOT_DONE[write],
