@@ -18,6 +18,8 @@ import { recordableLaunchFollowUp, takeLaunchFollowUps } from '@/lib/agent-launc
 import { waitForRecordedLaunchFollowUp } from '@/lib/agent-launch-follow-up-waiter'
 import { seedNativeChatLaunchDraftForAgentTab } from '@/lib/agent-launch-prompt-delivery'
 import { desktopNewTabPromptDelivery } from '../../../shared/desktop-new-tab-prompt'
+import { isRuntimeOwnedSshTargetId } from '../../../shared/execution-host'
+import { getConnectionIdFromState } from '@/lib/connection-owner-resolution'
 import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import type {
   LaunchAgentInNewTabArgs,
@@ -42,8 +44,25 @@ export function newTabPromptLaunchesThroughHost(args: {
 }
 
 /** Chat-default fallbacks keep their already-decided renderer surface. */
-export function newTabTerminalLaunchesThroughHost(): boolean {
-  return windowMakesHostLaunchTab()
+export function newTabTerminalLaunchesThroughHost(
+  worktreeId: string,
+  runtimeEnvironmentId: string | null
+): boolean {
+  return windowMakesHostLaunchTab() && !sshTargetAwaitsConnect(worktreeId, runtimeEnvironmentId)
+}
+
+// TEMPORARY until the host owns the SSH connect: main's pane connects first (or waits for the
+// user's passphrase) and only then spawns; a host spawn on an unconnected target just fails.
+function sshTargetAwaitsConnect(worktreeId: string, runtimeEnvironmentId: string | null): boolean {
+  const state = useAppStore.getState()
+  // Same owner rule as the pane: a runtime environment's SSH is the runtime's to connect.
+  const connectionId =
+    runtimeEnvironmentId === null ? getConnectionIdFromState(state, worktreeId) : null
+  return (
+    typeof connectionId === 'string' &&
+    !isRuntimeOwnedSshTargetId(connectionId) &&
+    state.sshConnectionStates.get(connectionId)?.status !== 'connected'
+  )
 }
 
 /** Keeps fresh desktop startup and live input on the existing reserved-pane launch. */

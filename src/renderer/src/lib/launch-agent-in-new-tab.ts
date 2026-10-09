@@ -208,7 +208,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       promptDeliveryResult: launched.promptDeliveryResult
     }
   }
-  if (!args.launchPurpose && newTabTerminalLaunchesThroughHost()) {
+  if (!args.launchPurpose && newTabTerminalLaunchesThroughHost(worktreeId, runtimeEnvironmentId)) {
     return launchFreshTerminalTabThroughHost(args, startupPlan, pasteDraftAfterLaunch)
   }
   // Why: queue startup BEFORE TerminalPane mounts — it snapshots pendingStartupByTabId in useState on first render.

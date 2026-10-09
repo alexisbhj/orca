@@ -134,6 +134,7 @@ describe('launchAgentInNewTab execution host resolution', () => {
     store.tabBarOrderByWorktree = {}
     store.terminalLayoutsByTabId = {}
     store.ptyIdsByTabId = {}
+    store.sshConnectionStates = new Map()
   })
 
   it('shapes the launch from the worktree host, not a rival repo row on another SSH host', async () => {
@@ -156,11 +157,39 @@ describe('launchAgentInNewTab execution host resolution', () => {
       { id: 'repo-1', connectionId: null, executionHostId: 'ssh:m4air', path: '/srv/m4air' }
     ]
     store.worktreesByRepo = { 'repo-1': [worktreeOn('ssh:m4air', '/srv/m4air/worktree')] }
+    store.sshConnectionStates = new Map([['m4air', { status: 'connected' }]])
 
     await launchOnLinux()
 
     expect(launchCommand).toBe("orca claude-teams '--dangerously-skip-permissions'")
   })
+
+  // The pane's deferred-connect flow connects (or waits for the passphrase) before it spawns.
+  it.each([undefined, 'connecting', 'disconnected'])(
+    "keeps an SSH launch whose target is %s on main's pane, which connects before it spawns",
+    async (status) => {
+      store.repos = [
+        { id: 'repo-1', connectionId: null, executionHostId: 'ssh:m4air', path: '/srv/m4air' }
+      ]
+      store.worktreesByRepo = { 'repo-1': [worktreeOn('ssh:m4air', '/srv/m4air/worktree')] }
+      store.sshConnectionStates = new Map(status ? [['m4air', { status }]] : [])
+      const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+
+      launchAgentInNewTab({
+        requestId: 'request-1',
+        agent: 'claude',
+        worktreeId: 'wt-1',
+        launchPlatform: 'linux'
+      })
+
+      expect(callRuntimeRpc).not.toHaveBeenCalled()
+      expect(mockCreateTab).toHaveBeenCalledOnce()
+      expect(mockQueueTabStartupCommand).toHaveBeenCalledWith(
+        'tab-1',
+        expect.objectContaining({ launchAgent: 'claude' })
+      )
+    }
+  )
 
   it('keeps a runtime host reaching a nested SSH target on the relay shim name', async () => {
     store.repos = [
