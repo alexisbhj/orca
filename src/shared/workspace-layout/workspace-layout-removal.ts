@@ -1,6 +1,7 @@
 import { getRepoIdFromWorktreeId } from '../worktree/id'
 import { removeGroupLayoutLeaf } from './tab-group-layout-tree'
-import { removeLayoutLeaf } from './terminal-pane-tree'
+import { withoutKey } from './stored-record-fields'
+import { layoutContainsLeafId, removeLayoutLeaf } from './terminal-pane-tree'
 import {
   paneKeyOf,
   type LayoutTerminalTab,
@@ -25,7 +26,7 @@ export function findTerminalTab(
   return null
 }
 
-/** An emptied group closes unless it is the workspace's last one, as the tab bar does today. */
+/** An emptied group closes, even the last one: an empty group is never saved, so it never stays. */
 export function removeTabFromWorkspace(workspace: WorkspaceLayout, tabId: string): WorkspaceLayout {
   let groupLayout = workspace.groupLayout
   const groups = workspace.groups.flatMap((group) => {
@@ -33,7 +34,7 @@ export function removeTabFromWorkspace(workspace: WorkspaceLayout, tabId: string
       return [group]
     }
     const tabOrder = group.tabOrder.filter((id) => id !== tabId)
-    if (tabOrder.length === 0 && workspace.groups.length > 1) {
+    if (tabOrder.length === 0) {
       groupLayout = groupLayout
         ? (removeGroupLayoutLeaf(groupLayout, group.id) ?? undefined)
         : undefined
@@ -54,18 +55,6 @@ export function removeTabFromWorkspace(workspace: WorkspaceLayout, tabId: string
   return next
 }
 
-function withoutKey<T>(
-  record: Record<string, T> | undefined,
-  key: string
-): Record<string, T> | undefined {
-  if (!record || !Object.hasOwn(record, key)) {
-    return record
-  }
-  const next = { ...record }
-  delete next[key]
-  return next
-}
-
 /** Membership changed: older builds' save merge must defer to this layout (section 7). */
 export function advanceTopologyRevision(
   records: WorkspaceLayoutRecords,
@@ -81,7 +70,7 @@ export function advanceTopologyRevision(
   }
 }
 
-function withWorkspace(
+export function withWorkspace(
   model: WorkspaceLayoutModel,
   workspaceKey: string,
   workspace: WorkspaceLayout
@@ -128,6 +117,48 @@ export function retireTerminalPane(
   }
   return {
     ...withWorkspace(model, workspaceKey, nextWorkspace),
-    records: advanceTopologyRevision(records, tab.terminal.worktreeId)
+    records: advanceTopologyRevision(records, workspace.worktreeId)
+  }
+}
+
+export type ExitedSurface = {
+  worktreeId: string
+  terminalTabId: string
+  leafId: string
+  ptyId: string
+  incarnationId?: string
+}
+
+/**
+ * Today's exit retirement: a pane now showing another terminal or incarnation is left alone; a
+ * pane no longer in its tab only loses its incarnation. A legacy tab with no pane tree closes when
+ * its one terminal is this one.
+ */
+export function retireExitedSurface(
+  model: WorkspaceLayoutModel,
+  surface: ExitedSurface
+): { model: WorkspaceLayoutModel; retired: boolean } {
+  const paneKey = paneKeyOf(surface.terminalTabId, surface.leafId)
+  const incarnation = model.records.incarnationsByPaneKey?.[paneKey]
+  if (surface.incarnationId && incarnation && incarnation !== surface.incarnationId) {
+    return { model, retired: false }
+  }
+  const location = findTerminalTab(model, surface.terminalTabId)
+  const panes = location?.tab.panes
+  const inTree = Boolean(panes && layoutContainsLeafId(panes.root, surface.leafId))
+  const boundPtyId = inTree ? panes?.ptyIdsByLeafId?.[surface.leafId] : undefined
+  if (boundPtyId && boundPtyId !== surface.ptyId) {
+    return { model, retired: false }
+  }
+  if (location && (inTree || (!panes && location.tab.legacyPtyId === surface.ptyId))) {
+    return { model: retireTerminalPane(model, location, surface.leafId), retired: true }
+  }
+  const records = {
+    ...model.records,
+    incarnationsByPaneKey: withoutKey(model.records.incarnationsByPaneKey, paneKey)
+  }
+  return {
+    model: { ...model, records: advanceTopologyRevision(records, surface.worktreeId) },
+    retired: false
   }
 }

@@ -1,8 +1,7 @@
-// The structural rules, run on the model through the same projection the Serializer writes, so a
-// model that saves cleanly and a model that obeys the rules are the same claim.
+// The structural rules, run on exactly what the Serializer writes for the model and what is kept
+// beside it, so "saves cleanly" and "obeys the rules" are one claim.
 
 import type { LoadedWorkspaceLayout } from './workspace-layout-load-types'
-import type { WorkspaceLayoutModel } from './workspace-layout-model'
 import { checkWorkspaceLayoutRules, type WorkspaceLayoutViolation } from './workspace-layout-rules'
 import { saveWorkspaceLayout } from './workspace-layout-save'
 
@@ -23,13 +22,13 @@ export function emptyLayoutBeside(): Omit<LoadedWorkspaceLayout, 'layout'> {
   }
 }
 
-function partitionOf(layout: WorkspaceLayoutModel) {
-  return { hostId: layout.hostId, session: saveWorkspaceLayout({ ...emptyLayoutBeside(), layout }) }
+function partitionOf(loaded: LoadedWorkspaceLayout) {
+  return { hostId: loaded.layout.hostId, session: saveWorkspaceLayout(loaded) }
 }
 
 export function checkWorkspaceLayoutModelRules(
-  models: readonly WorkspaceLayoutModel[],
-  previous?: readonly WorkspaceLayoutModel[]
+  loaded: readonly LoadedWorkspaceLayout[],
+  previous?: readonly LoadedWorkspaceLayout[]
 ): WorkspaceLayoutViolation[] {
-  return checkWorkspaceLayoutRules(models.map(partitionOf), previous?.map(partitionOf))
+  return checkWorkspaceLayoutRules(loaded.map(partitionOf), previous?.map(partitionOf))
 }

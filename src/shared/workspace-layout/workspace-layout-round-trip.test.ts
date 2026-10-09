@@ -10,11 +10,16 @@ import {
   localDesktopSession,
   relaySshSession,
   serverRuntimeSession
-} from './workspace-layout-profile-fixtures'
-import { addWorkspace, emptySession, leaf } from './workspace-layout-session-fixtures'
+} from './workspace-layout-profile.test-fixture'
+import { addWorkspace, emptySession, leaf } from './workspace-layout-session.test-fixture'
 
 /** What reaches disk: the profile documents are JSON, so an undefined field is a missing one. */
 const onDisk = (session: WorkspaceSessionState): unknown => JSON.parse(JSON.stringify(session))
+
+function mintLeafIds(): () => string {
+  let next = 0
+  return () => `00000000-0000-4000-8000-${String(++next).padStart(12, '0')}`
+}
 
 function mintIds(): () => string {
   let next = 0
@@ -22,7 +27,10 @@ function mintIds(): () => string {
 }
 
 function roundTrip(hostId: ExecutionHostId, session: WorkspaceSessionState) {
-  const loaded = loadWorkspaceLayout(hostId, session, { mintId: mintIds() })
+  const loaded = loadWorkspaceLayout(hostId, session, {
+    mintId: mintIds(),
+    mintLeafId: mintLeafIds()
+  })
   return { loaded, saved: saveWorkspaceLayout(loaded) }
 }
 
@@ -72,7 +80,7 @@ describe('workspace layout Loader and Serializer', () => {
       const stored = build()
       const { loaded } = roundTrip(hostId, stored)
       expect(checkWorkspaceLayoutRules([{ hostId, session: stored }])).toEqual([])
-      expect(checkWorkspaceLayoutModelRules([loaded.layout])).toEqual([])
+      expect(checkWorkspaceLayoutModelRules([loaded])).toEqual([])
     }
   )
 

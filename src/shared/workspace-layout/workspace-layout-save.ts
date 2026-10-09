@@ -34,12 +34,14 @@ function saveWorkspace(
   session: WorkspaceMaps
 ): void {
   const { facts, desktopView: view } = loaded
+  const { worktreeId } = workspace
+  const scope = { workspaceKey: key, worktreeId, hostId: loaded.layout.hostId, facts, view }
   // Rows follow the one tab order: the rules and older readers expect the row list in that order.
   const ordered = tabsInOrder(workspace)
   const unplaced = workspace.tabs.filter((tab) => !ordered.includes(tab))
   const rows = [...ordered, ...unplaced]
     .flatMap((tab) => (tab.kind === 'terminal' ? [tab] : []))
-    .map((tab, index) => saveTerminalRow(tab, index, facts))
+    .map((tab, index) => saveTerminalRow(tab, index, scope))
   const placement = new Map<string, { groupId: string; index: number }>()
   for (const group of workspace.groups) {
     group.tabOrder.forEach((tabId, index) => placement.set(tabId, { groupId: group.id, index }))
@@ -57,16 +59,7 @@ function saveWorkspace(
       }
     }
     if (place) {
-      entries.push(
-        saveTabBarEntry({
-          workspaceKey: key,
-          tab,
-          groupId: place.groupId,
-          sortOrder: place.index,
-          facts,
-          view
-        })
-      )
+      entries.push(saveTabBarEntry(tab, { groupId: place.groupId, sortOrder: place.index }, scope))
     }
   }
   if (rows.length > 0 || workspace.keepsEmptyTerminalRows) {
@@ -79,7 +72,7 @@ function saveWorkspace(
       const activeTabId = selection?.activeTabId
       return {
         id: group.id,
-        worktreeId: group.worktreeId,
+        worktreeId,
         activeTabId: activeTabId && group.tabOrder.includes(activeTabId) ? activeTabId : null,
         tabOrder: group.tabOrder,
         ...(selection?.recentTabIds
@@ -100,14 +93,23 @@ function saveWorkspace(
     }
   }
   if (workspace.editorFiles) {
+    // Preview is the tab's; today's writer stores it on the file only when true.
+    const previewFiles = new Set(
+      workspace.tabs.flatMap((tab) =>
+        tab.kind === 'editor' && tab.isPreview ? [tab.entityId] : []
+      )
+    )
     session.openFilesByWorktree[key] = workspace.editorFiles.map((file): PersistedOpenFile => ({
       ...file,
+      worktreeId,
+      ...(previewFiles.has(file.filePath) ? { isPreview: true } : {}),
       ...view.editorDrafts[key]?.[file.filePath]
     }))
   }
   if (workspace.browserTabs) {
     session.browserTabsByWorktree[key] = workspace.browserTabs.map((tab): BrowserWorkspace => ({
       ...tab,
+      worktreeId,
       ...(facts.browserTabs[key]?.[tab.id] ?? BLANK_BROWSER_TAB_STATE)
     }))
   }

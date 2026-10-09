@@ -12,7 +12,7 @@ import {
   leaf,
   SERVER_KEY,
   SSH_KEY
-} from './workspace-layout-session-fixtures'
+} from './workspace-layout-session.test-fixture'
 
 export function sleepingRecord(
   worktreeId: string,

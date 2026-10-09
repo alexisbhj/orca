@@ -22,3 +22,25 @@ export function omitStoredFields<T extends object, K extends keyof T>(
   }
   return omitted
 }
+
+/** The record without `key`; the same object when it has no such key. */
+export function withoutKey<T>(
+  record: Record<string, T> | undefined,
+  key: string
+): Record<string, T> | undefined {
+  if (!record || !Object.hasOwn(record, key)) {
+    return record
+  }
+  const next = { ...record }
+  delete next[key]
+  return next
+}
+
+/** The child record under `key`, created empty when missing. */
+export function childRecord<T>(
+  record: Record<string, Record<string, T>>,
+  key: string
+): Record<string, T> {
+  record[key] ??= {}
+  return record[key]
+}

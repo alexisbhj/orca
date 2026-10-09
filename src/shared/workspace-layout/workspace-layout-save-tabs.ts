@@ -1,6 +1,7 @@
 // Today's two records per terminal tab, and the tab-bar entry for every tab, derived from one
 // layout tab. Order fields are derived from the one tab order.
 
+import type { ExecutionHostId } from '../execution-host'
 import type { Tab } from '../tab-types'
 import type { TerminalLayoutSnapshot, TerminalTab } from '../terminal-tab-types'
 import { pickStoredFields } from './stored-record-fields'
@@ -15,18 +16,43 @@ const SHARED_OPTIONAL_FIELDS = [
   'viewMode'
 ] as const
 
+/** What one saved workspace's records share: its key, worktree id, host and the beside records. */
+export type WorkspaceSaveScope = {
+  workspaceKey: string
+  worktreeId: string
+  hostId: ExecutionHostId
+  facts: LayoutContentFacts
+  view: DesktopLayoutView
+}
+
+/** The row's terminal: the focused pane's, else the first bound pane's, else none. */
+function rowPtyId(tab: LayoutTerminalTab, view: DesktopLayoutView): string | null {
+  if (!tab.panes) {
+    return tab.legacyPtyId ?? null
+  }
+  const bindings = tab.panes.ptyIdsByLeafId ?? {}
+  const focused = view.panes[tab.entityId]?.activeLeafId
+  if (focused && bindings[focused] !== undefined) {
+    return bindings[focused]
+  }
+  const firstBound = collectLayoutLeafIdsInOrder(tab.panes.root).find(
+    (leafId) => bindings[leafId] !== undefined
+  )
+  return firstBound === undefined ? null : bindings[firstBound]!
+}
+
 export function saveTerminalRow(
   tab: LayoutTerminalTab,
   sortOrder: number,
-  facts: LayoutContentFacts
+  scope: WorkspaceSaveScope
 ): TerminalTab {
-  const row = facts.terminalRows[tab.entityId]
+  const row = scope.facts.terminalRows[tab.entityId]
   return {
     id: tab.entityId,
-    ptyId: row?.ptyId ?? null,
+    ptyId: rowPtyId(tab, scope.view),
     title: row?.title ?? tab.customTitle ?? tab.terminal.defaultTitle ?? '',
     ...pickStoredFields(tab.terminal, ['defaultTitle']),
-    worktreeId: tab.terminal.worktreeId,
+    worktreeId: scope.worktreeId,
     ...(tab.generatedTitle !== undefined ? { generatedTitle: tab.generatedTitle } : {}),
     ...pickStoredFields(tab, SHARED_OPTIONAL_FIELDS),
     customTitle: tab.customTitle,
@@ -44,33 +70,30 @@ export function saveTerminalRow(
   }
 }
 
-export function saveTabBarEntry(args: {
-  workspaceKey: string
-  tab: LayoutTab
-  groupId: string
-  sortOrder: number
-  facts: LayoutContentFacts
-  view: DesktopLayoutView
-}): Tab {
-  const { workspaceKey, tab, facts } = args
+export function saveTabBarEntry(
+  tab: LayoutTab,
+  placement: { groupId: string; sortOrder: number },
+  scope: WorkspaceSaveScope
+): Tab {
+  const { workspaceKey, facts } = scope
   const label =
     facts.tabLabels[workspaceKey]?.[tab.id] ??
     (tab.kind === 'terminal' ? facts.terminalRows[tab.entityId]?.title : undefined) ??
     ''
-  const lastFocusedAt = args.view.lastFocusedAt[workspaceKey]?.[tab.id]
+  const lastFocusedAt = scope.view.lastFocusedAt[workspaceKey]?.[tab.id]
   return {
     id: tab.id,
     entityId: tab.entityId,
-    groupId: args.groupId,
-    worktreeId: tab.worktreeId,
-    ...pickStoredFields(tab, ['executionHostId']),
+    groupId: placement.groupId,
+    worktreeId: scope.worktreeId,
+    ...(tab.namesExecutionHost ? { executionHostId: scope.hostId } : {}),
     contentType: tab.kind,
     label,
     ...(tab.generatedTitle !== undefined ? { generatedLabel: tab.generatedTitle } : {}),
     ...pickStoredFields(tab, SHARED_OPTIONAL_FIELDS),
     customLabel: tab.customTitle,
     color: tab.color,
-    sortOrder: args.sortOrder,
+    sortOrder: placement.sortOrder,
     createdAt: tab.createdAt,
     ...pickStoredFields(tab, ['isPreview', 'agentSessionAgent']),
     ...(lastFocusedAt !== undefined ? { lastFocusedAt } : {})

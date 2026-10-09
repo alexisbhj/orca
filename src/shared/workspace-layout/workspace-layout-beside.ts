@@ -87,7 +87,6 @@ export const EDITOR_DRAFT_FIELDS = ['dirtyDraftContent', 'lastKnownDiskSignature
 
 export const BROWSER_TAB_LAYOUT_FIELDS = [
   'id',
-  'worktreeId',
   'label',
   'sessionProfileId',
   'sessionPartition',
@@ -95,7 +94,13 @@ export const BROWSER_TAB_LAYOUT_FIELDS = [
   'createdAt'
 ] as const satisfies readonly (keyof BrowserWorkspace)[]
 
-export type BrowserTabLiveState = Omit<BrowserWorkspace, (typeof BROWSER_TAB_LAYOUT_FIELDS)[number]>
+/** Fields the workspace holds once for all its records. */
+export const BROWSER_TAB_WORKSPACE_FIELDS = ['worktreeId'] as const
+
+export type BrowserTabLiveState = Omit<
+  BrowserWorkspace,
+  (typeof BROWSER_TAB_LAYOUT_FIELDS)[number] | (typeof BROWSER_TAB_WORKSPACE_FIELDS)[number]
+>
 
 /** A browser tab whose host view has not reported a page yet. */
 export const BLANK_BROWSER_TAB_STATE: BrowserTabLiveState = {
@@ -108,13 +113,14 @@ export const BLANK_BROWSER_TAB_STATE: BrowserTabLiveState = {
   loadError: null
 }
 
-export type TerminalRowFacts = Pick<TerminalTab, 'title' | 'ptyId' | 'generation'>
+/** The row's last terminal is not a fact here: the Serializer derives it from the pane bindings. */
+export type TerminalRowFacts = Pick<TerminalTab, 'title' | 'generation'>
 
 /** Facts views or the PTY host report; the runtime keeps them beside the layout. */
 export type LayoutContentFacts = Pick<WorkspaceSessionState, FactSessionField> & {
   /** Workspace key → tab id → tab-bar label. */
   tabLabels: Record<string, Record<string, string>>
-  /** Terminal tab id → live title, last PTY and remount generation. */
+  /** Terminal tab id → live title and remount generation. */
   terminalRows: Record<string, TerminalRowFacts>
   /** Terminal tab id → saved scrollback. */
   scrollback: Record<
