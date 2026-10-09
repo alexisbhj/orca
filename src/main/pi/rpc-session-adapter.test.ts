@@ -576,6 +576,12 @@ describe('Pi RPC start without a model', () => {
     })
     await h.adapter.acquire({ ...h.input, fence: 8 })
     expect(h.adapter.startUnavailable(sessionId)).toEqual({ reason: 'notSignedIn' })
+    // Its root gone while its output still drains: that child says nothing more.
+    const child = h.connections.at(-1)!
+    child.rootVerdict = 'exited'
+    expect(child.closed).toBe(false)
+    expect(h.adapter.startUnavailable(sessionId)).toBeUndefined()
+    child.rootVerdict = 'live'
     await h.adapter.closeSession(sessionId)
     expect(h.adapter.startUnavailable(sessionId)).toBeUndefined()
   })

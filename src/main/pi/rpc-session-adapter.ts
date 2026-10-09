@@ -238,7 +238,10 @@ export class PiRpcSessionAdapter implements StructuredAgentSessionAdapter {
    *  as not signed in, even after a sign-in, which only a new Pi reads. */
   startUnavailable(id: string): AgentSessionUnavailable | undefined {
     const session = this.sessions.get(id)
-    return session && !session.connection.closed && session.options?.models.length === 0
+    return session &&
+      !session.connection.closed &&
+      session.connection.rootVerdict !== 'exited' &&
+      session.options?.models.length === 0
       ? { reason: 'notSignedIn' }
       : undefined
   }
