@@ -18,6 +18,10 @@ const databaseLayerErrors = new WeakSet<object>()
 export const POSTGRES_READ_TIMEOUT_MESSAGE = 'Query read timeout'
 const CONNECTION_TERMINATED_PREFIX = 'Connection terminated'
 const FENCED_SQLSTATE_CLASSES = new Set(['08', '23', '40', '53', '55', '57', '58'])
+// Class 25 is otherwise a code error (a statement in the wrong transaction state). 25P03 is the
+// server ending a session left idle in a transaction past 5 s, which a whole-VM stall of 6-7 s
+// does to any backend caught idle mid-transaction at its onset.
+const FENCED_SQLSTATES = new Set(['25P03'])
 
 export function markRelayDatabaseError(error: unknown): void {
   if (typeof error === 'object' && error !== null) databaseLayerErrors.add(error)
@@ -30,7 +34,8 @@ export function isFencedRelayDatabaseRejection(reason: unknown): boolean {
   if (!databaseLayerErrors.has(reason)) return false
   if (isPostgresPoolConnectFailure(reason)) return true
   if (reason instanceof pg.DatabaseError) {
-    return FENCED_SQLSTATE_CLASSES.has(String(reason.code).slice(0, 2))
+    const code = String(reason.code)
+    return FENCED_SQLSTATE_CLASSES.has(code.slice(0, 2)) || FENCED_SQLSTATES.has(code)
   }
   if (!(reason instanceof Error) || reason instanceof TypeError) return false
   return (
