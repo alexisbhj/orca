@@ -138,13 +138,18 @@ function mergedModels(
   return (newer?.models ?? []).map((model) => {
     const listed = discovered?.models.find((entry) => entry.id === model.id)
     const reported = live?.models.find((entry) => entry.id === model.id)
-    const efforts =
-      model.efforts.length > 0
-        ? model.efforts
-        : (older?.models.find((entry) => entry.id === model.id)?.efforts ?? [])
+    const olderEfforts = older?.models.find((entry) => entry.id === model.id)?.efforts ?? []
     const runsConfigured =
       configured?.modelId === model.id || configured?.sameModelIds?.includes(model.id) === true
     const configuredEffort = runsConfigured ? configured?.effort : undefined
+    const offersConfigured = (menu: AgentSessionModelOption['efforts']): boolean =>
+      menu.some((choice) => choice.value === configuredEffort)
+    // A coarser newer menu (Pi's listing stops at high) must not drop the effort a chat ran.
+    const efforts =
+      model.efforts.length > 0 &&
+      (offersConfigured(model.efforts) || !offersConfigured(olderEfforts))
+        ? model.efforts
+        : olderEfforts
     const defaultEffort = [configuredEffort, listed?.defaultEffort, reported?.defaultEffort].find(
       (effort) => effort !== undefined && efforts.some((choice) => choice.value === effort)
     )
