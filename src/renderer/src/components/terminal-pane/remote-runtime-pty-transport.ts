@@ -336,11 +336,8 @@ export function createRemoteRuntimePtyTransport(
         // Why: a retry after the grace starts fresh; keys typed during it belong to this attempt.
         disconnectedInputGrace.reset()
       } else {
-        // Why: held input keeps its grace through the retry; keys typed during it are not charged to it.
-        disconnectedInputGrace.seal(recoveryInputHold.sealCohort())
+        disconnectedInputGrace.carryThroughRetry()
       }
-    } else if (recovery.isActive) {
-      discardExpiredDisconnectedInput()
     }
     if (recovery.currentPhase === 'disconnected') {
       disconnectedInputGrace.start()
@@ -1513,20 +1510,12 @@ export function createRemoteRuntimePtyTransport(
     return recovery.isActive || (connecting && !connected) || recoveryInputHold.isHolding()
   }
 
-  /** Drops held input that outlived its grace; true when the current latch's own grace ran out. */
   function discardExpiredDisconnectedInput(): boolean {
-    const expired = disconnectedInputGrace.takeExpired()
-    if (expired === 'all') {
-      discardPendingInput()
-      return true
+    if (!disconnectedInputGrace.isExpired()) {
+      return false
     }
-    if (expired !== null) {
-      // Why hold first: the journal discard fails a held write in flight, which must already be retired.
-      recoveryInputHold.discardThroughCohort(expired)
-      // Why the whole journal: its bytes were sent before the oldest held cohort was typed.
-      inputJournal.discard()
-    }
-    return false
+    discardPendingInput()
+    return true
   }
 
   function discardPendingInput(): void {

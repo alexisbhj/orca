@@ -70,28 +70,33 @@ function mockSubscribeUntilReachable(isReachable: () => boolean): void {
   )
 }
 
+/** A connected desktop pane whose stream then drops, with resubscribes failing until reachable. */
+async function connectThenLoseHost(isReachable: () => boolean) {
+  const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
+  const transport = createRemoteRuntimePtyTransport('env-1', {
+    worktreeId: 'wt-1',
+    tabId: 'tab-1',
+    leafId: 'pane:1'
+  })
+  transport.attach({ existingPtyId: 'remote:terminal-1', cols: 80, rows: 24, callbacks: {} })
+  await vi.waitFor(() => expect(subscribeFrameCount()).toBe(1))
+  attachLatestStream()
+  await vi.waitFor(() => expect(transport.isConnected()).toBe(true))
+  mockSubscribeUntilReachable(isReachable)
+  subscriptionCallbacks?.onClose?.()
+  return transport
+}
+
 describe('disconnected input grace across retries', () => {
   beforeEach(() => {
     resetRemoteRuntimeTransport()
   })
 
-  it('delivers keys typed during a retry that started inside the grace and ends after it', async () => {
+  it('delivers keys typed during a retry begun inside the grace that ends after it, in order', async () => {
     vi.useFakeTimers()
     try {
-      const { createRemoteRuntimePtyTransport } = await import('./remote-runtime-pty-transport')
-      const transport = createRemoteRuntimePtyTransport('env-1', {
-        worktreeId: 'wt-1',
-        tabId: 'tab-1',
-        leafId: 'pane:1'
-      })
-      transport.attach({ existingPtyId: 'remote:terminal-1', cols: 80, rows: 24, callbacks: {} })
-      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(1))
-      attachLatestStream()
-      await vi.waitFor(() => expect(transport.isConnected()).toBe(true))
       let hostReachable = false
-      mockSubscribeUntilReachable(() => hostReachable)
-
-      subscriptionCallbacks?.onClose?.()
+      const transport = await connectThenLoseHost(() => hostReachable)
       expect(transport.sendInput('STALE\r', 'driving')).toBe(true)
       await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
       expect(transport.getRecoveryState?.().phase).toBe('disconnected')
@@ -107,7 +112,37 @@ describe('disconnected input grace across retries', () => {
       attachLatestStream()
       await vi.advanceTimersByTimeAsync(50)
 
-      expect(sentText()).toBe('y\r')
+      // Why both: held input is one ordered stream; the stale part may be the Ctrl+C the rest relies on.
+      expect(sentText()).toBe('STALE\ry\r')
+      transport.destroy?.()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops held input once a retry begun inside the grace latches again past it', async () => {
+    vi.useFakeTimers()
+    try {
+      let hostReachable = false
+      const transport = await connectThenLoseHost(() => hostReachable)
+      expect(transport.sendInput('STALE\r', 'driving')).toBe(true)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS - 10_000)
+      expect(transport.retryRecovery?.()).toBe(true)
+      expect(transport.sendInput('y\r', 'driving')).toBe(true)
+      await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
+      expect(transport.getRecoveryState?.().phase).toBe('disconnected')
+      expect(transport.sendInput('n\r', 'driving')).toBe(false)
+
+      hostReachable = true
+      expect(transport.retryRecovery?.()).toBe(true)
+      await vi.waitFor(() => expect(subscribeFrameCount()).toBe(2))
+      attachLatestStream()
+      await vi.advanceTimersByTimeAsync(50)
+      transport.sendInput('ls\r', 'driving')
+      await vi.advanceTimersByTimeAsync(50)
+
+      expect(sentText()).toBe('ls\r')
       transport.destroy?.()
     } finally {
       vi.useRealTimers()
@@ -145,16 +180,17 @@ describe('disconnected input grace across retries', () => {
       expect(transport.sendInput('y\r', 'driving')).toBe(true)
       await vi.advanceTimersByTimeAsync(REMOTE_RUNTIME_AUTO_RECOVERY_TIMEOUT_MS + 1_000)
       expect(transport.getRecoveryState?.().phase).toBe('disconnected')
+      expect(transport.sendInput('n\r', 'driving')).toBe(false)
 
       hostReachable = true
       expect(transport.retryRecovery?.()).toBe(true)
-      await vi.waitFor(() => expect(runtimeSubscribe).toHaveBeenCalled())
       await vi.waitFor(() => expect(subscribeFrameCount()).toBe(1))
       attachLatestStream()
       await vi.advanceTimersByTimeAsync(50)
+      transport.sendInput('ls\r', 'driving')
+      await vi.advanceTimersByTimeAsync(50)
 
-      // Only the keys typed after the first Reconnect are still inside their own grace.
-      expect(sentText()).toBe('y\r')
+      expect(sentText()).toBe('ls\r')
       transport.destroy?.()
     } finally {
       vi.useRealTimers()

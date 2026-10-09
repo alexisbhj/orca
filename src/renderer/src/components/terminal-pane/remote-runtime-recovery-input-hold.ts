@@ -38,10 +38,6 @@ export type RemoteRuntimeRecoveryInputHold = {
   ) => Promise<boolean>
   /** Delivers held input to the endpoint it was typed into, or drops it if the pane rebound elsewhere. */
   release: (bound: RemoteRuntimeInputEndpoint, writer: HeldInputWriter) => void
-  /** Closes the cohort of input held so far and returns its id; later input joins a new cohort. */
-  sealCohort: () => number
-  /** Drops input held in `cohort` or earlier, keeping what was typed after it. */
-  discardThroughCohort: (cohort: number) => void
   discard: () => void
 }
 
@@ -64,7 +60,6 @@ export function createRemoteRuntimeRecoveryInputHold(): RemoteRuntimeRecoveryInp
     endpoint: RemoteRuntimeInputEndpoint
     buffer: PtyPreconnectInputBuffer
   } | null = null
-  let cohort = 0
 
   const discard = (): void => {
     const current = held
@@ -79,13 +74,7 @@ export function createRemoteRuntimeRecoveryInputHold(): RemoteRuntimeRecoveryInp
     }
     if (!held?.buffer.isBuffering()) {
       // Why: a drained buffer refuses input; its release bookkeeping may still be settling.
-      held = {
-        endpoint,
-        buffer: createPtyPreconnectInputBuffer([], {
-          recoveryHold: true,
-          cohort: () => cohort
-        })
-      }
+      held = { endpoint, buffer: createPtyPreconnectInputBuffer([], { recoveryHold: true }) }
     }
     return held.buffer
   }
@@ -116,13 +105,6 @@ export function createRemoteRuntimeRecoveryInputHold(): RemoteRuntimeRecoveryInp
             held = null
           }
         })
-    },
-    sealCohort: () => cohort++,
-    discardThroughCohort(through) {
-      held?.buffer.dropThroughCohort(through)
-      if (held && !held.buffer.hasPendingInput()) {
-        discard()
-      }
     },
     discard
   }

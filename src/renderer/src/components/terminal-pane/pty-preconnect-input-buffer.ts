@@ -20,7 +20,6 @@ export type PtyPreconnectInputEntry = {
 export type AcceptedInputOptions = { signal?: AbortSignal }
 
 type BufferedInput = PtyPreconnectInputEntry & {
-  cohort: number
   resolve?: (accepted: boolean) => void
   signal?: AbortSignal
 }
@@ -57,8 +56,6 @@ export type PtyPreconnectInputBuffer = {
     options?: AcceptedInputOptions
   ) => Promise<boolean>
   flush: (writer: PreconnectInputWriter) => Promise<void>
-  /** Drops queued input enqueued in `cohort` or earlier; later input stays queued in order. */
-  dropThroughCohort: (cohort: number) => void
   clear: () => void
 }
 
@@ -69,8 +66,6 @@ export type PtyPreconnectInputBufferOptions = {
    * for the next release instead of dropping it.
    */
   recoveryHold?: boolean
-  /** Tags each entry so an older cohort can be dropped without the input typed after it. */
-  cohort?: () => number
 }
 
 export function createPtyPreconnectInputBuffer(
@@ -81,8 +76,6 @@ export function createPtyPreconnectInputBuffer(
   let pendingCodeUnits = 0
   let buffering = true
   let activeAcceptedInput: BufferedInput | null = null
-  // Why: an in-flight write from a dropped cohort fails as a retirement, not a broken link.
-  let retiredAcceptedInput: BufferedInput | null = null
   let activeFlush: Promise<void> | null = null
   let stopFlush!: () => void
   const flushStopped = new Promise<void>((resolve) => {
@@ -98,7 +91,6 @@ export function createPtyPreconnectInputBuffer(
       buffering &&
       input.kind === 'ordinary' &&
       tail?.kind === 'ordinary' &&
-      tail.cohort === input.cohort &&
       tail.inputKind === input.inputKind &&
       input.data.length <= PTY_PRECONNECT_INPUT_MAX_CODE_UNITS - pendingCodeUnits - activeCodeUnits
     ) {
@@ -127,7 +119,6 @@ export function createPtyPreconnectInputBuffer(
     data,
     kind,
     inputKind,
-    cohort: options.cohort?.() ?? 0,
     ...(resolve ? { resolve } : {}),
     ...(signal ? { signal } : {})
   })
@@ -164,27 +155,11 @@ export function createPtyPreconnectInputBuffer(
     buffering = false
     const inFlight = activeAcceptedInput
     activeAcceptedInput = null
-    retiredAcceptedInput = null
     inFlight?.resolve?.(false)
     for (const input of dropped) {
       input.resolve?.(false)
     }
     stopFlush()
-  }
-
-  const dropThroughCohort = (cohort: number): void => {
-    if (activeAcceptedInput && activeAcceptedInput.cohort <= cohort) {
-      retiredAcceptedInput = activeAcceptedInput
-    }
-    const dropped = pending.filter((input) => input.cohort <= cohort)
-    if (dropped.length === 0) {
-      return
-    }
-    pending = pending.filter((input) => input.cohort > cohort)
-    for (const input of dropped) {
-      pendingCodeUnits -= input.data.length
-      input.resolve?.(false)
-    }
   }
 
   const runFlush = async (writer: PreconnectInputWriter): Promise<void> => {
@@ -238,17 +213,8 @@ export function createPtyPreconnectInputBuffer(
             return
           }
           input.resolve?.(accepted)
-          const retired = retiredAcceptedInput === input
-          if (retired) {
-            retiredAcceptedInput = null
-          }
-          // Why not for a withdrawn or retired write: only it was given up, not what was typed after it.
-          if (
-            !accepted &&
-            !input.signal?.aborted &&
-            !retired &&
-            !writer.continuesAfterFailedWrite?.()
-          ) {
+          // Why not for a withdrawn write: its caller gave up on it alone, not on what was typed after it.
+          if (!accepted && !input.signal?.aborted && !writer.continuesAfterFailedWrite?.()) {
             clear()
             return
           }
@@ -317,7 +283,6 @@ export function createPtyPreconnectInputBuffer(
       })
     },
     flush,
-    dropThroughCohort,
     clear
   }
 }
