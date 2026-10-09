@@ -201,6 +201,36 @@ describe('desktop startup keeps named main planner inputs', () => {
       command: 'opencode run --model custom/provider'
     })
   })
+  it('starts a disabled agent from a desktop new tab, as main did, while other host launches refuse it', async () => {
+    const settings = { ...settingsFor('claude'), disabledTuiAgents: ['claude' as const] }
+    const workspace: TerminalWorkspaceLaunchScope = {
+      id: 'folder-workspace:test',
+      path: '/workspace/app',
+      connectionId: null,
+      repo: null,
+      folderWorkspace: null
+    }
+    const build = (opts: Parameters<typeof buildRuntimeAgentTerminalStartupOptions>[1]) =>
+      buildRuntimeAgentTerminalStartupOptions(
+        workspace,
+        opts,
+        settings,
+        'darwin',
+        undefined,
+        'host'
+      )
+    await expect(
+      build({
+        startupAgent: 'claude',
+        desktopPrompt: {
+          text: 'hello',
+          delivery: desktopNewTabPromptDelivery('claude', 'auto-submit'),
+          transport: { kind: 'desktop-new-tab', promptDelivery: 'auto-submit' }
+        }
+      })
+    ).resolves.toMatchObject({ launchAgent: 'claude' })
+    await expect(build({ startupAgent: 'claude' })).rejects.toThrow('Agent claude is disabled')
+  })
   it('Hermes refuses an oversize automatic native query rather than silently changing to paste', async () => {
     await compareMainInputs({
       host: hosts[0],

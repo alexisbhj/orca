@@ -33,7 +33,13 @@ export async function buildRuntimeAgentTerminalStartupOptions(
   const deliveryFor = (
     planned: StartupCommandDelivery | undefined
   ): StartupCommandDelivery | undefined => (isRemote ? 'shell-ready' : planned)
-  if (opts.startupAgent && !isTuiAgentEnabled(opts.startupAgent, settings.disabledTuiAgents)) {
+  // Kept for parity with main: the desktop's own new-tab launches (a saved agent Quick Command
+  // among them) never consulted the disabled list.
+  if (
+    opts.startupAgent &&
+    !opts.desktopPrompt &&
+    !isTuiAgentEnabled(opts.startupAgent, settings.disabledTuiAgents)
+  ) {
     throw new Error(`Agent ${opts.startupAgent} is disabled. Choose an enabled agent.`)
   }
   const agent =
