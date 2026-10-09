@@ -211,8 +211,9 @@ for (const target of ['directory', 'root'] as const) {
       const refusalToast = page.locator('[data-sonner-toast]').filter({ has: refusal })
       await expect(refusalToast).toHaveAttribute('data-mounted', 'true')
       await refusalToast.evaluate(async (element) => {
-        await Promise.all(element.getAnimations().map((animation) => animation.finished))
+        await Promise.allSettled(element.getAnimations().map((animation) => animation.finished))
       })
+      await expect(refusalToast).toHaveCSS('opacity', '1')
       await page.screenshot({ path: testInfo.outputPath('managed-explorer-move-owner.png') })
       expect(existsSync(filePath)).toBe(true)
       expect(existsSync(moved)).toBe(false)
