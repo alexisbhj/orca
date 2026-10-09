@@ -1,19 +1,44 @@
-import type { JSHandle, Page } from '@playwright/test'
+import type { CDPSession, JSHandle, Page } from '@playwright/test'
 import { expect, test } from './helpers/orca-app'
 import { ensureTerminalVisible, waitForActiveWorktree, waitForSessionReady } from './helpers/store'
 
-type CardFrame = { title: string; left: number; count: number; sliding: boolean }
+type CardFrame = {
+  title: string
+  left: number
+  count: number
+  sliding: boolean
+  at: number
+  states: string[]
+}
 type CardRecording = { stop: () => CardFrame[] }
+type CardCapture = { recording: JSHandle<CardRecording>; cdp: CDPSession }
 
-function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
-  return page.evaluateHandle(() => {
+async function startCardRecording(page: Page): Promise<CardCapture> {
+  const cdp = await page.context().newCDPSession(page)
+  let hasFrame = false
+  cdp.on('Page.screencastFrame', (frame) => {
+    hasFrame = true
+    void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
+  })
+  // Keep the hidden renderer painting so samples represent rendered frames.
+  await cdp.send('Page.enable')
+  await cdp.send('Page.startScreencast', {
+    format: 'jpeg',
+    quality: 20,
+    maxWidth: 640,
+    maxHeight: 480
+  })
+  await expect.poll(() => hasFrame).toBe(true)
+  const recording = await page.evaluateHandle(() => {
     const frames: CardFrame[] = []
     const started = performance.now()
-    let nextSample = 0
+    let nextFrame = 0
     const record = (): void => {
       const cards = document.querySelectorAll('[data-tab-hover-card]')
       const element = cards[0]
       frames.push({
+        at: performance.now() - started,
+        states: Array.from(cards, (card) => card.getAttribute('data-state') ?? ''),
         title: element?.querySelector('[data-tab-hover-card-title]')?.textContent?.trim() ?? '',
         left: element?.getBoundingClientRect().left ?? -1,
         count: cards.length,
@@ -27,23 +52,25 @@ function startCardRecording(page: Page): Promise<JSHandle<CardRecording>> {
             ) ?? false
       })
       if (performance.now() - started < 10_000) {
-        // Hidden Linux windows can suspend animation frames even with throttling disabled.
-        nextSample = window.setTimeout(record, 16)
+        nextFrame = requestAnimationFrame(record)
       }
     }
     record()
     return {
       stop: () => {
-        window.clearTimeout(nextSample)
+        cancelAnimationFrame(nextFrame)
         return frames
       }
     }
   })
+  return { recording, cdp }
 }
 
-async function stopCardRecording(recording: JSHandle<CardRecording>): Promise<CardFrame[]> {
+async function stopCardRecording({ recording, cdp }: CardCapture): Promise<CardFrame[]> {
   const frames = await recording.evaluate((recording) => recording.stop())
   await recording.dispose()
+  await cdp.send('Page.stopScreencast')
+  await cdp.detach()
   return frames
 }
 
@@ -51,10 +78,6 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   electronApp,
   orcaPage
 }) => {
-  // Keep the recorder's timer running while the test window stays hidden.
-  const browserWindow = await electronApp.browserWindow(orcaPage)
-  await browserWindow.evaluate((window) => window.webContents.setBackgroundThrottling(false))
-  await browserWindow.dispose()
   await waitForSessionReady(orcaPage)
   await waitForActiveWorktree(orcaPage)
   await ensureTerminalVisible(orcaPage)
@@ -95,6 +118,9 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
   expect(programBox?.y).toBeGreaterThan((titleBox?.y ?? 0) + (titleBox?.height ?? 0))
   await orcaPage.waitForTimeout(200)
 
+  const browserWindow = await electronApp.browserWindow(orcaPage)
+  await browserWindow.evaluate((window) => window.webContents.setBackgroundThrottling(false))
+  await browserWindow.dispose()
   const recording = await startCardRecording(orcaPage)
   await orcaPage.mouse.move(secondBox.x + 3, secondBox.y + secondBox.height / 2)
   await expect(cardTitle).toHaveText('Review changes', { timeout: 150 })
@@ -131,7 +157,10 @@ test('whole-tab hover cards slide immediately between neighboring tabs', async (
     await expect(card).toHaveCount(1)
   }
   const reversalFrames = await stopCardRecording(reversalRecording)
-  expect(reversalFrames.every((frame) => frame.count === 1)).toBe(true)
+  expect(
+    reversalFrames.every((frame) => frame.count === 1),
+    JSON.stringify(reversalFrames)
+  ).toBe(true)
   for (const title of ['Build and test the hover cards', 'Review changes']) {
     expect(reversalFrames.some((frame) => frame.title === title && frame.sliding)).toBe(true)
   }
