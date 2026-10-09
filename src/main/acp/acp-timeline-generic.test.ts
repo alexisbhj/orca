@@ -185,6 +185,11 @@ describe('generic ACP translation', () => {
       const technical = 'provider_write_failed: write EPIPE'
       apply(translator.promptFailed('send-4', new AcpAgentError(-32603, technical), 1700))
       const rows = (await rig.rows()).filter((row) => row.body.kind === 'status')
+      const details = (text: string) => ({
+        provider: 'acp',
+        kind: 'turn:failed',
+        payload: expect.objectContaining({ head: text, truncated: false })
+      })
       expect(rows.map((row) => row.body)).toEqual([
         {
           kind: 'status',
@@ -193,14 +198,17 @@ describe('generic ACP translation', () => {
           failure: {
             kind: 'providerError',
             detail: { text: 'Upstream failed', audience: 'person' }
-          }
+          },
+          providerFrame: details('Upstream failed')
         },
         { kind: 'status', tone: 'error', text: `${named} ended this turn with an error.` },
         {
           kind: 'status',
           tone: 'error',
           text: `${named} ran into a problem. Check the chat before trying again.`,
-          failure: { kind: 'providerError', detail: { text: technical, audience: 'person' } }
+          failure: { kind: 'providerError', detail: { text: technical, audience: 'person' } },
+          // Hidden from the line, the technical reason stays readable behind Details.
+          providerFrame: details(technical)
         }
       ])
       expect((await rig.turns()).map((turn) => turn.outcome)).toEqual([

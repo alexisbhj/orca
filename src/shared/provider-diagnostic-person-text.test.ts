@@ -26,6 +26,7 @@ describe('provider explanations a person can read', () => {
     'write EPIPE',
     'The configured provider has no API key.',
     'The Provider did not accept this message.',
+    'The providers did not accept this message.',
     'HTTP 502 Bad Gateway',
     'RPC -32603',
     'stream disconnected before completion: error sending request for url (http://127.0.0.1:9/v1/responses)',

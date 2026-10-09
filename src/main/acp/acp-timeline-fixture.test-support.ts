@@ -74,7 +74,8 @@ export async function openAcpFixtureRig() {
     new AcpTimelineTranslator({
       sessionId: providerSessionId,
       dialect: GROK_ACP_DIALECT,
-      agentName: 'Grok'
+      agentName: 'Grok',
+      agent: 'grok'
     })
   let lane = translator()
   const requests = new Map<

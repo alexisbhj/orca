@@ -1,10 +1,15 @@
 import {
   agentSessionFailureFact,
   providerDiagnostic,
-  withProviderDiagnostic
+  withProviderDiagnostic,
+  type ProviderDiagnostic
 } from '../../shared/agent-session-failure'
 import { agentSessionFailureWords } from '../../shared/agent-session-failure-words'
 import { BoundedMap } from '../../shared/bounded-map'
+import {
+  boundPayload,
+  DEFAULT_JOURNAL_PAYLOAD_LIMITS
+} from '../native-chat/agent-session-journal/journal-payload-bounds'
 import type { ProviderTimelineEvent } from '../native-chat/agent-session-timeline/provider-timeline-event'
 import type { AcpDialect } from './acp-dialects/acp-dialect'
 import { AcpAgentError, AcpAuthRequiredError } from './acp-errors'
@@ -45,18 +50,21 @@ export function acpSignInRequiredRefusal(
 
 /** One error row per failed turn, named and quoting the agent's reason only when a person can read
  *  it, as a Codex turn-ending error reads: the message was accepted and the turn ran, so it is no
- *  refusal. Providers send that reason several times (beside the end, after it, in the prompt's
- *  error answer), so a later copy only adds a reason the row still lacks. */
+ *  refusal. The reason itself rides the row's Details. Providers send that reason several times
+ *  (beside the end, after it, in the prompt's error answer), so a later copy only adds what the row
+ *  still lacks: a reason, sign-in, or a usage limit. */
 export class AcpTurnFailures {
-  /** The reason each failed turn's row holds; '' for none yet. */
-  private readonly rows = new BoundedMap<string, { text: string; notSignedIn: boolean }>({
-    maxEntries: 128
-  })
+  /** What each failed turn's row holds; `text` '' for no reason yet. */
+  private readonly rows = new BoundedMap<
+    string,
+    { text: string; notSignedIn: boolean; rateLimited: boolean }
+  >({ maxEntries: 128 })
 
   constructor(
     private readonly sessionId: string,
     private readonly dialect: AcpDialect,
-    private readonly agentName: string | undefined
+    private readonly agentName: string | undefined,
+    private readonly agent = 'acp'
   ) {}
 
   has(turn: string): boolean {
@@ -81,20 +89,29 @@ export class AcpTurnFailures {
   ): ProviderTimelineEvent[] {
     const written = this.rows.peek(turn)
     const detail = text === undefined ? undefined : providerDiagnostic(text, 'person')
+    const rateLimited = stopReason === 'rate_limit'
     if (
       written !== undefined &&
       (written.text !== '' || !detail) &&
-      (!notSignedIn || written.notSignedIn)
+      (!notSignedIn || written.notSignedIn) &&
+      (!rateLimited || written.rateLimited)
     ) {
       return []
     }
     const diagnostic =
       detail ?? (written?.text ? providerDiagnostic(written.text, 'person') : undefined)
-    const authenticationRequired = notSignedIn || written?.notSignedIn === true
-    this.rows.set(turn, {
+    const state = {
       text: diagnostic?.text ?? '',
-      notSignedIn: authenticationRequired
-    })
+      notSignedIn: notSignedIn || written?.notSignedIn === true,
+      rateLimited: rateLimited || written?.rateLimited === true
+    }
+    this.rows.set(turn, state)
+    if (detail && detail.text !== written?.text) {
+      console.warn(
+        `[acp] ${this.agentName ?? this.agent} turn failed (${stopReason}):`,
+        detail.text
+      )
+    }
     return [
       {
         type: 'item.update',
@@ -102,21 +119,39 @@ export class AcpTurnFailures {
         body: {
           kind: 'status',
           tone: 'error',
-          ...(authenticationRequired || diagnostic
-            ? agentSessionFailureWords(
-                agentSessionFailureFact(authenticationRequired ? 'notSignedIn' : 'providerError', {
-                  detail: diagnostic
-                }),
-                { agentName: this.agentName, surface: 'row' }
-              )
-            : {
-                text:
-                  this.dialect.failedTurnText?.(stopReason) ??
-                  `${this.agentName ?? 'The agent'} ended this turn with an error.`
-              })
+          ...this.words(state, diagnostic),
+          ...(diagnostic
+            ? {
+                providerFrame: {
+                  provider: this.agent,
+                  kind: 'turn:failed',
+                  payload: boundPayload(diagnostic.text, DEFAULT_JOURNAL_PAYLOAD_LIMITS)
+                }
+              }
+            : {})
         },
         join: { thread: this.sessionId, turn }
       }
     ]
+  }
+
+  private words(
+    { notSignedIn, rateLimited }: { notSignedIn: boolean; rateLimited: boolean },
+    diagnostic: ProviderDiagnostic | undefined
+  ) {
+    // A usage limit the agent named is the cause to lead with; its own words stay in Details.
+    if (!notSignedIn && (rateLimited || !diagnostic)) {
+      return {
+        text:
+          this.dialect.failedTurnText?.(rateLimited ? 'rate_limit' : 'error') ??
+          `${this.agentName ?? 'The agent'} ended this turn with an error.`
+      }
+    }
+    return agentSessionFailureWords(
+      agentSessionFailureFact(notSignedIn ? 'notSignedIn' : 'providerError', {
+        detail: diagnostic
+      }),
+      { agentName: this.agentName, surface: 'row' }
+    )
   }
 }

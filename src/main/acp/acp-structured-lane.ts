@@ -45,7 +45,8 @@ export class AcpStructuredLane {
     this.translator = new AcpTimelineTranslator({
       sessionId: deps.providerSessionId,
       dialect: deps.dialect,
-      agentName: deps.agentName
+      agentName: deps.agentName,
+      agent: deps.agent
     })
     this.requestIdentity = createLegacyProviderTimelineIdentityScheme({
       agent: deps.agent,

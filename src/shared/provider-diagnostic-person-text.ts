@@ -15,7 +15,7 @@ const TECHNICAL_TEXT = [
 ]
 
 // Users know agents, not "providers": an explanation using that word is withheld.
-const INTERNAL_WORD = /\bprovider\b/i
+const INTERNAL_WORD = /\bproviders?\b/i
 
 function hasControlCharacters(text: string): boolean {
   for (const character of text) {

@@ -35,6 +35,8 @@ export type AcpTimelineTranslatorOptions = {
   dialect?: AcpDialect
   /** The agent's display name, for a failed turn the provider gave no words for. */
   agentName?: string
+  /** The agent's id, naming whose words a failed turn's Details hold. */
+  agent?: string
 }
 
 /** Consumes each frame once; the host retries the returned grammar events. Lives exactly as long
@@ -53,7 +55,12 @@ export class AcpTimelineTranslator {
 
   constructor(private readonly options: AcpTimelineTranslatorOptions) {
     this.dialect = options.dialect ?? GENERIC_ACP_DIALECT
-    this.failures = new AcpTurnFailures(options.sessionId, this.dialect, options.agentName)
+    this.failures = new AcpTurnFailures(
+      options.sessionId,
+      this.dialect,
+      options.agentName,
+      options.agent
+    )
     this.backgroundTasks = new AcpBackgroundTaskTimeline((callId) => this.tools.turn(callId))
     this.prompts = new AcpPromptTurns(
       options.sessionId,
