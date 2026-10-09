@@ -24,6 +24,33 @@ export const PR_E2E_SOURCE_ROUTES = [
       )
   },
   {
+    id: 'ssh.orcad-markdown-conversion',
+    specs: ['tests/e2e/ssh-orcad-markdown-conversion.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/components\/editor\/(?:useMarkdownDocuments|restored-editor-workspace-runtime-owner|migrate-restored-editor-file-owner)\.ts$/.test(
+        file
+      )
+  },
+  {
+    id: 'ssh.orcad-markdown-link-refresh',
+    specs: ['tests/e2e/ssh-orcad-markdown-link-refresh.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/components\/editor\/(?:rich-markdown-doc-link|useRichMarkdownProgrammaticSync)\.ts$/.test(
+        file
+      )
+  },
+  {
+    id: 'ssh.orcad-markdown-live-documents',
+    specs: ['tests/e2e/ssh-orcad-markdown-live-documents.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/renderer\/src\/components\/editor\/(?:useMarkdownDocuments|use-markdown-document-watch-refresh|markdown-document-list-request)\.ts$/.test(
+        file
+      )
+  },
+  {
     id: 'serve.orcad-mode-switch',
     specs: ['tests/e2e/orcad-serve-mode-switch.spec.ts'],
     matches: (file) =>
@@ -83,12 +110,24 @@ export const PR_E2E_SOURCE_ROUTES = [
       )
   },
   {
+    id: 'ssh.orcad-open-in-owner',
+    specs: ['tests/e2e/ssh-orcad-open-in-owner.spec.ts'],
+    matches: (file) =>
+      /^tests\/e2e\/helpers\/(?:orcad-convert-(?:flow|host)|orcad-upgrade-profile|docker-ssh-relay-target)\.ts$/.test(
+        file
+      ) ||
+      (isProductSource(file) &&
+        /^src\/renderer\/src\/(?:lib\/(?:local-path-open-guard|external-editor-open-capability|worktree-runtime-owner)\.ts|components\/(?:sidebar\/(?:WorktreeOpenInMenu|WorktreeContextMenuView)\.tsx|right-sidebar\/(?:FileExplorer(?:Toolbar)?\.tsx|source-control\/listing\/entry-context-menu\.tsx)))$/.test(
+          file
+        ))
+  },
+  {
     id: 'ssh.orcad-idle-exit',
     specs: ['tests/e2e/ssh-orcad-idle-exit.spec.ts'],
     matches: (file) =>
       /^tests\/e2e\/helpers\/orcad-convert-(?:flow|host)\.ts$/.test(file) ||
       (isProductSource(file) &&
-        /^src\/(?:main\/(?:orcad\/orcad-(?:idle-|managed-idle-)|ssh\/orcad-(?:managed-wake|managed-tunnel|recovery-slot|remote-launch))|shared\/orcad-idle-exit)/.test(
+        /^src\/(?:main\/(?:orcad\/orcad-(?:idle-|managed-idle-)|ssh\/orcad-(?:managed-wake|managed-tunnel|recovery-slot|remote-launch|remote-runtime-control))|shared\/orcad-idle-exit)/.test(
           file
         ))
   },
