@@ -33,6 +33,7 @@ import {
   execCommand,
   isUnconfirmedSshCommandTermination
 } from './ssh-relay-deploy-helpers'
+import { execHostCommand } from './ssh-relay-host-exec-command'
 import { uploadRelayDirectory, writeRelayFile } from './ssh-relay-install-transfers'
 import {
   createRelayInstallMarkerCommand,
@@ -180,20 +181,6 @@ class RelayDirectoryGcConflictError extends Error {
   ) {
     super(`Relay directory GC is in progress at ${remoteRelayDir}`)
   }
-}
-
-function execHostCommand(
-  conn: SshConnection,
-  hostPlatform: RemoteHostPlatform,
-  command: string,
-  options?: { timeoutMs?: number; signal?: AbortSignal; onStderr?: (stderr: string) => void }
-): Promise<string> {
-  return execCommand(conn, command, {
-    wrapCommand: !isWindowsRemoteHost(hostPlatform),
-    timeoutMs: options?.timeoutMs,
-    signal: options?.signal,
-    onStderr: options?.onStderr
-  })
 }
 
 /**

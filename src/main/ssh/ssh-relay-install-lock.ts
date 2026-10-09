@@ -1,5 +1,5 @@
 import type { SshConnection } from './ssh-connection'
-import { execCommand } from './ssh-relay-deploy-helpers'
+import { execHostCommand } from './ssh-relay-host-exec-command'
 import { RELAY_DEPLOY_TIMEOUT_MS } from './ssh-relay-deploy-timing'
 import { isUnconfirmedSshCommandTermination } from './ssh-relay-exec-command'
 import { isRelayGcClaimed, waitForRelayGcClaimRelease } from './ssh-relay-gc-claim'
@@ -43,18 +43,6 @@ export class RemoteInstallLockBusyError extends Error {
     )
     this.name = 'RemoteInstallLockBusyError'
   }
-}
-
-function execHostCommand(
-  conn: SshConnection,
-  host: RemoteHostPlatform,
-  command: string,
-  options?: { signal?: AbortSignal }
-): Promise<string> {
-  return execCommand(conn, command, {
-    wrapCommand: host.commandDialect !== 'powershell',
-    signal: options?.signal
-  })
 }
 
 export async function isRelayInstallLockStale(
