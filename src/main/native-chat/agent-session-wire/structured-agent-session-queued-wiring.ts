@@ -41,6 +41,7 @@ export function wireStructuredAgentSessionQueuedMessages(
     // Read lazily, like the rest of this wiring: the host's deps are not assigned yet.
     logger: deferredStructuredAgentSessionLogger(() => context().deps.logger),
     readChildWork: (sessionId) => context().readChildWork(sessionId),
+    backgroundTaskStops: (sessionId) => context().deps.adapter.backgroundTaskStops?.(sessionId),
     runClear: (sessionId, card) => {
       const { store, adapter } = context().deps
       return runQueuedConversationClear(

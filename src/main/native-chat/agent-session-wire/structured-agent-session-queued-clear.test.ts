@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentSessionBackgroundTaskStops } from '../../../shared/agent-child-work-stop-targets'
 import { agentSessionOperationKey } from '../../../shared/agent-session-operation-ledger'
 import {
   createQueuedMessageTestRig,
@@ -205,9 +206,20 @@ describe('a /clear that waits in line', () => {
   })
 })
 
+/** The provider's background Stop: Claude's strip offers one; Codex's and ACP's offer none. */
+const STOPS_ALL: AgentSessionBackgroundTaskStops = { supportsTaskStop: true, supportsStopAll: true }
+const NO_STOP: AgentSessionBackgroundTaskStops = { supportsTaskStop: false, supportsStopAll: false }
+
+function withStops(stops: AgentSessionBackgroundTaskStops): void {
+  Object.assign(rig.host.deps.adapter, { backgroundTaskStops: () => stops })
+}
+
 /** A turn that ended leaving background tasks running, the agent idle. */
-async function withBackgroundTasks(): Promise<{ set: (next: AgentChildWorkView[]) => void }> {
+async function withBackgroundTasks(
+  stops = STOPS_ALL
+): Promise<{ set: (next: AgentChildWorkView[]) => void }> {
   let tasks: AgentChildWorkView[] = []
+  withStops(stops)
   Object.assign(rig.host.deps, {
     statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
   })
@@ -244,6 +256,7 @@ describe('a /clear card the queue cannot run yet', () => {
 
   it('child-work updates while it waits run no drain step', async () => {
     let tasks: AgentChildWorkView[] = []
+    withStops(STOPS_ALL)
     Object.assign(rig.host.deps, {
       statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
     })
@@ -278,6 +291,7 @@ describe('a /clear card the queue cannot run yet', () => {
 
   it('waits out background tasks, then runs when they end; the cards behind it wait too', async () => {
     let tasks: AgentChildWorkView[] = []
+    withStops(STOPS_ALL)
     Object.assign(rig.host.deps, {
       statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
     })
@@ -385,5 +399,90 @@ describe('a /clear card the queue cannot run yet', () => {
     expect(await rig.handoff(after)).toBeUndefined()
     expect(await rig.resume()).toMatchObject({ ok: true, value: { resumed: true } })
     await eventually(async () => expect(await rig.handoff(before)).toBeDefined())
+  })
+})
+
+describe('a /clear blocked by background tasks nothing here can stop', () => {
+  it('typed while idle, is refused at once as before, and the next message goes straight out', async () => {
+    await withBackgroundTasks(NO_STOP)
+    expect(await clear('queue-if-active')).toMatchObject({
+      ok: false,
+      refusal: {
+        details: { reason: 'backgroundTasksRunning' },
+        message: 'Wait for background tasks to finish before using this command.'
+      }
+    })
+    expect(await rig.drafts()).toEqual([])
+    const next = await rig.send('stop the dev server', 'queue-if-active').result
+    expect(next.ok && 'queued' in next.value).toBe(false)
+    expect(await dividers()).toBe(0)
+  })
+
+  it('a live task the strip has no Stop for refuses it too, though the provider can stop others', async () => {
+    await withBackgroundTasks(STOPS_ALL)
+    Object.assign(rig.host.deps, {
+      statusSink: {
+        publish: () => {},
+        forget: () => {},
+        readChildWork: () => [{ ...BACKGROUND_TASK, stoppable: false }]
+      }
+    })
+    Object.assign(rig.host.deps.adapter, {
+      backgroundTaskStops: () => ({ supportsTaskStop: true, supportsStopAll: false })
+    })
+    expect(await clear('queue-if-active')).toMatchObject({
+      ok: false,
+      refusal: { details: { reason: 'backgroundTasksRunning' } }
+    })
+    expect(await rig.drafts()).toEqual([])
+  })
+
+  it('sent mid-turn, is returned once with why when it reaches the front; nothing waits on it', async () => {
+    let tasks: AgentChildWorkView[] = []
+    withStops(NO_STOP)
+    Object.assign(rig.host.deps, {
+      statusSink: { publish: () => {}, forget: () => {}, readChildWork: () => tasks }
+    })
+    const working = await rig.workingSend()
+    const clearId = await queuedClear()
+    tasks = [BACKGROUND_TASK]
+    await rig.settleAccepted(working, 'a')
+    await eventually(async () =>
+      expect(await rig.drafts()).toEqual([{ messageId: clearId, state: 'returned' }])
+    )
+    expect(journal().queuedMessages.get(clearId)).toMatchObject({
+      returnedReason:
+        'Background tasks are still running. Wait for the background tasks to finish. Run /clear again.',
+      returnedRejection: {
+        kind: 'commandRefused',
+        refusal: { details: { reason: 'backgroundTasksRunning' } }
+      }
+    })
+    const page = await rig.host.history({ sessionId: SESSION, direction: 'tail' })
+    expect(page.ok && page.page.nextQueuedMessageWait).toBeNull()
+    // Returned once: child-work ticks don't return it again or run it.
+    const reason = journal().queuedMessages.get(clearId)?.returnedReason
+    rig.host.publishChildWorkEvidence(SESSION, [])
+    await settleMs()
+    expect(journal().queuedMessages.get(clearId)?.returnedReason).toBe(reason)
+    // A message typed now isn't held behind it.
+    const next = rig.send('stop the dev server', 'queue-if-active')
+    const sent = await next.result
+    expect(sent.ok && 'queued' in sent.value).toBe(false)
+    await eventually(async () => {
+      const submissions = (await rig.host.journalSnapshot(SESSION)).submissions
+      expect(
+        submissions.find((entry) => entry.clientMessageId === next.id)?.handedOverAt
+      ).toBeDefined()
+    })
+    expect(await dividers()).toBe(0)
+    // Its Send runs it once the work has ended.
+    tasks = [SETTLED_TASK]
+    await rig.settleAccepted(next.id, 'b')
+    expect(await rig.sendNow(clearId)).toMatchObject({
+      ok: true,
+      value: { queued: { messageId: clearId, state: 'withdrawn' } }
+    })
+    expect(await dividers()).toBe(1)
   })
 })

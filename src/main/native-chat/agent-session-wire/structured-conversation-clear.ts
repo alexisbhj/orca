@@ -7,6 +7,10 @@ import { agentSessionFailureWords } from '../../../shared/agent-session-failure-
 import type { AgentJournalMessageItem } from '../../../shared/agent-session-journal-types'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentSessionQueueWait } from '../../../shared/agent-session-wire'
+import {
+  agentChildWorkStripOffersStop,
+  type AgentSessionBackgroundTaskStops
+} from '../../../shared/agent-child-work-stop-targets'
 import { agentChildWorkLiveness } from '../../../shared/agent-status-child-work-liveness'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import {
@@ -97,18 +101,24 @@ export async function clearConversationUnderSerialize(
 }
 
 /**
- * What a /clear card at the head of the queue waits for before it may run: work that ends on its
- * own, so the card keeps waiting and the drain runs it once that ends (it wakes on child work and on
- * a handoff ending). The queue's one gate reads it for the drain, publication and admission.
+ * What a /clear card at the head of the queue waits for before it may run: a handoff, which ends on
+ * its own, or background tasks the strip offers a Stop for, so the person can end the wait. Work
+ * nothing here can stop is no wait: the clear is refused, as at rest. The drain runs it once the
+ * wait ends (it wakes on child work and on a handoff ending). The queue's one gate reads it for the
+ * drain, publication and admission.
  */
 export function queuedClearWait(
   record: Pick<AgentSessionRecord, 'lease'> | null,
-  childWork: readonly AgentChildWorkView[] | undefined
+  childWork: readonly AgentChildWorkView[] | undefined,
+  stops: AgentSessionBackgroundTaskStops | undefined
 ): AgentSessionQueueWait['reason'] | null {
   if (record?.lease.handoffStage || record?.lease.handoffOperationId) {
     return 'handoff'
   }
-  return agentChildWorkLiveness(childWork) !== null ? 'background-tasks' : null
+  return agentChildWorkLiveness(childWork) !== null &&
+    agentChildWorkStripOffersStop(childWork ?? [], stops)
+    ? 'background-tasks'
+    : null
 }
 
 export type QueuedClearOutcome =
@@ -152,7 +162,8 @@ export async function runQueuedConversationClear(
     if (
       queuedClearWait(
         context.deps.store.getRecord(ctx.sessionId),
-        context.readChildWork(ctx.sessionId)
+        context.readChildWork(ctx.sessionId),
+        ctx.adapter.backgroundTaskStops?.(ctx.sessionId)
       ) !== null
     ) {
       return { kind: 'waiting', refusal: cleared.refusal }

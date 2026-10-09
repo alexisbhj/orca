@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { QUEUED_MESSAGE_PAUSED_SEND_FAILED } from '../../../shared/agent-session-wire'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentSessionBackgroundTaskStops } from '../../../shared/agent-child-work-stop-targets'
 import { createStructuredAgentSessionOperationId } from '../../../shared/structured-agent-session-mutation'
 import { QueuedMessageNotConsumableError } from '../agent-session-journal/journal-queued-messages'
 import type { QueuedMessageRow } from '../agent-session-journal/queued-message-table'
@@ -27,6 +28,7 @@ export type QueuedMessageDrainDeps = {
   wakeDelivery: (sessionId: string) => void
   logger: StructuredAgentSessionLogger
   readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
+  backgroundTaskStops: (sessionId: string) => AgentSessionBackgroundTaskStops | undefined
   /** Runs a /clear card itself, inside the step's serialize (`runQueuedConversationClear`). */
   runClear: (sessionId: string, card: QueuedMessageRow) => Promise<unknown>
 }
@@ -66,7 +68,8 @@ export class StructuredAgentSessionQueuedMessageDrain {
           journal,
           record: this.deps.getRecord(sessionId),
           fence: this.deps.conversationFence(sessionId),
-          childWork: () => this.deps.readChildWork(sessionId)
+          childWork: () => this.deps.readChildWork(sessionId),
+          backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId)
         })
       ) {
         return
@@ -117,7 +120,8 @@ export class StructuredAgentSessionQueuedMessageDrain {
       journal,
       record,
       fence,
-      childWork: () => this.deps.readChildWork(sessionId)
+      childWork: () => this.deps.readChildWork(sessionId),
+      backgroundTaskStops: () => this.deps.backgroundTaskStops(sessionId)
     })
     if (this.disposed || !next) {
       return

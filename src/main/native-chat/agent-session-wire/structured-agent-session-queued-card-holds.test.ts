@@ -567,13 +567,14 @@ describe('where the host would refuse the send', () => {
 
   it('a card queued after clear is sendable with the completed clear record still present', async () => {
     const { card, journal, record, fence } = await cardAddedAfterClear()
-    const gate = structuredQueueSendGate(rig.store, HOST_TEST_SESSION, () => undefined)
+    const gate = structuredQueueSendGate(rig.store, HOST_TEST_SESSION, () => undefined, {})
     expect(readQueuePublication(journal, gate).nextQueuedMessageId).toBe(card)
     const { conversationCommand: _cleared, ...unblocked } = record
     const next = readQueuePublication(journal, () => ({
       record: unblocked,
       fence,
-      childWork: () => undefined
+      childWork: () => undefined,
+      backgroundTaskStops: () => undefined
     }))
     expect(next.nextQueuedMessageId).toBe(card)
   })
@@ -593,7 +594,8 @@ describe('where the host would refuse the send', () => {
       readQueuePublication(journal, () => ({
         record: gateRecord,
         fence,
-        childWork: () => undefined
+        childWork: () => undefined,
+        backgroundTaskStops: () => undefined
       })).nextQueuedMessageId
     expect(next({ ...unblocked, rewind })).toBeNull()
     expect(next({ ...unblocked, rewind: { ...rewind, phase: 'provider-succeeded' } })).toBeNull()

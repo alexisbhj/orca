@@ -28,6 +28,8 @@ import {
 import { nextSendableQueuedCard } from '../agent-session-journal/queued-message-pause'
 import { isQueuedClearCard, queuedClearWait } from './structured-conversation-clear'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
+import type { AgentSessionBackgroundTaskStops } from '../../../shared/agent-child-work-stop-targets'
+import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 import { agentSessionAttachmentExpiredRefusal } from './structured-agent-session-turns'
 import { isAgentSessionAttachmentExpiredError } from '../agent-session-attachments/agent-session-attachment-claims'
 
@@ -114,12 +116,14 @@ export function structuredQueueHold(input: {
   return null
 }
 
-/** What the gate reads beyond the journal. `childWork` is read only when a /clear card is next. */
+/** What the gate reads beyond the journal. `childWork` and `backgroundTaskStops` are read only when
+ *  a /clear card is next. */
 export type StructuredQueueGateInput = {
   journal: AgentSessionJournal
   record: AgentSessionRecord | null
   fence: number
   childWork: () => readonly AgentChildWorkView[] | undefined
+  backgroundTaskStops: () => AgentSessionBackgroundTaskStops | undefined
 }
 
 /** The card the queue is on once no hold stops it, and what that card still waits for: a /clear
@@ -147,9 +151,11 @@ export function structuredQueueHead(
 
 function queuedCardWait(
   card: Pick<QueuedMessageRow, 'body'>,
-  input: Pick<StructuredQueueGateInput, 'record' | 'childWork'>
+  input: Pick<StructuredQueueGateInput, 'record' | 'childWork' | 'backgroundTaskStops'>
 ): AgentSessionQueueWait['reason'] | null {
-  return isQueuedClearCard(card) ? queuedClearWait(input.record, input.childWork()) : null
+  return isQueuedClearCard(card)
+    ? queuedClearWait(input.record, input.childWork(), input.backgroundTaskStops())
+    : null
 }
 
 /** The gate's cheap part, for the drain's schedule: an actionable card, the agent idle, and no wait
@@ -183,7 +189,8 @@ export function nextStructuredQueuedMessage(
  * queue, does not trap a new send: the user acting now wins, and that send's
  * turn starting is what lifts the pause — Orca's own queue policy, a stated
  * deviation from held-head backlog counting. A /clear that would only wait for
- * background tasks or a handoff waits as a card too, as one sent mid-turn does.
+ * a handoff or for background tasks the strip can stop waits as a card too, as one sent mid-turn
+ * does.
  */
 export function shouldQueueStructuredAgentSessionSend(
   input: StructuredQueueGateInput & { body: AgentJournalMessageItem }
@@ -208,7 +215,10 @@ export function shouldQueueStructuredAgentSessionSend(
  */
 export async function maybeQueueStructuredAgentSessionSend(
   context: {
-    deps: { store: { getRecord: (sessionId: string) => AgentSessionRecord | null } }
+    deps: {
+      store: { getRecord: (sessionId: string) => AgentSessionRecord | null }
+      adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops'>
+    }
     readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
   },
   ctx: Pick<AgentSessionTurnContext, 'sessionId' | 'journal' | 'fence' | 'operationReceipt'>,
@@ -246,6 +256,7 @@ export async function maybeQueueStructuredAgentSessionSend(
       record: context.deps.store.getRecord(ctx.sessionId),
       fence: ctx.fence,
       childWork: () => context.readChildWork(ctx.sessionId),
+      backgroundTaskStops: () => context.deps.adapter.backgroundTaskStops?.(ctx.sessionId),
       body: params.body
     })
   ) {

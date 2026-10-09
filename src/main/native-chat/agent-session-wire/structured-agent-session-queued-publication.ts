@@ -23,6 +23,7 @@ import {
 import { structuredAgentSessionConversationFence } from './structured-agent-session-provider-child'
 import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import type { AgentSessionRecordStore } from '../../runtime/agent-session-record-store'
+import type { StructuredAgentSessionAdapter } from './structured-agent-session-adapter'
 
 export type QueuePublication = {
   queuedMessages: AgentSessionQueuedMessage[]
@@ -41,12 +42,14 @@ export type QueueSendGate = () => Omit<StructuredQueueGateInput, 'journal'>
 export function structuredQueueSendGate(
   store: Pick<AgentSessionRecordStore, 'getRecord'>,
   sessionId: string,
-  readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined
+  readChildWork: (sessionId: string) => readonly AgentChildWorkView[] | undefined,
+  adapter: Pick<StructuredAgentSessionAdapter, 'backgroundTaskStops'>
 ): QueueSendGate {
   return () => ({
     record: store.getRecord(sessionId),
     fence: structuredAgentSessionConversationFence(store, sessionId),
-    childWork: () => readChildWork(sessionId)
+    childWork: () => readChildWork(sessionId),
+    backgroundTaskStops: () => adapter.backgroundTaskStops?.(sessionId)
   })
 }
 
