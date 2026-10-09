@@ -69,7 +69,14 @@ export const OrcadActivationTransactionSchema = z
       activeVersion: RemoteVersionSchema,
       recordAfter: z.unknown(),
       /** The instance-bound stop request; durable before it can reach the host. */
-      request: OrcadManagedStopRequestSchema.nullable()
+      request: OrcadManagedStopRequestSchema.nullable(),
+      /** Where current builds file a dispatched stop; see orcadDecommissionJournal. */
+      dispatched: z
+        .object({
+          phase: z.enum(['stop-dispatched', 'process-exited']),
+          request: OrcadManagedStopRequestSchema
+        })
+        .optional()
     })
   ])
   .superRefine((transaction, context) => {
@@ -80,7 +87,11 @@ export const OrcadActivationTransactionSchema = z
           message: 'Stop request is inconsistent with phase'
         })
       }
-      if (transaction.request && transaction.request.transactionId !== transaction.transactionId) {
+      if (transaction.dispatched && transaction.phase !== 'prepared') {
+        context.addIssue({ code: 'custom', message: 'Dispatched stop is filed twice' })
+      }
+      const request = transaction.dispatched?.request ?? transaction.request
+      if (request && request.transactionId !== transaction.transactionId) {
         context.addIssue({
           code: 'custom',
           message: 'Stop request names another transaction'

@@ -17,6 +17,7 @@ import {
   OrcadActivationTransactionSchema
 } from './orcad-activation-transaction-schema'
 import {
+  orcadDecommissionJournal,
   orcadDecommissionTransactionDefect,
   planOrcadDecommissionRecovery,
   type OrcadDecommissionRecoveryPlan,
@@ -119,8 +120,10 @@ export function parseOrcadActivationTransaction(
     if (after.state === 'unreadable') {
       return after
     }
+    const { dispatched, ...journal } = parsed.data
     const transaction = {
-      ...parsed.data,
+      ...journal,
+      ...dispatched,
       recordBefore: recordBefore.record,
       recordAfter: after.record
     }
@@ -177,7 +180,10 @@ export function parseOrcadActivationTransaction(
 export function serializeOrcadActivationTransaction(
   transaction: OrcadActivationTransaction & { fenceToken?: string }
 ): string {
-  return `${JSON.stringify(transaction, null, 2)}\n`
+  // The decommission form keeps any fenceToken: it spreads the rest of the entry.
+  const journal =
+    transaction.operation === 'decommission' ? orcadDecommissionJournal(transaction) : transaction
+  return `${JSON.stringify(journal, null, 2)}\n`
 }
 
 export function planOrcadTransactionRecovery(
