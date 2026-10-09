@@ -29,6 +29,7 @@ import type {
 } from '../../../../shared/agent-session-operation-ledger'
 import { resolveAgentSessionReplayOutcome } from '../../../native-chat/agent-session-wire/structured-agent-session-replay-outcome'
 import type { RpcContext } from '../core'
+import type { AgentSessionRecordStore } from '../../agent-session-record-store'
 import { rpcCallerOperationKey } from '../rpc-caller-identity'
 import type { AgentLaunchParams } from './agent-launch-schemas'
 import { isDesktopLaunchCaller } from './agent-launch-desktop-caller'
@@ -210,25 +211,49 @@ export async function admitAgentLaunchOperation(
     return refusal(operationId, 'agent_session_operation_invalid', 'is not a durable operation id')
   }
   const callerKey = agentLaunchOperationCallerKey(context)
-  // The ledger alone: admitting a terminal launch has no use for the chat host.
-  const store = await context.runtime.openAgentSessionRecordStore()
   // Temporary, desktop only: no other caller takes follow-ups.
   const launchFollowUp = isDesktopLaunchCaller(callerKey) ? recordableFollowUp(params) : undefined
-  const { decision: admitted, claim } = await store.admitAndClaimOperation(
-    {
+  let store: AgentSessionRecordStore
+  let admission: Awaited<ReturnType<AgentSessionRecordStore['admitAndClaimOperation']>>
+  try {
+    // The ledger alone: admitting a terminal launch has no use for the chat host.
+    store = await context.runtime.openAgentSessionRecordStore()
+    admission = await store.admitAndClaimOperation(
+      {
+        callerKey,
+        operationId,
+        fingerprint,
+        now,
+        ...(ownedPane ? { ownedPane } : {}),
+        ...(launchFollowUp ? { launchFollowUp } : {})
+      },
+      // A fresh row, or a replayed one no one has answered yet, leaves the right to run open.
+      (decision) =>
+        decision.decision === 'admit' ||
+        (decision.decision === 'replay' &&
+          answerFromRecordedRow(operationId, decision.row.outcome) === null)
+    )
+  } catch (error) {
+    // Bookkeeping never gates the desktop's own click, which main ran unrecorded. Only there: a
+    // retrying caller would launch twice without the record, and follow-ups live in it.
+    if (!isDesktopLaunchCaller(callerKey) || params.followUp) {
+      throw error
+    }
+    console.warn(
+      '[agent-launch] the launch record is unavailable; this launch runs unrecorded',
+      error
+    )
+    const unrecorded = async (): Promise<void> => {}
+    return {
+      decision: 'execute',
+      attachOperationId,
       callerKey,
-      operationId,
-      fingerprint,
-      now,
-      ...(ownedPane ? { ownedPane } : {}),
-      ...(launchFollowUp ? { launchFollowUp } : {})
-    },
-    // A fresh row, or a replayed one no one has answered yet, leaves the right to run open.
-    (decision) =>
-      decision.decision === 'admit' ||
-      (decision.decision === 'replay' &&
-        answerFromRecordedRow(operationId, decision.row.outcome) === null)
-  )
+      record: unrecorded,
+      settle: unrecorded,
+      fail: unrecorded
+    }
+  }
+  const { decision: admitted, claim } = admission
   if (admitted.decision === 'refused') {
     return refusal(operationId, admitted.code, `was refused: ${admitted.code}`)
   }

@@ -125,6 +125,7 @@ export const SQLITE_DATABASE_RUNTIME_INCLUDE = [
   'src/main/runtime/rpc/methods/agent-launch-follow-ups.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-follow-up-late-settlement.test.ts',
   'src/main/runtime/rpc/methods/agent-launch-restart-replay.test.ts',
+  'src/main/runtime/rpc/methods/agent-launch-unrecorded-admission.test.ts',
   'src/main/runtime/rpc/methods/desktop-new-tab-replay.test.ts',
   'src/main/runtime/rpc/methods/desktop-new-tab-follow-ups.test.ts',
   'src/main/runtime/rpc/methods/desktop-new-tab-unrecorded.test.ts',

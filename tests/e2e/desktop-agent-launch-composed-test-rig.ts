@@ -3,6 +3,7 @@ import type { AgentSessionRecordStore } from '../../src/main/runtime/agent-sessi
 import type { createTestStore } from '../../src/renderer/src/store/slices/store-test-helpers'
 import type { DesktopNewTabPrompt } from '../../src/shared/desktop-new-tab-prompt'
 import type { AgentLaunchPaneVerdict } from '../../src/shared/agent-launch-pane-verdict'
+import type { AgentLaunchFollowUp } from '../../src/shared/agent-launch-follow-up'
 import { RuntimeRpcCallError } from '../../src/renderer/src/runtime/runtime-rpc-result'
 import { mapRuntimeError } from '../../src/main/runtime/rpc/errors'
 import {
@@ -56,6 +57,7 @@ export function createDesktopAgentLaunchRig(
     workspaceError?: boolean
     rootCwd?: boolean
     structuredAi?: boolean
+    followUp?: AgentLaunchFollowUp
   } = {}
 ) {
   const { store, record, prompt, callRuntimeRpc } = harness
@@ -207,7 +209,8 @@ export function createDesktopAgentLaunchRig(
     activate: options.activate ?? false,
     agentArgs: null,
     cwd: options.rootCwd ? '/tmp/wt-7' : '/tmp/wt-7/src',
-    ...(options.structuredAi ? { sessionOptions: { model: 'chosen' } } : {})
+    ...(options.structuredAi ? { sessionOptions: { model: 'chosen' } } : {}),
+    ...(options.followUp ? { followUp: options.followUp } : {})
   } as const
   const launch = () => launchAgentThroughHost(launchArgs)
   const launchPrompt = () =>

@@ -419,8 +419,31 @@ describe('a desktop fresh-tab launch keeps its original published pane', () => {
     }
   )
 
-  it('withdraws the published pane when admission cannot open the launch record', async () => {
+  // Bookkeeping never gates the click: main's "+" kept no launch record at all.
+  it('starts the agent unrecorded when admission cannot open the launch record', async () => {
     const r = rig({ admissionError: 'agent_session_record_store_location_changed' })
+    const { tabId, outcome } = r.launch()
+    await r.admitted.promise
+    r.admission.resolve()
+    await vi.waitFor(() => expect(r.runtime.createTerminal).toHaveBeenCalledOnce())
+    r.start.resolve()
+    await expect(outcome).resolves.toMatchObject({ kind: 'started' })
+    await vi.waitFor(() => expect(r.mount.attachments).toBe(1))
+    expect(tab(tabId)).toBeDefined()
+    expect(r.mount.shellStarts).toBe(0)
+    expect(r.verdicts).not.toContainEqual({ kind: 'withdrawn' })
+    expect(deliver).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ prompt: PROMPT }))
+    expect(callRuntimeRpc).toHaveBeenCalledOnce()
+    expect(record.listOperationRows()).toEqual([])
+    expect(activeAgentLaunchesFor(r.context.runtime).size).toBe(0)
+  })
+
+  // Its follow-up lives in the record, so without one it would silently never run.
+  it('withdraws the published pane when a launch with a follow-up cannot open the record', async () => {
+    const r = rig({
+      admissionError: 'agent_session_record_store_location_changed',
+      followUp: { kind: 'test-follow-up', version: 1, payload: {} }
+    })
     const { tabId, outcome } = r.launch()
     await r.admitted.promise
     r.admission.resolve()
