@@ -210,6 +210,11 @@ test('managed Files drag into a desktop terminal cannot name an unrelated deskto
     }
     const content = await terminalText(page, floatingId)
     console.log('[managed-drop-actual-native-shell]', content)
+    const refusalToast = page.locator('[data-sonner-toast]').filter({ has: refused })
+    await expect(refusalToast).toHaveAttribute('data-mounted', 'true')
+    await refusalToast.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished))
+    })
     await page.screenshot({ path: testInfo.outputPath('managed-terminal-drop-owner.png') })
     expect(content.split('REMOTE_DROP_RESULT').at(-1)).not.toContain('DESKTOP_BROWSER_DROP_OWNER')
     await expect(refused).toBeVisible()
