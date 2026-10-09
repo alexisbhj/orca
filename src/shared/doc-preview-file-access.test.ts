@@ -203,7 +203,7 @@ describe('readAuthorizedDocPreviewFile', () => {
     const fixture = await createFixture()
     const font = join(fixture.assets, 'geist.woff2')
     const bytes = await readFile(
-      new URL('../renderer/src/assets/fonts/Geist-Variable.woff2', import.meta.url)
+      join(process.cwd(), 'src/renderer/src/assets/fonts/Geist-Variable.woff2')
     )
     await writeFile(font, bytes)
 
