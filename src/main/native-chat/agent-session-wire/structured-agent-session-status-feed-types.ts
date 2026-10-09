@@ -23,6 +23,7 @@ export type StatusFeedSession = {
   journal: AgentSessionJournal
   params: { location: AgentSessionRecord['location']; provider: AgentSessionRecord['provider'] }
   child?: Pick<StructuredAgentSessionProviderChild, 'phase' | 'generation' | 'fence'> | null
+  restartResume?: AgentSessionStatusSummary['restartResume']
 }
 
 export type StructuredAgentSessionStatusFeedDeps = {

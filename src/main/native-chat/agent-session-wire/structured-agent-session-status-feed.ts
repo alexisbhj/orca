@@ -144,6 +144,7 @@ export class StructuredAgentSessionStatusFeed {
       hostExecutionOwned: _hostExecutionOwned,
       hostExecutionPhase: _hostExecutionPhase,
       stopping: _stopping,
+      restartResume: _restartResume,
       ...retained
     } = previous
     this.published.set(sessionId, {
