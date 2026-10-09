@@ -3,7 +3,7 @@
 export const REMOTE_RUNTIME_DISCONNECTED_INPUT_GRACE_MS = 5 * 60_000
 
 /**
- * Starts once per outage when the pane gives up; only a recovered, rebound or disposed pane resets it.
+ * Starts once per outage when the pane gives up; only a recovered or disposed pane resets it.
  * A retry begun inside the grace carries the whole hold until that retry ends: held input is one
  * ordered stream, so dropping its older part (an unsent Ctrl+C) while delivering what was typed
  * after it could run a different command. The next latch checks the original start again, so the
