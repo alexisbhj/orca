@@ -1048,8 +1048,20 @@ export function isRelayDatabaseTransientError(error: unknown): boolean {
   // Runs inside the query catch, where a thrown null or undefined would turn a
   // database failure into a TypeError that buries it.
   const code = String((error as { code?: unknown } | null)?.code)
-  // 25P03: the server ended a session idle in a transaction past its limit (a database stall).
-  if (['40P01', '40001', '55P03', '57014', '53300', '57P03', '08001', '08006', '25P03'].includes(code)) {
+  if (
+    [
+      '40P01',
+      '40001',
+      '55P03',
+      '57014',
+      '53300',
+      '57P03',
+      '08001',
+      '08006',
+      // The server ended a session idle in a transaction past its limit (a database stall).
+      '25P03'
+    ].includes(code)
+  ) {
     return true
   }
   // A pool that cannot hand out a client reports no SQLSTATE at all, so the
