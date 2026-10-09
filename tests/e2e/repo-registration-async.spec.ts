@@ -60,13 +60,17 @@ test('concurrent registration keeps one identity, including nested and linked pa
       await window.__store!.getState().fetchRepos()
       return {
         ids: results.map((result) => ('repo' in result ? result.repo.id : null)),
-        count: window.__store!.getState().repos.length
+        persistedIds: (await window.api.repos.list()).map((repo) => repo.id)
       }
     },
     { repoPath, nestedPath }
   )
   expect(new Set(result.ids).size).toBe(1)
-  expect(result.count).toBe(1)
+  expect(result.persistedIds).toEqual([result.ids[0]])
+  // A repos:changed refresh can supersede the explicitly awaited catalog fetch.
+  await expect
+    .poll(() => orcaPage.evaluate(() => window.__store!.getState().repos.map((repo) => repo.id)))
+    .toEqual(result.persistedIds)
   const linked = await orcaPage.evaluate(async (path) => window.api.repos.add({ path }), linkedPath)
   expect('repo' in linked && linked.repo.id).toBe(result.ids[0])
   const missing = await orcaPage.evaluate(
@@ -74,6 +78,9 @@ test('concurrent registration keeps one identity, including nested and linked pa
     join(root, 'missing')
   )
   expect('error' in missing).toBe(true)
+  expect(
+    await orcaPage.evaluate(async () => (await window.api.repos.list()).map((repo) => repo.id))
+  ).toEqual(result.persistedIds)
 })
 
 test('Add Project opens a folder and preserves its workspace when Git appears', async ({
