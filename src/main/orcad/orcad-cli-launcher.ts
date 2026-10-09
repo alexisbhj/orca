@@ -25,6 +25,7 @@ export async function prepareOrcadCliLauncher(): Promise<void> {
   }
   if (process.platform === 'win32') {
     // The slot's native launcher keeps argv intact; never proxy message bodies through cmd.exe.
+    // Temporary: per-slot, so a terminal open across two updates loses `orca` once GC drops it.
     const native = join(installRoot, ...ORCAD_WINDOWS_CLI_LAUNCHER_FILENAME.split('/'))
     launcherPath = existsSync(native) ? native : null
     return

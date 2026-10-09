@@ -91,8 +91,13 @@ async function captureHostShellEnvironment(): Promise<NodeJS.ProcessEnv> {
   return resolveLoginShellEnvironment({ force: true, env })
 }
 
+// Why: long enough that a burst of starts shares one capture, short enough that a CLI
+// installed on the host reaches new chats without a restart.
+const SHELL_ENVIRONMENT_TTL_MS = 10_000
+
 /**
- * Refresh on acquisition so a host-side CLI install reaches the next chat.
+ * Stale-while-refresh: only the first acquisition waits for the login shell; later ones get
+ * the last snapshot at once and, once it is older than the TTL, refresh it in the background.
  */
 export function createStructuredAgentEnvironmentResolvers(
   sources: StructuredAgentEnvironmentSources
@@ -102,14 +107,29 @@ export function createStructuredAgentEnvironmentResolvers(
   /** The shared base every agent's child env starts from, before its own overlay. */
   resolveBaseEnvironment: () => Promise<Record<string, string>>
 } {
+  let snapshot: { env: NodeJS.ProcessEnv; capturedAt: number } | null = null
   let pendingEnvironment: Promise<NodeJS.ProcessEnv> | null = null
   const resolveEnvironment = sources.resolveEnvironment ?? captureHostShellEnvironment
-  const resolveShellEnvironment = (): Promise<NodeJS.ProcessEnv> => {
-    // Concurrent probes share a capture; a settled capture never survives the next acquisition.
-    pendingEnvironment ??= resolveEnvironment().finally(() => {
-      pendingEnvironment = null
-    })
+  const refresh = (): Promise<NodeJS.ProcessEnv> => {
+    pendingEnvironment ??= resolveEnvironment()
+      .then((env) => {
+        snapshot = { env, capturedAt: Date.now() }
+        return env
+      })
+      .finally(() => {
+        pendingEnvironment = null
+      })
     return pendingEnvironment
+  }
+  const resolveShellEnvironment = (): Promise<NodeJS.ProcessEnv> => {
+    if (!snapshot) {
+      return refresh()
+    }
+    if (Date.now() - snapshot.capturedAt >= SHELL_ENVIRONMENT_TTL_MS) {
+      // A failed background refresh keeps the last snapshot.
+      refresh().catch(() => {})
+    }
+    return Promise.resolve(snapshot.env)
   }
   const resolveBase = async (): Promise<Record<string, string>> =>
     structuredAgentBaseEnvironment({
