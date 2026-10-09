@@ -79,8 +79,8 @@ export function withWorkspace(
 }
 
 /**
- * Removes one pane; a tab left without panes closes. A legacy tab with no pane tree is one
- * surface. The pane's incarnation goes with it; its sleeping record stays, as on main.
+ * Removes one pane; a tab left without panes closes. The pane's incarnation goes with it; its
+ * sleeping record stays, as on main.
  */
 export function retireTerminalPane(
   model: WorkspaceLayoutModel,
@@ -89,9 +89,9 @@ export function retireTerminalPane(
 ): WorkspaceLayoutModel {
   const { workspaceKey, tab } = location
   const workspace = model.workspaces[workspaceKey]!
-  const root = tab.panes ? removeLayoutLeaf(tab.panes.root, leafId) : null
+  const root = removeLayoutLeaf(tab.panes.root, leafId)
   let nextWorkspace: WorkspaceLayout
-  if (!root || !tab.panes) {
+  if (!root) {
     nextWorkspace = removeTabFromWorkspace(workspace, tab.id)
   } else {
     const panes = {
@@ -131,8 +131,7 @@ export type ExitedSurface = {
 
 /**
  * Today's exit retirement: a pane now showing another terminal or incarnation is left alone; a
- * pane no longer in its tab only loses its incarnation. A legacy tab with no pane tree closes when
- * its one terminal is this one.
+ * pane no longer in its tab only loses its incarnation.
  */
 export function retireExitedSurface(
   model: WorkspaceLayoutModel,
@@ -150,7 +149,7 @@ export function retireExitedSurface(
   if (boundPtyId && boundPtyId !== surface.ptyId) {
     return { model, retired: false }
   }
-  if (location && (inTree || (!panes && location.tab.legacyPtyId === surface.ptyId))) {
+  if (location && inTree) {
     return { model: retireTerminalPane(model, location, surface.leafId), retired: true }
   }
   const records = {

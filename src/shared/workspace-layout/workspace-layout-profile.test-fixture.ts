@@ -1,6 +1,7 @@
 // Real-shaped stored partitions: the desktop's own, a relay-fallback SSH host's, a remote server's.
 
 import type { SleepingAgentSessionRecord } from '../agent-session-resume'
+import { toRuntimeExecutionHostId, toSshExecutionHostId } from '../execution-host'
 import { toRemoteRuntimePtyId } from '../remote-runtime-pty-id'
 import { toAppSshPtyId } from '../ssh-pty-id'
 import type { WorkspaceSessionState } from '../workspace-session-state-types'
@@ -193,21 +194,26 @@ export function localDesktopSession(): WorkspaceSessionState {
 /** A relay-fallback SSH host's partition, written by the window with remote session ids. */
 export function relaySshSession(targetId: string): WorkspaceSessionState {
   const pty = (n: number) => toAppSshPtyId(targetId, `pty-${n}`)
-  const session = addWorkspace(emptySession(), SSH_KEY, [
-    {
-      id: 'group-ssh',
-      tabs: [
-        {
-          id: 'tab-ssh-1',
-          leaves: [
-            [leaf(6), pty(1)],
-            [leaf(7), pty(2)]
-          ]
-        },
-        { id: 'tab-ssh-2', leaves: [[leaf(8), pty(3)]] }
-      ]
-    }
-  ])
+  const session = addWorkspace(
+    emptySession(),
+    SSH_KEY,
+    [
+      {
+        id: 'group-ssh',
+        tabs: [
+          {
+            id: 'tab-ssh-1',
+            leaves: [
+              [leaf(6), pty(1)],
+              [leaf(7), pty(2)]
+            ]
+          },
+          { id: 'tab-ssh-2', leaves: [[leaf(8), pty(3)]] }
+        ]
+      }
+    ],
+    toSshExecutionHostId(targetId)
+  )
   return {
     ...session,
     remoteSessionIdsByTabId: { 'tab-ssh-1': pty(1), 'tab-ssh-2': pty(3) },
@@ -218,12 +224,17 @@ export function relaySshSession(targetId: string): WorkspaceSessionState {
 
 /** A remote Orca server's partition (`runtime:<env>`), mirrored by the desktop. */
 export function serverRuntimeSession(environmentId: string): WorkspaceSessionState {
-  return addWorkspace(emptySession(), SERVER_KEY, [
-    {
-      id: 'group-server',
-      tabs: [
-        { id: 'tab-server', leaves: [[leaf(9), toRemoteRuntimePtyId('handle-1', environmentId)]] }
-      ]
-    }
-  ])
+  return addWorkspace(
+    emptySession(),
+    SERVER_KEY,
+    [
+      {
+        id: 'group-server',
+        tabs: [
+          { id: 'tab-server', leaves: [[leaf(9), toRemoteRuntimePtyId('handle-1', environmentId)]] }
+        ]
+      }
+    ],
+    toRuntimeExecutionHostId(environmentId)
+  )
 }

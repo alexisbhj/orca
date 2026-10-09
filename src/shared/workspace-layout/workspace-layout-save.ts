@@ -57,13 +57,7 @@ function saveWorkspace(
   for (const tab of workspace.tabs) {
     const place = placement.get(tab.id)
     if (tab.kind === 'terminal') {
-      if (tab.panes) {
-        session.terminalLayoutsByTabId[tab.entityId] = saveTerminalLayout(
-          { ...tab, panes: tab.panes },
-          facts,
-          view
-        )
-      }
+      session.terminalLayoutsByTabId[tab.entityId] = saveTerminalLayout(tab, facts, view)
     }
     if (place) {
       entries.push(saveTabBarEntry(tab, { groupId: place.groupId, sortOrder: place.index }, scope))

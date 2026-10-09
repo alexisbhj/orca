@@ -27,8 +27,6 @@ type LayoutTabFields = {
   /** Tab-bar id. Terminal pane keys, layouts and records use `entityId`. */
   id: string
   entityId: string
-  /** The tab names its execution host on disk, as the window's tab opens do (see tab-host). */
-  namesExecutionHost?: true
   createdAt: number
   customTitle: string | null
   generatedTitle?: string | null
@@ -55,10 +53,7 @@ export type LayoutTerminalCreation = Pick<
 export type LayoutTerminalTab = LayoutTabFields & {
   kind: 'terminal'
   terminal: LayoutTerminalCreation
-  /** Null for a legacy row saved before pane layouts existed. */
-  panes: LayoutTerminalPanes | null
-  /** Such a legacy row's one terminal; a tab with panes binds its terminals there instead. */
-  legacyPtyId?: string
+  panes: LayoutTerminalPanes
 }
 
 export type LayoutContentTab = LayoutTabFields & { kind: Exclude<TabContentType, 'terminal'> }

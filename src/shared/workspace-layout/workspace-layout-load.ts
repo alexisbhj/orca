@@ -127,7 +127,7 @@ export function loadWorkspaceLayout(
       )
     )
   }
-  reassignPanesInTwoTabs(layout, context, normalizations)
+  reassignPanesInTwoTabs(layout, { view: desktopView, facts }, context, normalizations)
   unbindDuplicateTerminals(layout, normalizations)
   layout = applyLegacySurfaceTombstones(layout, session, normalizations)
   return { layout, desktopView, facts, carried, normalizations }

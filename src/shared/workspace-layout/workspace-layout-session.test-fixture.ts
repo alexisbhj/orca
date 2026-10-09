@@ -2,6 +2,7 @@
 // round trip, built the way the window saves them. Each terminal tab has its row, tab-bar entry and pane layout; order fields agree.
 
 import { getDefaultWorkspaceSession } from '../constants'
+import { LOCAL_EXECUTION_HOST_ID, type ExecutionHostId } from '../execution-host'
 import type { Tab, TabGroup } from '../tab-types'
 import type {
   TerminalLayoutSnapshot,
@@ -57,7 +58,8 @@ const isTerminal = (spec: TerminalSpec | ContentSpec): spec is TerminalSpec => !
 export function addWorkspace(
   session: WorkspaceSessionState,
   key: string,
-  groups: GroupSpec[]
+  groups: GroupSpec[],
+  hostId: ExecutionHostId = LOCAL_EXECUTION_HOST_ID
 ): WorkspaceSessionState {
   const rows: TerminalTab[] = []
   const entries: Tab[] = []
@@ -68,6 +70,7 @@ export function addWorkspace(
       const common = {
         groupId: group.id,
         worktreeId: key,
+        executionHostId: hostId,
         sortOrder: index,
         createdAt,
         customLabel: null,

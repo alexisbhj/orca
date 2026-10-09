@@ -1,4 +1,5 @@
-// The one execution host a tab-bar entry names, derived from what owns the tab.
+// The one execution host every tab-bar entry names (as the window stamps new tabs), derived from
+// what owns the tab.
 
 import {
   toRuntimeExecutionHostId,
