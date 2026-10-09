@@ -64,7 +64,7 @@ export function TabHoverCard({
         showArrow={false}
         side="bottom"
         align="start"
-        sideOffset={6}
+        sideOffset={0}
         onPlaced={handlePlaced}
         data-tab-hover-card="true"
       >
