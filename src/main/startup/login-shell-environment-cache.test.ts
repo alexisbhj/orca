@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  captureLoginShellEnvironment,
   resetLoginShellEnvironmentCacheForTests,
   resolveLoginShellEnvironment
 } from './login-shell-environment'
@@ -67,4 +68,23 @@ it('bounds retained environments and supports explicit refresh', async () => {
     force: true
   })
   expect(spawner).toHaveBeenCalledTimes(12)
+})
+
+it('says whether the shell produced the env, and a failed forced capture keeps the cached one', async () => {
+  const env = { HOME: '/host' }
+  const spawner = vi
+    .fn<(shell: string, env: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv | null>>()
+    .mockResolvedValueOnce({ PATH: '/profile/bin' })
+    .mockResolvedValueOnce(null)
+  const options = { shellOverride: '/bin/bash', env, spawner }
+  await expect(captureLoginShellEnvironment(options)).resolves.toEqual({
+    status: 'captured',
+    env: { PATH: '/profile/bin' }
+  })
+  await expect(captureLoginShellEnvironment({ ...options, force: true })).resolves.toEqual({
+    status: 'fallback',
+    env
+  })
+  await expect(resolveLoginShellEnvironment(options)).resolves.toEqual({ PATH: '/profile/bin' })
+  expect(spawner).toHaveBeenCalledTimes(2)
 })

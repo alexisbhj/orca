@@ -152,7 +152,8 @@ function readRegExePathsAsync(
 ): Promise<RegistryPathRead[]> {
   return Promise.all(
     WINDOWS_PATH_REGISTRY_KEYS.map(async ([key, valueName]) => {
-      const stdout = await query(getRegExePath(env), ['query', key, '/v', valueName])
+      // Why: `/v Path` fails when the value is absent; the native reader calls that an empty PATH.
+      const stdout = await query(getRegExePath(env), ['query', key])
       return stdout === null
         ? { failed: true, segments: [] }
         : {
@@ -196,15 +197,11 @@ export function readPersistedWindowsPathSegments(options: ReadWindowsPathOptions
   const reads = options.execFileSync
     ? WINDOWS_PATH_REGISTRY_KEYS.map(([key, valueName]) => {
         try {
-          const output = options.execFileSync!(
-            getRegExePath(env),
-            ['query', key, '/v', valueName],
-            {
-              encoding: 'utf8',
-              timeout: PERSISTED_WINDOWS_PATH_QUERY_TIMEOUT_MS,
-              windowsHide: true
-            }
-          )
+          const output = options.execFileSync!(getRegExePath(env), ['query', key], {
+            encoding: 'utf8',
+            timeout: PERSISTED_WINDOWS_PATH_QUERY_TIMEOUT_MS,
+            windowsHide: true
+          })
           return {
             failed: false,
             segments: registryOutputSegments(output, valueName, env, pathDelimiter)

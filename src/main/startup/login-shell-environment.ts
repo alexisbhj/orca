@@ -11,7 +11,13 @@ const START_MARKER = '__ORCA_LOGIN_SHELL_ENV_START__'
 const END_MARKER = '__ORCA_LOGIN_SHELL_ENV_END__'
 const SPAWN_TIMEOUT_MS = 5000
 
-const environmentCache = new Map<string, Promise<NodeJS.ProcessEnv>>()
+/** Whether a profile-loading shell produced the env, or Orca fell back to its own. */
+export type LoginShellEnvironmentCapture = {
+  status: 'captured' | 'fallback'
+  env: NodeJS.ProcessEnv
+}
+
+const environmentCache = new Map<string, Promise<LoginShellEnvironmentCapture>>()
 const MAX_CACHED_ENVIRONMENTS = 8
 
 function processEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -132,10 +138,11 @@ export type ResolveLoginShellEnvironmentOptions = {
   spawner?: (shell: string, env: NodeJS.ProcessEnv) => Promise<NodeJS.ProcessEnv | null>
 }
 
-/** Resolves the environment seen by commands launched from Orca's profile-loading terminal shell. */
-export function resolveLoginShellEnvironment(
+/** Captures the environment seen by commands launched from Orca's profile-loading terminal
+ *  shell, saying whether the shell produced it or it is Orca's own env as a fallback. */
+export function captureLoginShellEnvironment(
   options: ResolveLoginShellEnvironmentOptions = {}
-): Promise<NodeJS.ProcessEnv> {
+): Promise<LoginShellEnvironmentCapture> {
   const shell =
     options.shellOverride !== undefined ? options.shellOverride : resolveProfileLoadingShell()
   const fallback = options.shellOverride === undefined ? resolveProfileLoadingFallbackShell() : null
@@ -151,18 +158,17 @@ export function resolveLoginShellEnvironment(
   if (cached && !options.force) {
     return cached
   }
+  const fellBack: LoginShellEnvironmentCapture = { status: 'fallback', env }
   if (!shell) {
-    return Promise.resolve(env)
+    return Promise.resolve(fellBack)
   }
   const spawner = options.spawner ?? spawnShellAndReadEnvironment
   const pending = spawner(shell, env)
-    .then(async (environment) => {
-      if (environment) {
-        return environment
-      }
-      return fallback ? ((await spawner(fallback, env)) ?? env) : env
+    .then(async (environment): Promise<LoginShellEnvironmentCapture> => {
+      const captured = environment ?? (fallback ? await spawner(fallback, env) : null)
+      return captured ? { status: 'captured', env: captured } : fellBack
     })
-    .catch(() => env)
+    .catch(() => fellBack)
   environmentCache.delete(shellKey)
   while (environmentCache.size >= MAX_CACHED_ENVIRONMENTS) {
     const oldest = environmentCache.keys().next().value
@@ -171,8 +177,19 @@ export function resolveLoginShellEnvironment(
     }
     environmentCache.delete(oldest)
   }
-  environmentCache.set(shellKey, pending)
+  // Why: a forced capture that falls back must not replace a good one other readers share.
+  environmentCache.set(
+    shellKey,
+    cached ? pending.then((capture) => (capture.status === 'captured' ? capture : cached)) : pending
+  )
   return pending
+}
+
+/** Resolves the environment seen by commands launched from Orca's profile-loading terminal shell. */
+export function resolveLoginShellEnvironment(
+  options: ResolveLoginShellEnvironmentOptions = {}
+): Promise<NodeJS.ProcessEnv> {
+  return captureLoginShellEnvironment(options).then((capture) => capture.env)
 }
 
 export function resetLoginShellEnvironmentCacheForTests(): void {
