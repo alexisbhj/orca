@@ -42,8 +42,12 @@ export function structuredQueueSendGate(
 }
 
 /** Waiting and returned rows only. `paused` is a per-card hold (a failed conversion); a person's
- *  Stop pauses the queue, published once beside it. */
-function computePublishedQueuedMessages(journal: AgentSessionJournal): AgentSessionQueuedMessage[] {
+ *  Stop pauses the queue, published once beside it. `editHeld` is never `paused`: an older client
+ *  would caption it with a hold whose release it does not own. */
+function computePublishedQueuedMessages(
+  journal: AgentSessionJournal,
+  edited: ReadonlySet<string>
+): AgentSessionQueuedMessage[] {
   const published: AgentSessionQueuedMessage[] = []
   for (const row of journal.queuedMessages.list()) {
     if (row.state !== 'waiting' && row.state !== 'returned') {
@@ -55,6 +59,7 @@ function computePublishedQueuedMessages(journal: AgentSessionJournal): AgentSess
       position: row.position,
       body: row.body,
       state: row.state,
+      ...(edited.has(row.messageId) ? { editHeld: true as const } : {}),
       ...(held ? { paused: true as const } : {}),
       // The stored reason is a typed marker; an unknown one reads as a plain hold.
       ...(held && isPublishedPausedReason(row.holdReason) ? { pausedReason: row.holdReason } : {}),
@@ -82,12 +87,14 @@ const listMemos = new WeakMap<AgentSessionJournal, ListMemo>()
 const publications = new WeakMap<AgentSessionJournal, QueuePublication>()
 
 function readPublishedQueuedMessages(journal: AgentSessionJournal): AgentSessionQueuedMessage[] {
-  const key = String(journal.queuedMessages.revision())
+  // A renewal moves no held set, so it re-sends nothing.
+  const edited = journal.queuedMessages.editLeases.heldIds()
+  const key = JSON.stringify([journal.queuedMessages.revision(), ...edited])
   const memo = listMemos.get(journal)
   if (memo && memo.key === key) {
     return memo.list
   }
-  const list = computePublishedQueuedMessages(journal)
+  const list = computePublishedQueuedMessages(journal, edited)
   // Belt for the identity dedup: equal recomputed content keeps the previous reference.
   const serialized = JSON.stringify(list)
   if (memo && memo.serialized === serialized) {

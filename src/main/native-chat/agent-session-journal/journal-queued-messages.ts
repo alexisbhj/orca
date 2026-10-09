@@ -47,6 +47,9 @@ import {
 import { AgentSessionJournalError, assertJournalWritable } from './journal-write-guards'
 import type { JournalAttachmentClaim } from './journal-submission-hook'
 import type { JournalWriteBody, JournalWriteResult } from './journal-write-queue'
+import { QueuedMessageEditLeases } from './queued-message-edit-leases'
+import { QueuedMessageNotConsumableError } from './queued-message-not-consumable'
+import { updateQueuedMessageText, type QueuedMessageTextUpdate } from './queued-message-text-update'
 
 /** Tombstones must outlive the window in which their operation id could still be admitted as new. */
 export const QUEUED_MESSAGE_REPLAY_WINDOW_MS =
@@ -71,6 +74,7 @@ export type JournalQueuedMessagesDeps = {
 }
 
 export class JournalQueuedMessages {
+  readonly editLeases = new QueuedMessageEditLeases(() => this.list())
   /** Bumped on every draft-table write, so publication memos recompute only when they must. */
   private changeRevision = 0
   private listed: { revision: number; rows: readonly QueuedMessageRow[] } | null = null
@@ -104,6 +108,15 @@ export class JournalQueuedMessages {
 
   get(messageId: string): QueuedMessageRow | null {
     return getQueuedMessage(this.deps.database().db, this.deps.sessionId, messageId)
+  }
+
+  /** An in-place text edit; a changed card spends every edit lease on its old text. */
+  update(input: QueuedMessageTextUpdate): Promise<ReturnType<typeof updateQueuedMessageText>> {
+    return this.transact(
+      (db) => updateQueuedMessageText(db, this.deps.sessionId, input),
+      (result) => result.status === 'updated',
+      () => this.editLeases.retire(input.messageId)
+    )
   }
 
   /** Replay receipts for one caller-scoped operation key. */
@@ -290,7 +303,8 @@ export class JournalQueuedMessages {
       // this guards any pause-relevant row written off that lane from overtaking a held card.
       const cards = listQueuedMessages(db, this.deps.sessionId)
       const pauses = this.derivePauses(cards)
-      if (nextSendableQueuedCard(pauses, cards)?.messageId !== input.messageId) {
+      const held = this.editLeases.heldIds(cards)
+      if (nextSendableQueuedCard(pauses, cards, held)?.messageId !== input.messageId) {
         throw new QueuedMessageNotConsumableError(input.messageId, input.expect)
       }
     }
@@ -367,15 +381,5 @@ export class JournalQueuedMessages {
       },
       (changed) => changed > 0
     ).then(() => undefined)
-  }
-}
-
-export class QueuedMessageNotConsumableError extends Error {
-  constructor(
-    readonly messageId: string,
-    readonly expected: 'waiting' | 'returned'
-  ) {
-    super(`queued message ${messageId} is no longer ${expected}`)
-    this.name = 'QueuedMessageNotConsumableError'
   }
 }

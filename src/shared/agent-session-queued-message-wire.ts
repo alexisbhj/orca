@@ -40,6 +40,9 @@ export type AgentSessionQueuedMessage = {
   state: 'waiting' | 'returned'
   /** This one card is held, whatever the queue's pause: its conversion failed. */
   paused?: true
+  /** Someone is editing this card in place: automatic delivery waits at it until the edit ends
+   *  or its lease expires. Absent on older hosts, and never paired with `paused`. */
+  editHeld?: true
   /** Why it is held, as a marker the client localizes: 'send_failed' ("couldn't send"); only an
    *  explicit Send releases it. A client must treat an unknown marker as a plain hold, so a newer
    *  host can add one. The queue-level pause is `queuePause`, published beside the list. */
@@ -59,3 +62,23 @@ export type AgentSessionQueuedMessageDeleteResult =
   /** `dispatched` means it already became a submission; `missing` covers a
    *  pruned tombstone. Replays answer from tombstone receipts. */
   | { deleted: false; messageId: string; disposition: 'dispatched' | 'withdrawn' | 'missing' }
+
+/** `agentSession.queuedMessageUpdate` (`agent-session.queued-message-edit.v1`). `unchanged`: the
+ *  card already reads as asked, which is also how a resent Save whose answer was lost succeeds.
+ *  `changed`: someone else's edit landed first; nothing was overwritten. */
+export type AgentSessionQueuedMessageUpdateResult =
+  | { status: 'updated' | 'unchanged'; messageId: string; fingerprint: string }
+  | { status: 'changed' | 'not-editable'; messageId: string }
+  | { status: 'gone'; messageId: string; disposition: 'dispatched' | 'withdrawn' | 'missing' }
+
+/** `agentSession.queuedMessageEditHold`: one editor's lease, keyed by the authenticated caller and
+ *  `editId`. It expires on its own; renewing extends it, and release frees only this editor's. */
+export type AgentSessionQueuedMessageEditHoldParams = {
+  sessionId: string
+  messageId: string
+  editId: string
+} & ({ action: 'acquire'; expectedBodyFingerprint: string } | { action: 'renew' | 'release' })
+
+export type AgentSessionQueuedMessageEditHoldResult =
+  | { status: 'held'; fingerprint: string; leaseDurationMs: number; remainingMs: number }
+  | { status: 'released' | 'expired' | 'changed' | 'gone' | 'not-editable' }
