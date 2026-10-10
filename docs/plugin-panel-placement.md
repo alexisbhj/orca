@@ -26,11 +26,52 @@ or failed plugin-list refreshes remove the active contribution immediately and
 fall back to Navigation. Right contributions remain in the right activity bar.
 No business plugin identity or source-control provider is special-cased.
 
-`plugins.list` preserves an explicitly declared placement as an optional field.
-Older hosts strip the unknown manifest field, and older clients show all panels
-on the right. A missing field is therefore the right default, not proof of left
-placement support. Update both host and client to use the left layout. There is
-no new stream opcode or RPC method, and plugin permissions are unchanged.
+## Detection from the sandboxed panel
+
+`plugins.list` reports manifest intent, not connected-client support. Probe the
+renderer displaying the panel over its existing postMessage action bridge:
+
+```js
+window.parent.postMessage(
+  {
+    type: 'orca-panel-action',
+    requestId: 'placement-probe',
+    action: 'panel.getCapabilities'
+  },
+  '*'
+)
+```
+
+Listen before sending. Accept only a reply from `window.parent` with type
+`orca-panel-action-result`, the matching request ID, `ok: true`, and
+`value.capabilities` containing `panel.placement.left.v1`. This confirms left
+layout support for this client/host pair; it does not say this particular panel
+requested left placement. Parameters must be omitted or `{}`.
+
+The renderer answers locally after the approved panel session has loaded. It
+intersects its own layout support with the optional `supportedPlacements` field
+returned by the execution host on `plugins.readPanelEntry` / the existing IPC
+surface. No new RPC method, stream opcode, permission or worker API is added.
+The guest supplies neither plugin identity nor session token. The usual iframe
+identity check, document lifetime, 64 KiB message limit and 30 messages/10 seconds
+budget still apply. Invalid parameters yield `invalid_params`; budget refusals
+yield `invalid_request` or `rate_limited`.
+
+| Displaying client | Execution host                          | Probe result                                                                           |
+| ----------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
+| Current           | Current                                 | `panel.placement.left.v1`                                                              |
+| Current           | Older, without the optional host signal | Empty capabilities, or no bridge reply if authenticated panel sessions are unavailable |
+| Older             | Current                                 | Unsupported action (`invalid_request`) or no reply                                     |
+| Older             | Older                                   | Unsupported action or no reply                                                         |
+
+Treat any error, missing field or timeout as unconfirmed support, never as a
+positive signal. Use a bounded timeout (for example 5 seconds) and repeat after
+remount/reconnect; do not cache a positive reply across sessions. An older client
+ignores the additive host field and keeps panels on the right. An older host
+strips unknown manifest placement, preserving the right default. Update both
+host and client for confirmed left placement. This applies to SSH-connected
+clients as well as local desktop clients; a worker alone cannot attest to the
+layout of a particular connected renderer.
 
 ## Host fixture
 

@@ -59,6 +59,7 @@ export class PluginPanelController {
     }
     return {
       ...loaded.entry,
+      supportedPlacements: ['left', 'right'],
       sessionToken: this.sessions.issue(ownerKey, loaded.binding)
     }
   }

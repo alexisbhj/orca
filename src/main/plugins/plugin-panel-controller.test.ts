@@ -53,6 +53,7 @@ describe('PluginPanelController identity binding', () => {
     })
     const entry = await controller.open('runtime:one', plugin.pluginKey, 'dashboard')
     expect(entry).not.toBeNull()
+    expect(entry?.supportedPlacements).toEqual(['left', 'right'])
 
     await expect(
       controller.execute('runtime:one', {

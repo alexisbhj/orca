@@ -8,11 +8,11 @@ Integration is not delivery on main; merging does not install the running build.
 
 ## Contracts and detection
 
-| Capability | Contract | Support check and old peers |
-| --- | --- | --- |
-| [H1: own worker command](https://github.com/alexisbhj/orca/issues/2) | [Panel action, permission, errors and bounds](../plugin-own-command.md) | Declare `commands:invokeOwn`, obtain consent, then use a harmless declared command such as the host fixture's ping. An old host rejects the capability; an old renderer rejects the action. Manifest acceptance alone does not prove the complete path. |
-| [H2: left panel](https://github.com/alexisbhj/orca/issues/3) | [Optional placement and lifecycle](../plugin-panel-placement.md) | `plugins.list` preserves explicit `placement`, but there is no negotiated left-layout capability. Confirm the actual left tab in the matching desktop renderer. Old hosts strip the field; old renderers keep panels on the right. Omission means right, not left support. |
-| [H3: typed terminal](https://github.com/alexisbhj/orca/issues/4) | [Creation, readiness, reconciliation and prompt receipts](typed-terminal-launch.md) | `status --json` exposes `result.runtime.capabilities`; require `terminal.create.typed.v1` on the execution host. The matching CLI checks this before `terminal.createTyped`, returning `incompatible_runtime` or `runtime_unavailable` without sending the launch. |
+| Capability                                                           | Contract                                                                            | Support check and old peers                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [H1: own worker command](https://github.com/alexisbhj/orca/issues/2) | [Panel action, permission, errors and bounds](../plugin-own-command.md)             | Declare `commands:invokeOwn`, obtain consent, then use a harmless declared command such as the host fixture's ping. An old host rejects the capability; an old renderer rejects the action. Manifest acceptance alone does not prove the complete path.                                                     |
+| [H2: left panel](https://github.com/alexisbhj/orca/issues/3)         | [Optional placement and lifecycle](../plugin-panel-placement.md)                    | From the sandboxed panel, call `panel.getCapabilities` over the existing action bridge and require `panel.placement.left.v1`. The reply intersects the displaying client and execution host; old hosts lack the signal, old renderers reject or ignore the probe. Errors/timeouts mean unconfirmed support. |
+| [H3: typed terminal](https://github.com/alexisbhj/orca/issues/4)     | [Creation, readiness, reconciliation and prompt receipts](typed-terminal-launch.md) | `status --json` exposes `result.runtime.capabilities`; require `terminal.create.typed.v1` on the execution host. The matching CLI checks this before `terminal.createTyped`, returning `incompatible_runtime` or `runtime_unavailable` without sending the launch.                                          |
 
 There is no common plugin capability-discovery method for all three features.
 Do not infer them from an Orca version string, branch name, or successful merge.
@@ -118,7 +118,9 @@ recorded artifact hash and identify the SHA that actually produced the build.
 Do not silently relabel older screenshots as newly executed evidence.
 
 Rendered evidence is macOS-local. Windows/Linux CI and transport tests do not
-prove a real remote UI session; no SSH latency demonstration is claimed. Claude
+prove a real remote UI session. Record any simulated transport-latency evidence
+separately in the final PR proof record, with its exact SHA and injected delay;
+that evidence must not be described as a real SSH session. Claude
 launch/transmission/retry was verified, but its provider refused model access;
 no successful Claude model answer is claimed. Keep those limits in the handoff.
 Publish only sanitized evidence: no runtime tokens, account details, private

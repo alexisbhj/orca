@@ -1,5 +1,7 @@
 import {
   PANEL_ACTION_RESULT_TYPE,
+  PANEL_GET_CAPABILITIES_ACTION,
+  PANEL_LEFT_PLACEMENT_CAPABILITY,
   PANEL_CONTROL_MESSAGE_MAX_BYTES,
   looksLikePanelActionRequest,
   parsePanelActionRequest,
@@ -33,6 +35,7 @@ export type PanelActionCall = {
 
 export type PanelBridgeHostOptions = {
   sessionToken: string
+  hostSupportsLeftPlacement?: boolean
   /** The mounted panel iframe's contentWindow, or null when unmounted. */
   getPanelWindow: () => Window | null
   callPanelAction: (call: PanelActionCall) => Promise<PluginPanelActionOutcome>
@@ -155,6 +158,35 @@ export function createPanelBridgeMessageHandler(
       return
     }
     const { requestId, action, params } = parsed.request
+    if (action === PANEL_GET_CAPABILITIES_ACTION) {
+      const validParams =
+        params === undefined ||
+        (typeof params === 'object' &&
+          params !== null &&
+          !Array.isArray(params) &&
+          Object.keys(params).length === 0)
+      respond(
+        validParams
+          ? {
+              type: PANEL_ACTION_RESULT_TYPE,
+              requestId,
+              ok: true,
+              value: {
+                capabilities: options.hostSupportsLeftPlacement
+                  ? [PANEL_LEFT_PLACEMENT_CAPABILITY]
+                  : []
+              }
+            }
+          : {
+              type: PANEL_ACTION_RESULT_TYPE,
+              requestId,
+              ok: false,
+              errorCode: 'invalid_params',
+              error: 'panel.getCapabilities accepts no parameters'
+            }
+      )
+      return
+    }
     options
       .callPanelAction({ sessionToken: options.sessionToken, action, params })
       .then((outcome) => {
