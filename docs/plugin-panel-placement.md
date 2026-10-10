@@ -21,7 +21,7 @@ navigate the tab list using the existing Tabs primitive.
 
 Both placements use the same sandbox, consent checks, theme, workspace context,
 and panel session lifecycle. Switching tabs or collapsing the sidebar unmounts
-the panel; restoring it opens a fresh authenticated session. Disabled, removed,
+the panel; restoring it reloads through the existing authenticated session mechanism. Disabled, removed,
 or failed plugin-list refreshes remove the active contribution immediately and
 fall back to Navigation. Right contributions remain in the right activity bar.
 No business plugin identity or source-control provider is special-cased.
