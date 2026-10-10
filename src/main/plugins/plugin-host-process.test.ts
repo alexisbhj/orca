@@ -38,6 +38,29 @@ afterEach(() => {
 })
 
 describe('startPluginWorker', () => {
+  it('expires activation at 10 seconds', async () => {
+    vi.useFakeTimers()
+    const child = new FakeChild()
+    const pending = start(child)
+    const rejected = expect(pending).rejects.toThrow('worker did not become ready')
+    await vi.advanceTimersByTimeAsync(10_000)
+    await rejected
+  })
+
+  it('expires an invocation at 30 seconds without claiming its effects were cancelled', async () => {
+    vi.useFakeTimers()
+    const child = new FakeChild()
+    const starting = start(child)
+    child.emit('message', { type: 'ready', commands: ['run'] })
+    const handle = await starting
+    const result = handle.invokeCommand('run')
+    const rejected = expect(result).rejects.toThrow('timed out after 30000ms')
+    await vi.advanceTimersByTimeAsync(30_000)
+    await rejected
+    expect(child.kill).not.toHaveBeenCalled()
+    child.emit('exit', 0)
+  })
+
   it('does not inherit Orca execArgv', async () => {
     const child = new FakeChild()
     const pending = start(child)

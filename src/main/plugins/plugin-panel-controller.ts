@@ -23,7 +23,8 @@ type PluginPanelControllerOptions = {
   executeHostCall: (
     pluginKey: string,
     method: string,
-    params: unknown
+    params: unknown,
+    assertSessionCurrent: () => void
   ) => Promise<PluginPanelActionOutcome>
   log: (pluginKey: string) => (line: string) => void
   panelAdmission?: PluginPanelCallAdmission
@@ -79,19 +80,36 @@ export class PluginPanelController {
     if (!parsed.success) {
       return { ok: false, code: 'invalid_request', error: 'malformed panel action call' }
     }
-    const plugin = this.options.resolveApprovedPlugin(binding.pluginKey)
-    const panelExists = plugin?.manifest.contributes.panels.some(
-      (panel) => panel.id === binding.panelId
-    )
-    if (
-      !plugin ||
-      plugin.rootDir !== binding.rootDir ||
-      JSON.stringify(plugin.manifest) !== binding.manifestRevision ||
-      !panelExists
-    ) {
+    const isCurrent = (): boolean => this.isSessionCurrent(ownerKey, sessionToken, binding)
+    if (!isCurrent()) {
       return { ok: false, code: 'unavailable', error: 'panel session is no longer available' }
     }
-    return this.options.executeHostCall(binding.pluginKey, parsed.data.action, parsed.data.params)
+    const assertSessionCurrent = (): void => {
+      if (!isCurrent()) {
+        throw new Error('panel session is no longer available')
+      }
+    }
+    return this.options.executeHostCall(
+      binding.pluginKey,
+      parsed.data.action,
+      parsed.data.params,
+      assertSessionCurrent
+    )
+  }
+
+  private isSessionCurrent(
+    ownerKey: string,
+    sessionToken: string,
+    binding: PluginPanelSessionBinding
+  ): boolean {
+    const plugin = this.options.resolveApprovedPlugin(binding.pluginKey)
+    return Boolean(
+      this.sessions.resolve(ownerKey, sessionToken) &&
+      plugin &&
+      plugin.rootDir === binding.rootDir &&
+      JSON.stringify(plugin.manifest) === binding.manifestRevision &&
+      plugin.manifest.contributes.panels.some((panel) => panel.id === binding.panelId)
+    )
   }
 
   revokeOwner(ownerKey: string): void {

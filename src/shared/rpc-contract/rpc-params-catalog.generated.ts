@@ -523,6 +523,7 @@ import {
   TerminalResizeForClient,
   TerminalSubscribe
 } from './terminal-stream-params'
+import { TerminalTypedCreate } from './terminal-typed-create-params'
 import {
   AgentTeamsPrepareLaunch,
   AgentTeamsTmuxCompat,
@@ -1195,6 +1196,7 @@ export const RPC_PARAMS_BY_METHOD = {
   'terminal.closeTab': TerminalHandle,
   'terminal.create': TerminalCreateParams,
   'terminal.createAgentSession': CreateAgentSessionParams,
+  'terminal.createTyped': TerminalTypedCreate,
   'terminal.ensureAgentSession': EnsureAgentSessionParams,
   'terminal.focus': TerminalFocus,
   'terminal.getAutoRestoreFit': TerminalGetAutoRestoreFitParams,

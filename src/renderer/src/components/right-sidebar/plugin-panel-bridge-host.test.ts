@@ -42,6 +42,41 @@ function createHandler(
 }
 
 describe('createPanelBridgeMessageHandler', () => {
+  it('correlates own-command results even when the second request completes first', async () => {
+    const panelWindow = createFakePanelWindow()
+    let finishFirst!: (value: PluginPanelActionOutcome) => void
+    const handler = createPanelBridgeMessageHandler({
+      sessionToken: SESSION_TOKEN,
+      getPanelWindow: () => panelWindow,
+      callPanelAction: async (call) =>
+        call.params === 1
+          ? new Promise((resolve) => {
+              finishFirst = resolve
+            })
+          : { ok: true, value: 'second' }
+    })
+    for (const id of [1, 2]) {
+      handler(
+        messageEvent(
+          {
+            type: 'orca-panel-action',
+            requestId: String(id),
+            action: 'invokeOwnCommand',
+            params: id
+          },
+          panelWindow
+        )
+      )
+    }
+    await flush()
+    finishFirst({ ok: true, value: 'first' })
+    await flush()
+    expect(panelWindow.postMessage.mock.calls.map(([message]) => message)).toEqual([
+      { type: 'orca-panel-action-result', requestId: '2', ok: true, value: 'second' },
+      { type: 'orca-panel-action-result', requestId: '1', ok: true, value: 'first' }
+    ])
+  })
+
   it('relays a valid request and posts the success result back into the panel', async () => {
     const panelWindow = createFakePanelWindow()
     const { handler, callPanelAction } = createHandler(panelWindow)

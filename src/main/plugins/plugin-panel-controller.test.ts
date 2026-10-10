@@ -71,9 +71,14 @@ describe('PluginPanelController identity binding', () => {
         params: { title: 'Hello' }
       })
     ).resolves.toMatchObject({ ok: true })
-    expect(executeHostCall).toHaveBeenCalledWith(plugin.pluginKey, 'notifications.show', {
-      title: 'Hello'
-    })
+    expect(executeHostCall).toHaveBeenCalledWith(
+      plugin.pluginKey,
+      'notifications.show',
+      {
+        title: 'Hello'
+      },
+      expect.any(Function)
+    )
     await expect(
       controller.execute('runtime:other', {
         sessionToken: entry!.sessionToken,

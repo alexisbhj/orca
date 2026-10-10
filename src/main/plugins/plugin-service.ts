@@ -1,8 +1,5 @@
 import type { PluginEventName } from '../../shared/plugins/plugin-manifest'
-import {
-  capabilityKinds,
-  type PluginCapabilityKind
-} from '../../shared/plugins/plugin-capabilities'
+import { capabilityKinds } from '../../shared/plugins/plugin-capabilities'
 import {
   getPluginActivationState,
   type PluginConsentLists
@@ -31,7 +28,6 @@ import { PluginContentPackRegistry } from './plugin-content-pack-registry'
 import type { PluginServiceOptions } from './plugin-service-options'
 import type { PluginChangeEvent } from '../../shared/plugins/plugin-change-event'
 import { waitForPluginRefreshSettlement } from './plugin-refresh-settlement'
-import { assertPluginWorkerCommand } from './plugin-command-invocation'
 import { deliverPluginEvent } from './plugin-event-delivery'
 import { PluginInstallationState } from './plugin-installation-state'
 
@@ -73,8 +69,8 @@ export class PluginService {
         return plugin && this.canStartPluginWork(plugin) ? plugin : null
       },
       contentVerifier: this.contentVerifier,
-      executeHostCall: (pluginKey, method, params) =>
-        this.executeHostCall(pluginKey, method, params, { viaPanel: true }),
+      executeHostCall: (pluginKey, method, params, assertSessionCurrent) =>
+        this.executeHostCall(pluginKey, method, params, { viaPanel: true, assertSessionCurrent }),
       log: (pluginKey) => this.installed.captureLog(pluginKey, 'error')
     })
     this.workerController = new PluginWorkerController({
@@ -235,7 +231,7 @@ export class PluginService {
 
   /** Consented capability kinds for an approved plugin; null otherwise so
    *  callers deny uniformly (no probe-able distinction). */
-  getGrantedCapabilities(pluginKey: string): PluginCapabilityKind[] | null {
+  getGrantedCapabilities(pluginKey: string): ReturnType<typeof capabilityKinds> | null {
     const plugin = this.findValidPlugin(pluginKey)
     return plugin && this.isRuntimeApproved(plugin)
       ? capabilityKinds(plugin.manifest.capabilities)
@@ -248,7 +244,7 @@ export class PluginService {
     pluginKey: string,
     method: string,
     params: unknown,
-    options: { viaPanel: boolean }
+    options: { viaPanel: boolean; assertSessionCurrent?: () => void }
   ): Promise<PluginPanelActionOutcome> {
     return executePluginHostCallRequest({
       pluginKey,
@@ -259,6 +255,8 @@ export class PluginService {
         services: this.runtimeDelegate
           ? bindPluginHostServices({
               delegate: this.runtimeDelegate,
+              invokeOwnCommand: (key, commandId, args) =>
+                this.invokeCommand(key, commandId, args, options.assertSessionCurrent),
               pluginsDataDir: getPluginsDataDir(this.options.userDataPath),
               subscribeEvents: (key, events) => this.eventBus.subscribe(key, events)
             })
@@ -268,17 +266,17 @@ export class PluginService {
     })
   }
 
-  async invokeCommand(pluginKey: string, commandId: string, args?: unknown): Promise<unknown> {
+  async invokeCommand(
+    pluginKey: string,
+    commandId: string,
+    args?: unknown,
+    assertSessionCurrent?: () => void
+  ): Promise<unknown> {
     const plugin = this.findValidPlugin(pluginKey)
     if (!plugin || !this.canStartPluginWork(plugin)) {
       throw new Error(`plugin ${pluginKey} is not enabled`)
     }
-    assertPluginWorkerCommand(plugin, commandId)
-    const handle = await this.workerController.ensure(plugin)
-    if (!handle.commands.includes(commandId)) {
-      throw new Error(`plugin ${pluginKey} registered no handler for ${commandId}`)
-    }
-    return handle.invokeCommand(commandId, args)
+    return this.workerController.invoke(plugin, commandId, args, assertSessionCurrent)
   }
 
   emitEvent(event: PluginEventName, payload: unknown): void {

@@ -207,10 +207,25 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     summary: 'Create a terminal session in the current worktree',
     usage:
       'orca terminal create [--worktree <selector>] [--title <name>] [--command <text>] [--shell <shell>] [--focus] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'worktree', 'command', 'shell', 'title', 'focus'],
+    allowedFlags: [
+      ...GLOBAL_FLAGS,
+      'worktree',
+      'command',
+      'shell',
+      'title',
+      'focus',
+      'agent',
+      'model',
+      'effort',
+      'operation-id',
+      'attempt-id'
+    ],
     notes: [
       'Creates a visible terminal tab without switching focus when possible; falls back to a background handle if the UI cannot adopt it. Pass --focus to switch to it.',
       'Use this, not worktree create, for a fresh agent in the current checkout.',
+      '--agent codex|claude uses the native terminal launch plan. Optional --model and --effort are validated by the host; --effort requires --model. No prompt is sent. --command, --shell and --title cannot be combined with --agent.',
+      '--agent requires caller-persisted --operation-id (<Unix milliseconds>-<32 lowercase hex digits>) and --attempt-id (1–128 characters). Retry with the same operation id and identical picks; a new attempt id does not create another terminal. An unknown outcome must never trigger a fresh operation automatically.',
+      'After creation/reconciliation, use terminal show and terminal wait --for tui-idle. Handle trust prompts with human intervention; send only after satisfied:true, using terminal send --retry-request for ambiguous delivery.',
       '--shell picks the shell the terminal IS on a Windows host (cmd.exe, powershell.exe, pwsh.exe, wsl.exe, bash.exe, git-bash); --command is typed into whatever shell the host started, so `--command cmd.exe` leaves a cmd running INSIDE the default shell and exiting it drops back to that shell.',
       'A host that cannot apply --shell refuses the create rather than quietly spawning its default shell: macOS and Linux execution hosts spawn the login shell, terminals routed over SSH resolve their shell on the SSH host, a --shell that contradicts the project execution runtime (WSL vs Windows host) is refused, and an Orca host older than --shell is refused by the CLI.'
     ],

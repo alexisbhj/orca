@@ -28,6 +28,7 @@ import { parseAgentSessionOperationTimestamp } from './agent-session-host-author
  */
 export type AgentLaunchFingerprintInput = {
   agent: string
+  terminalOnly?: true
   target:
     | { kind: 'existing'; worktree: string }
     | { kind: 'create-worktree'; create: Readonly<Record<string, unknown>> }
@@ -66,6 +67,7 @@ export type AgentLaunchFingerprintInput = {
 export function computeAgentLaunchFingerprint(input: AgentLaunchFingerprintInput): string {
   return canonicalAgentSessionDigest({
     method: 'agent.launch',
+    ...(input.terminalOnly ? { terminalOnly: true } : {}),
     agent: input.agent,
     target: input.target,
     prompt: input.prompt,

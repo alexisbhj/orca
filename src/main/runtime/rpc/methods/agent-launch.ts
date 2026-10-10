@@ -63,6 +63,8 @@ import {
   type AgentLaunchView
 } from './agent-launch-tab-publication'
 
+type HostLaunchParams = AgentLaunchParams & { terminalOnly?: true }
+
 /**
  * Advertising `agent.launch.v2` is a client's statement that it understands EITHER outcome — a
  * structured session it can open, or a terminal agent. A client that can only render one of the
@@ -112,19 +114,22 @@ async function runAgentLaunch(
   intent: AgentLaunchIntent,
   context: RpcContext,
   view: AgentLaunchView,
-  replaySafe?: ReplaySafeLaunch
+  replaySafe?: ReplaySafeLaunch,
+  terminalOnly?: true
 ): Promise<AgentLaunchResult> {
   const callerNavigationId = agentLaunchCallerNavigationId(intent.target, context)
   const result = await executeAgentLaunch({
     runtime: context.runtime,
     intent,
+    ...(terminalOnly ? { terminalOnly: true } : {}),
     surfaces: agentLaunchSurfaceFactory(
       context,
       replaySafe?.attachOperationId,
       replaySafe?.callerKey,
       callerNavigationId !== null,
       replaySafe?.terminalSpawn,
-      view.early
+      view.early,
+      view.presentation
     ),
     workspaces: agentLaunchWorkspaceFactory(context, intent.agent),
     ...(callerRendersLaunchedChat(context, intent.agent) ? {} : { callerRendersStructured: false }),
@@ -191,7 +196,7 @@ function activeAgentLaunchesFor(runtime: OrcaRuntimeService): Map<string, Active
 }
 
 async function executeReplaySafeAgentLaunch(
-  params: AgentLaunchParams & { operationId: string },
+  params: HostLaunchParams & { operationId: string },
   context: RpcContext,
   fingerprint: string
 ): Promise<AgentLaunchResult> {
@@ -229,7 +234,7 @@ async function executeReplaySafeAgentLaunch(
 }
 
 async function executeAdmittedAgentLaunch(
-  params: AgentLaunchParams & { operationId: string },
+  params: HostLaunchParams & { operationId: string },
   context: RpcContext,
   admission: Extract<
     Awaited<ReturnType<typeof admitAgentLaunchOperation>>,
@@ -247,12 +252,13 @@ async function executeAdmittedAgentLaunch(
   const terminalSpawn = trackTerminalSpawnDispatch()
   let result: AgentLaunchResult
   try {
-    result = await runAgentLaunch(intent, context, view, {
+    const replaySafe: ReplaySafeLaunch = {
       attachOperationId: admission.attachOperationId,
       callerKey: admission.callerKey,
       terminalSpawn,
       recordSurface: (provisional) => void settleQuietly(admission.record(provisional))
-    })
+    }
+    result = await runAgentLaunch(intent, context, view, replaySafe, params.terminalOnly)
   } catch (error) {
     if (view.early?.closedByUser()) {
       await settleLaunchWhoseTabWasClosed(context, view.early, admission)
@@ -277,8 +283,8 @@ async function executeAdmittedAgentLaunch(
   return result
 }
 
-function runReplaySafeAgentLaunch(
-  params: AgentLaunchParams & { operationId: string },
+export function runReplaySafeAgentLaunch(
+  params: HostLaunchParams & { operationId: string },
   context: RpcContext
 ): Promise<AgentLaunchResult> {
   const callerKey = agentLaunchOperationCallerKey(context)
@@ -293,8 +299,7 @@ function runReplaySafeAgentLaunch(
     return active.promise
   }
 
-  let promise: Promise<AgentLaunchResult>
-  promise = executeReplaySafeAgentLaunch(params, context, fingerprint).finally(() => {
+  const promise = executeReplaySafeAgentLaunch(params, context, fingerprint).finally(() => {
     if (activeAgentLaunches.get(key)?.promise === promise) {
       activeAgentLaunches.delete(key)
     }
