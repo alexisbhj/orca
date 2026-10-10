@@ -38,9 +38,8 @@ hours old and at most 5 minutes in the future according to the execution host's
 clock. Malformed/future identities return `agent_session_operation_invalid`;
 an old unseen identity returns `agent_session_operation_expired`. Recorded rows
 expire at `max(recordedAt, operationTimestamp) + 24 hours + 5 minutes`; this is
-bounded retention, not indefinite replay. Exhausted admission returns
-`agent_session_operation_capacity`. Keep the request and reconcile promptly;
-expiry or capacity refusal never authorizes a replacement operation implicitly.
+bounded retention, not indefinite replay. Keep the request and reconcile promptly;
+expiry never authorizes a replacement operation implicitly.
 
 ## Run the matching build
 
