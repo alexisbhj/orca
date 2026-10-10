@@ -44,6 +44,7 @@ import {
 } from '../selectors'
 import { terminalCloseHandler } from './terminal-close'
 import { terminalSendHandler } from './terminal-send'
+import { terminalTypedCreateHandler } from './terminal-typed-create'
 
 // Why: terminal wait legitimately needs to outlive the CLI's default RPC
 // timeout. Even without an explicit server timeout, the client must allow
@@ -153,6 +154,12 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
         'invalid_argument',
         'Remote terminal create requires --worktree because the client cwd cannot identify a server worktree.'
       )
+    }
+    if (flags.has('agent')) {
+      return terminalTypedCreateHandler({ flags, client, cwd, json })
+    }
+    if (['model', 'effort', 'operation-id', 'attempt-id'].some((flag) => flags.has(flag))) {
+      throw new RuntimeClientError('invalid_argument', 'Typed launch options require --agent.')
     }
     const command = getOptionalStringFlag(flags, 'command')
     const useRendererBackedInteractiveTerminal =
