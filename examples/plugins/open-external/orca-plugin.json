@@ -1,0 +1,13 @@
+{
+  "manifestVersion": 1,
+  "id": "open-external",
+  "publisher": "orca-samples",
+  "name": "Open external link fixture",
+  "version": "1.0.0",
+  "engines": { "orca": ">=1.4.0" },
+  "pluginApi": 1,
+  "contributes": {
+    "panels": [{ "id": "links", "title": "Link fixture", "entry": "panel.html" }]
+  },
+  "capabilities": [{ "kind": "links:openExternal" }]
+}

@@ -16,6 +16,14 @@ import {
   readContainedPluginArtifactText
 } from './plugin-artifact-validation'
 import { PluginPanelSessions, type PluginPanelSessionBinding } from './plugin-panel-sessions'
+import { PluginExternalLinkOpener } from './plugin-external-link-opener'
+import type { PluginHostServices } from './plugin-host-method-bindings'
+
+/** Per-call authority a panel transport hands to the host API chokepoint. */
+export type PluginPanelCallContext = {
+  assertSessionCurrent: () => void
+  openExternal?: PluginHostServices['openExternal']
+}
 
 type PluginPanelControllerOptions = {
   resolveApprovedPlugin: (pluginKey: string) => ValidDiscoveredPlugin | null
@@ -24,8 +32,10 @@ type PluginPanelControllerOptions = {
     pluginKey: string,
     method: string,
     params: unknown,
-    assertSessionCurrent: () => void
+    panel: PluginPanelCallContext
   ) => Promise<PluginPanelActionOutcome>
+  /** Opens a validated URL on this desktop; absent on hosts without a local display. */
+  openExternalUrl?: (url: string) => Promise<void>
   log: (pluginKey: string) => (line: string) => void
   panelAdmission?: PluginPanelCallAdmission
 }
@@ -39,9 +49,11 @@ export class PluginPanelController {
   private readonly sessions = new PluginPanelSessions()
   private readonly boundOwnerSignals = new WeakSet<AbortSignal>()
   private readonly panelAdmission: PluginPanelCallAdmission
+  private readonly linkOpener: PluginExternalLinkOpener
 
   constructor(private readonly options: PluginPanelControllerOptions) {
     this.panelAdmission = options.panelAdmission ?? createPluginPanelCallAdmission()
+    this.linkOpener = new PluginExternalLinkOpener(options.openExternalUrl)
   }
 
   async readEntry(pluginKey: string, panelId: string): Promise<{ html: string } | null> {
@@ -60,6 +72,7 @@ export class PluginPanelController {
     return {
       ...loaded.entry,
       supportedPlacements: ['left', 'right'],
+      hostCapabilities: this.linkOpener.hostCapabilitiesFor(ownerKey),
       sessionToken: this.sessions.issue(ownerKey, loaded.binding)
     }
   }
@@ -90,12 +103,10 @@ export class PluginPanelController {
         throw new Error('panel session is no longer available')
       }
     }
-    return this.options.executeHostCall(
-      binding.pluginKey,
-      parsed.data.action,
-      parsed.data.params,
-      assertSessionCurrent
-    )
+    return this.options.executeHostCall(binding.pluginKey, parsed.data.action, parsed.data.params, {
+      assertSessionCurrent,
+      openExternal: this.linkOpener.bindFor(ownerKey, assertSessionCurrent)
+    })
   }
 
   private isSessionCurrent(

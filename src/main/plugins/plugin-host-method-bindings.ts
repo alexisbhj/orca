@@ -1,4 +1,6 @@
+import type { z } from 'zod'
 import {
+  agentsCheckLaunchParamsSchema,
   getPluginHostMethodSpec,
   invokeOwnCommandParamsSchema,
   PLUGIN_HOST_API_V0,
@@ -8,6 +10,22 @@ import {
   type PluginHostMethodSpec
 } from '../../shared/plugins/plugin-host-api'
 import type { PluginEventName } from '../../shared/plugins/plugin-manifest'
+import { openExternalParamsSchema } from '../../shared/plugins/plugin-external-url'
+import type { PluginPanelActionErrorCode } from '../../shared/plugins/plugin-panel-bridge'
+import type {
+  TypedAgentLaunchCatalog,
+  TypedAgentLaunchCheckResult
+} from '../../shared/typed-agent-launch-catalog'
+
+/** Handler failure that must surface with a specific public code, not `action_failed`. */
+export class PluginHostCallError extends Error {
+  constructor(
+    readonly code: PluginPanelActionErrorCode,
+    message: string
+  ) {
+    super(message)
+  }
+}
 
 export type PluginWorktreeContext = {
   worktreeId: string
@@ -19,6 +37,13 @@ export type PluginWorktreeContext = {
  *  over runtime services; relay policy and conformance tests bind fakes. */
 export type PluginHostServices = {
   invokeOwnCommand?: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
+  /** Bound only for a panel shown by this host's own desktop renderer. */
+  openExternal?: (pluginId: string, url: string) => Promise<void>
+  /** Desktop and serve bind it; a binding that omits it answers `unavailable`. */
+  agentLaunchCatalog?: {
+    read(): TypedAgentLaunchCatalog
+    check(choice: z.infer<typeof agentsCheckLaunchParamsSchema>): TypedAgentLaunchCheckResult
+  }
   resolveActiveWorktreeContext(): Promise<PluginWorktreeContext | null>
   listWorktreeTerminals(worktreeId: string): Promise<{ id: string }[]>
   sendTerminalText(
@@ -70,6 +95,15 @@ function definePluginMethod(
   return [name, { spec, handler }]
 }
 
+function requireAgentLaunchCatalog(
+  services: PluginHostServices
+): NonNullable<PluginHostServices['agentLaunchCatalog']> {
+  if (!services.agentLaunchCatalog) {
+    throw new PluginHostCallError('unavailable', 'the agent launch catalog is not served here')
+  }
+  return services.agentLaunchCatalog
+}
+
 const HANDLERS = new Map<string, BoundPluginHostMethod>([
   definePluginMethod('invokeOwnCommand', async (params, { pluginId, services }) => {
     const { commandId, args } = invokeOwnCommandParamsSchema.parse(params)
@@ -77,6 +111,23 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
       throw new Error('own commands are not available on this host')
     }
     return services.invokeOwnCommand(pluginId, commandId, args)
+  }),
+  definePluginMethod('openExternal', async (params, { pluginId, services }) => {
+    const { url } = openExternalParamsSchema.parse(params)
+    if (!services.openExternal) {
+      throw new PluginHostCallError(
+        'unavailable',
+        'opening external links is not supported for this caller'
+      )
+    }
+    await services.openExternal(pluginId, url)
+    return { opened: true }
+  }),
+  definePluginMethod('agents.readCatalog', async (_params, { services }) => {
+    return requireAgentLaunchCatalog(services).read()
+  }),
+  definePluginMethod('agents.checkLaunch', async (params, { services }) => {
+    return requireAgentLaunchCatalog(services).check(agentsCheckLaunchParamsSchema.parse(params))
   }),
   definePluginMethod('workspace.readContext', async (_params, { services }) => {
     const context = await services.resolveActiveWorktreeContext()

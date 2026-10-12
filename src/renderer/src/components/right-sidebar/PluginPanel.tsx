@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { isPluginPanelTabKey } from '../../../../shared/plugins/plugin-manifest'
 import {
+  PANEL_LEFT_PLACEMENT_CAPABILITY,
+  PANEL_OPEN_EXTERNAL_CAPABILITY,
   PANEL_PING_TYPE,
   PLUGIN_PANEL_FRAME_NAME_PREFIX
 } from '../../../../shared/plugins/plugin-panel-bridge'
@@ -53,6 +55,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     : null
   const [entryState, setEntryState] = useState<PluginPanelEntryState>({ status: 'loading' })
   const [hostSupportsLeftPlacement, setHostSupportsLeftPlacement] = useState(false)
+  const [hostSupportsOpenExternal, setHostSupportsOpenExternal] = useState(false)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [loadedFrameKey, setLoadedFrameKey] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -88,7 +91,10 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     let active = true
     const handler = createPanelBridgeMessageHandler({
       sessionToken,
-      hostSupportsLeftPlacement,
+      capabilities: [
+        ...(hostSupportsLeftPlacement ? [PANEL_LEFT_PLACEMENT_CAPABILITY] : []),
+        ...(hostSupportsOpenExternal ? [PANEL_OPEN_EXTERNAL_CAPABILITY] : [])
+      ],
       getPanelWindow: () => iframeRef.current?.contentWindow ?? null,
       callPanelAction: callPanelActionViaPreload,
       isActive: () => active,
@@ -99,7 +105,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
       active = false
       window.removeEventListener('message', handler)
     }
-  }, [hostSupportsLeftPlacement, panelDocument, sessionToken, watchdog])
+  }, [hostSupportsLeftPlacement, hostSupportsOpenExternal, panelDocument, sessionToken, watchdog])
 
   useEffect(() => {
     if (!panelFrameKey || loadedFrameKey !== panelFrameKey) {
@@ -121,6 +127,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     setEntryState({ status: 'loading' })
     setSessionToken(null)
     setHostSupportsLeftPlacement(false)
+    setHostSupportsOpenExternal(false)
     const pluginsApi = window.api?.plugins
     if (!pluginsApi) {
       setPanelHealth(tabKey, 'error')
@@ -147,6 +154,9 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
           // document or restarting its watchdog.
           setSessionToken(entry.sessionToken)
           setHostSupportsLeftPlacement(entry.supportedPlacements?.includes('left') === true)
+          setHostSupportsOpenExternal(
+            entry.hostCapabilities?.includes(PANEL_OPEN_EXTERNAL_CAPABILITY) === true
+          )
           setPanelHealth(tabKey, 'healthy')
           if (entry.html !== currentHtml) {
             currentHtml = entry.html

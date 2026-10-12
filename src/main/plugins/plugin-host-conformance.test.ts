@@ -18,6 +18,7 @@ import {
   type ResolvePluginHostCallPolicy
 } from './plugin-host-call-adapter'
 import type { PluginHostServices } from './plugin-host-methods'
+import { buildTypedAgentLaunchCatalog } from '../../shared/typed-agent-launch-catalog'
 
 const PLUGIN_KEY = 'orca-samples.demo'
 const WORKTREE_ID = 'repo-id::/Users/private/orca'
@@ -28,6 +29,14 @@ type HostCallAdapter = (request: unknown, viaPanel: boolean) => Promise<PluginPa
 function createServices(): PluginHostServices {
   return {
     invokeOwnCommand: async (_key, _commandId, args) => args ?? null,
+    openExternal: vi.fn().mockResolvedValue(undefined),
+    agentLaunchCatalog: {
+      read: buildTypedAgentLaunchCatalog,
+      check: vi.fn().mockReturnValue({
+        valid: true,
+        choice: { agent: 'codex', model: null, effort: null }
+      })
+    },
     resolveActiveWorktreeContext: vi.fn().mockResolvedValue({
       worktreeId: WORKTREE_ID,
       branch: 'main',
@@ -107,6 +116,9 @@ function createAdapters(
 
 const successParams: Record<string, unknown> = {
   invokeOwnCommand: { commandId: 'echo', args: { value: 42 } },
+  openExternal: { url: 'https://example.com/docs' },
+  'agents.readCatalog': {},
+  'agents.checkLaunch': { agent: 'codex' },
   'workspace.readContext': {},
   'terminal.sendText': { terminalId: TERMINAL_ID, text: 'echo hi', enter: true },
   'notifications.show': { title: 'Hello' },
@@ -124,7 +136,7 @@ const successParams: Record<string, unknown> = {
 
 describe('plugin host main/relay conformance', () => {
   it('runs a granted success through both transports for all public methods', async () => {
-    expect(PLUGIN_HOST_API_V0).toHaveLength(14)
+    expect(PLUGIN_HOST_API_V0).toHaveLength(17)
     expect(Object.keys(successParams).sort()).toEqual(
       PLUGIN_HOST_API_V0.map((entry) => entry.name).sort()
     )

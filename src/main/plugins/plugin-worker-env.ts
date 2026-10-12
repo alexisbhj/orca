@@ -23,7 +23,9 @@ const WORKER_ENV_ALLOWLIST = [
   'COMSPEC',
   'PATHEXT',
   'PROCESSOR_ARCHITECTURE',
-  'NUMBER_OF_PROCESSORS'
+  'NUMBER_OF_PROCESSORS',
+  // Why: the hosting profile path (set at startup), so a worker's `orca` CLI reaches this instance.
+  'ORCA_USER_DATA_PATH'
 ] as const
 
 export function buildPluginWorkerEnv(

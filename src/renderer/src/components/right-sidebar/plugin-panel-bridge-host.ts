@@ -1,7 +1,6 @@
 import {
   PANEL_ACTION_RESULT_TYPE,
   PANEL_GET_CAPABILITIES_ACTION,
-  PANEL_LEFT_PLACEMENT_CAPABILITY,
   PANEL_CONTROL_MESSAGE_MAX_BYTES,
   looksLikePanelActionRequest,
   parsePanelActionRequest,
@@ -35,7 +34,8 @@ export type PanelActionCall = {
 
 export type PanelBridgeHostOptions = {
   sessionToken: string
-  hostSupportsLeftPlacement?: boolean
+  /** Capabilities confirmed for this client/host pair, reported by panel.getCapabilities. */
+  capabilities?: readonly string[]
   /** The mounted panel iframe's contentWindow, or null when unmounted. */
   getPanelWindow: () => Window | null
   callPanelAction: (call: PanelActionCall) => Promise<PluginPanelActionOutcome>
@@ -172,9 +172,7 @@ export function createPanelBridgeMessageHandler(
               requestId,
               ok: true,
               value: {
-                capabilities: options.hostSupportsLeftPlacement
-                  ? [PANEL_LEFT_PLACEMENT_CAPABILITY]
-                  : []
+                capabilities: [...(options.capabilities ?? [])]
               }
             }
           : {

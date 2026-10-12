@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Open external link fixture</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        font:
+          13px system-ui,
+          sans-serif;
+        background: var(--background);
+        color: var(--foreground);
+      }
+      h1 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      button {
+        display: block;
+        margin: 6px 0;
+      }
+      #status {
+        color: var(--muted-foreground);
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Open external link fixture</h1>
+    <button id="probe">Probe host support</button>
+    <button id="open">Open https://example.com/</button>
+    <button id="refused">Try file:///etc/hosts</button>
+    <a id="direct" href="https://example.com/direct" target="_blank">Direct link (blocked)</a>
+    <pre id="status">idle</pre>
+    <script>
+      var pending = {}
+      var nextId = 0
+      var statusEl = document.getElementById('status')
+      window.addEventListener('message', function (event) {
+        var data = event.data
+        if (event.source !== window.parent || !data || data.type !== 'orca-panel-action-result') {
+          return
+        }
+        var resolve = pending[data.requestId]
+        if (!resolve) {
+          return
+        }
+        delete pending[data.requestId]
+        resolve(data)
+      })
+      function call(action, params) {
+        nextId += 1
+        var requestId = `r${nextId}`
+        return new Promise(function (resolve) {
+          pending[requestId] = resolve
+          window.parent.postMessage(
+            {
+              type: 'orca-panel-action',
+              requestId: requestId,
+              action: action,
+              params: params
+            },
+            '*'
+          )
+        })
+      }
+      function show(result) {
+        statusEl.textContent = result.ok
+          ? JSON.stringify(result.value)
+          : `${result.errorCode}: ${result.error}`
+      }
+      document.getElementById('probe').addEventListener('click', function () {
+        call('panel.getCapabilities').then(show)
+      })
+      document.getElementById('open').addEventListener('click', function () {
+        call('openExternal', { url: 'https://example.com/' }).then(show)
+      })
+      document.getElementById('refused').addEventListener('click', function () {
+        call('openExternal', { url: 'file:///etc/hosts' }).then(show)
+      })
+    </script>
+  </body>
+</html>

@@ -78,7 +78,7 @@ describe('PluginPanelController identity binding', () => {
       {
         title: 'Hello'
       },
-      expect.any(Function)
+      { assertSessionCurrent: expect.any(Function), openExternal: undefined }
     )
     await expect(
       controller.execute('runtime:other', {
