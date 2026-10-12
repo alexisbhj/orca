@@ -1,4 +1,8 @@
-import { getBoundPluginHostMethod, type PluginHostServices } from './plugin-host-method-bindings'
+import {
+  getBoundPluginHostMethod,
+  PluginHostCallError,
+  type PluginHostServices
+} from './plugin-host-method-bindings'
 import { isQualifiedPluginKey } from '../../shared/plugins/plugin-manifest'
 import { gatePluginHostCall as decidePluginHostCall } from '../../shared/plugins/plugin-capability-gate'
 import type { PluginCapabilityKind } from '../../shared/plugins/plugin-capabilities'
@@ -111,7 +115,7 @@ export async function executePluginHostCall(
     await auditMutation('error').catch(() => undefined)
     return {
       ok: false,
-      code: 'action_failed',
+      code: error instanceof PluginHostCallError ? error.code : 'action_failed',
       error: (error instanceof Error ? error.message : String(error)).slice(0, 1024)
     }
   }
@@ -127,6 +131,14 @@ function summarizeParams(method: string, params: unknown): string {
     case 'terminal.sendText': {
       const text = typeof record.text === 'string' ? record.text : ''
       return `terminal=${String(record.terminalId)} bytes=${Buffer.byteLength(text, 'utf8')} enter=${record.enter === true}`
+    }
+    case 'openExternal': {
+      // Host only: paths and queries can carry tokens.
+      try {
+        return `host=${new URL(String(record.url)).host}`
+      } catch {
+        return 'host=?'
+      }
     }
     case 'notifications.show': {
       const title = typeof record.title === 'string' ? record.title : ''

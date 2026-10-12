@@ -15,4 +15,6 @@ export type PluginServiceOptions = {
   workerFactory?: PluginWorkerFactory
   maxActiveWorkers?: number
   idleReapMs?: number
+  /** Opens a validated https URL on this desktop; absent on hosts without a local display. */
+  openExternalUrl?: (url: string) => Promise<void>
 }

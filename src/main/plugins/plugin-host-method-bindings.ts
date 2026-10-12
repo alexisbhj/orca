@@ -8,6 +8,18 @@ import {
   type PluginHostMethodSpec
 } from '../../shared/plugins/plugin-host-api'
 import type { PluginEventName } from '../../shared/plugins/plugin-manifest'
+import { openExternalParamsSchema } from '../../shared/plugins/plugin-external-url'
+import type { PluginPanelActionErrorCode } from '../../shared/plugins/plugin-panel-bridge'
+
+/** Handler failure that must surface with a specific public code, not `action_failed`. */
+export class PluginHostCallError extends Error {
+  constructor(
+    readonly code: PluginPanelActionErrorCode,
+    message: string
+  ) {
+    super(message)
+  }
+}
 
 export type PluginWorktreeContext = {
   worktreeId: string
@@ -19,6 +31,8 @@ export type PluginWorktreeContext = {
  *  over runtime services; relay policy and conformance tests bind fakes. */
 export type PluginHostServices = {
   invokeOwnCommand?: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
+  /** Bound only for a panel shown by this host's own desktop renderer. */
+  openExternal?: (pluginId: string, url: string) => Promise<void>
   resolveActiveWorktreeContext(): Promise<PluginWorktreeContext | null>
   listWorktreeTerminals(worktreeId: string): Promise<{ id: string }[]>
   sendTerminalText(
@@ -77,6 +91,17 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
       throw new Error('own commands are not available on this host')
     }
     return services.invokeOwnCommand(pluginId, commandId, args)
+  }),
+  definePluginMethod('openExternal', async (params, { pluginId, services }) => {
+    const { url } = openExternalParamsSchema.parse(params)
+    if (!services.openExternal) {
+      throw new PluginHostCallError(
+        'unavailable',
+        'opening external links is not supported for this caller'
+      )
+    }
+    await services.openExternal(pluginId, url)
+    return { opened: true }
   }),
   definePluginMethod('workspace.readContext', async (_params, { services }) => {
     const context = await services.resolveActiveWorktreeContext()

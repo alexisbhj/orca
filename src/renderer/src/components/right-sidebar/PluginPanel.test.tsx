@@ -167,6 +167,42 @@ describe('PluginPanel', () => {
     }
   )
 
+  it.each([
+    [undefined, []],
+    [[], []],
+    [['panel.openExternal.v1'], ['panel.openExternal.v1']],
+    [['panel.openExternal.v1', 'unknown.v9'], ['panel.openExternal.v1']]
+  ])(
+    'reports the link-opening capability only when the serving host grants it: %j',
+    async (hostCapabilities, expected) => {
+      readPanelEntryMock.mockResolvedValue({
+        html: '<h1>Panel</h1>',
+        sessionToken: SESSION_TOKEN,
+        hostCapabilities
+      })
+      await renderPanel(dashboardPanel.tabKey)
+      const frame = container.querySelector('iframe')?.contentWindow
+      const postMessage = vi.spyOn(frame!, 'postMessage')
+      const event = new MessageEvent('message', {
+        data: { type: 'orca-panel-action', requestId: 'caps', action: 'panel.getCapabilities' }
+      })
+      Object.defineProperty(event, 'source', { value: frame })
+      await act(async () => {
+        window.dispatchEvent(event)
+      })
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          type: 'orca-panel-action-result',
+          requestId: 'caps',
+          ok: true,
+          value: { capabilities: expected }
+        },
+        '*'
+      )
+      expect(panelActionMock).not.toHaveBeenCalled()
+    }
+  )
+
   it('renders the panel HTML in a scripts-only sandboxed iframe', async () => {
     readPanelEntryMock.mockResolvedValue({
       html: '<h1>Hello plugin</h1>',

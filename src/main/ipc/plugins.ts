@@ -16,6 +16,7 @@ import {
 import { applyPluginConsent, applyPluginEnablement } from '../plugins/plugin-enablement'
 import type { PluginService } from '../plugins/plugin-service'
 import { bindPluginPanelOwnerLifecycle } from '../plugins/plugin-panel-owner-lifecycle'
+import { rendererPanelOwner } from '../plugins/plugin-panel-sessions'
 import { isQualifiedPluginKey } from '../../shared/plugins/plugin-manifest'
 import { pluginConsentRequestSchema } from '../../shared/plugins/plugin-consent-request'
 import { normalizePluginIdList } from '../../shared/plugins/plugin-consent-state'
@@ -81,10 +82,6 @@ export function canRemoveInstalledPlugin(
     lock?.plugins[pluginKey]?.source.kind !== 'bundled' &&
     pluginService.getDiscovered().some((plugin) => plugin.pluginKey === pluginKey && !plugin.isDev)
   )
-}
-
-function rendererPanelOwner(webContentsId: number): string {
-  return `renderer:${webContentsId}`
 }
 
 export function registerPluginHandlers(

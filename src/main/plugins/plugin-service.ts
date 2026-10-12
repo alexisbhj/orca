@@ -18,7 +18,7 @@ import { PluginAuditLog } from './plugin-audit-log'
 import { executePluginHostCallRequest } from './plugin-host-call-adapter'
 import { PluginContentVerifier } from './plugin-content-integrity'
 import { bindPluginHostServices, type PluginRuntimeDelegate } from './plugin-host-service-bindings'
-import { PluginPanelController } from './plugin-panel-controller'
+import { PluginPanelController, type PluginPanelCallContext } from './plugin-panel-controller'
 import { PluginWorkerController } from './plugin-worker-controller'
 import { PluginServiceHousekeeping } from './plugin-service-housekeeping'
 import { collectApprovedWorkerSpecs } from './plugin-worker-reconciliation'
@@ -69,8 +69,9 @@ export class PluginService {
         return plugin && this.canStartPluginWork(plugin) ? plugin : null
       },
       contentVerifier: this.contentVerifier,
-      executeHostCall: (pluginKey, method, params, assertSessionCurrent) =>
-        this.executeHostCall(pluginKey, method, params, { viaPanel: true, assertSessionCurrent }),
+      executeHostCall: (pluginKey, method, params, panel) =>
+        this.executeHostCall(pluginKey, method, params, { viaPanel: true, ...panel }),
+      openExternalUrl: options.openExternalUrl,
       log: (pluginKey) => this.installed.captureLog(pluginKey, 'error')
     })
     this.workerController = new PluginWorkerController({
@@ -244,7 +245,7 @@ export class PluginService {
     pluginKey: string,
     method: string,
     params: unknown,
-    options: { viaPanel: boolean; assertSessionCurrent?: () => void }
+    options: { viaPanel: boolean } & Partial<PluginPanelCallContext>
   ): Promise<PluginPanelActionOutcome> {
     return executePluginHostCallRequest({
       pluginKey,
@@ -257,6 +258,7 @@ export class PluginService {
               delegate: this.runtimeDelegate,
               invokeOwnCommand: (key, commandId, args) =>
                 this.invokeCommand(key, commandId, args, options.assertSessionCurrent),
+              openExternal: options.openExternal,
               pluginsDataDir: getPluginsDataDir(this.options.userDataPath),
               subscribeEvents: (key, events) => this.eventBus.subscribe(key, events)
             })

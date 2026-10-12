@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, shell } from 'electron'
 import { performance } from 'node:perf_hooks'
 import { PluginService } from '../plugins/plugin-service'
 import { PluginKillListService } from '../plugins/plugin-kill-list-service'
@@ -65,7 +65,10 @@ export async function initializeMainProcessPlugins(runtime: OrcaRuntimeService):
     getDevPluginPaths: () => normalizePluginIdList(state.store?.getSettings().devPluginPaths),
     getKeybindings: () => state.keybindings?.getOverrides() ?? {},
     getPluginKillListEntry: (pluginKey) => state.pluginKillListService?.find(pluginKey) ?? null,
-    hostEntryPath: resolvePluginHostEntryPath(app.getAppPath(), app.isPackaged)
+    hostEntryPath: resolvePluginHostEntryPath(app.getAppPath(), app.isPackaged),
+    // Why: only panels of this process's own renderer reach this opener, so it
+    // targets the display showing Orca even when the workspace is on SSH.
+    openExternalUrl: (url) => shell.openExternal(url)
   })
   const bundledPluginBootstrap = new PluginBundledBootstrapCoordinator({
     root: resolveBundledPluginRoot({

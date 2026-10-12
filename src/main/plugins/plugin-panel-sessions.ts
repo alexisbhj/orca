@@ -11,6 +11,18 @@ type PluginPanelSession = PluginPanelSessionBinding & {
   ownerKey: string
 }
 
+const RENDERER_PANEL_OWNER_PREFIX = 'renderer:'
+
+/** Owner key of a panel shown by this process's own desktop renderer. */
+export function rendererPanelOwner(webContentsId: number): string {
+  return `${RENDERER_PANEL_OWNER_PREFIX}${webContentsId}`
+}
+
+/** True only when the displaying client runs on this host's own desktop. */
+export function isRendererPanelOwner(ownerKey: string): boolean {
+  return ownerKey.startsWith(RENDERER_PANEL_OWNER_PREFIX)
+}
+
 const MAX_PANEL_SESSIONS = 1_024
 
 function bindingKey(ownerKey: string, binding: PluginPanelSessionBinding): string {

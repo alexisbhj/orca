@@ -14,6 +14,7 @@ import { z } from 'zod'
 
 export const PLUGIN_CAPABILITY_KINDS = [
   'commands:invokeOwn',
+  'links:openExternal',
   'workspace:read',
   'terminal:send',
   'notifications:show',
@@ -35,6 +36,8 @@ export type PluginCapability = z.infer<typeof pluginCapabilitySchema>
  *  preview / consent dialog; keep each line honest about what is enforced. */
 export const PLUGIN_CAPABILITY_DESCRIPTIONS: Record<PluginCapabilityKind, string> = {
   'commands:invokeOwn': 'Run commands declared by this plugin from its panels and worker',
+  'links:openExternal':
+    'Open https links from its panels in your default browser on the computer showing Orca',
   'workspace:read': 'Read the name, branch, and terminal list of your focused worktree',
   'terminal:send': 'Type text into a terminal you can see (always a specific terminal)',
   'notifications:show': 'Show desktop notifications labeled with the plugin name',

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { pluginCommandJsonSchema } from './plugin-command-json'
+import { openExternalParamsSchema, openExternalResultSchema } from './plugin-external-url'
 import { PLUGIN_EVENT_NAMES, pluginCommandIdSchema } from './plugin-manifest'
 import type { PluginCapabilityKind } from './plugin-capabilities'
 
@@ -136,6 +137,16 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     panel: true,
     params: invokeOwnCommandParamsSchema,
     result: pluginCommandJsonSchema
+  }),
+  spec({
+    name: 'openExternal',
+    since: '1.2',
+    scope: 'desktop',
+    capability: 'links:openExternal',
+    mutation: true,
+    panel: true,
+    params: openExternalParamsSchema,
+    result: openExternalResultSchema
   }),
   spec({
     name: 'workspace.readContext',

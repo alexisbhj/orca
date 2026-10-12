@@ -50,7 +50,7 @@ describe('createPanelBridgeMessageHandler', () => {
     const handler = createPanelBridgeMessageHandler({
       sessionToken: SESSION_TOKEN,
       getPanelWindow: () => panelWindow,
-      hostSupportsLeftPlacement: true,
+      capabilities: ['panel.placement.left.v1'],
       callPanelAction,
       isActive: () => active,
       budget: createPanelMessageBudget({ maxMessages: 2, perMs: 10_000 })

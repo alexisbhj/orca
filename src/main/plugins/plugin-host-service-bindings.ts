@@ -33,12 +33,14 @@ export type PluginRuntimeDelegate = {
 export function bindPluginHostServices(input: {
   delegate: PluginRuntimeDelegate
   invokeOwnCommand?: PluginHostServices['invokeOwnCommand']
+  openExternal?: PluginHostServices['openExternal']
   pluginsDataDir: string
   subscribeEvents: (pluginKey: string, events: PluginEventName[]) => PluginEventName[]
 }): PluginHostServices {
   const { delegate, pluginsDataDir, subscribeEvents } = input
   return {
     invokeOwnCommand: input.invokeOwnCommand,
+    openExternal: input.openExternal,
     resolveActiveWorktreeContext: async () => {
       const context = await delegate.resolveActiveWorktreeContext()
       if (!context) {

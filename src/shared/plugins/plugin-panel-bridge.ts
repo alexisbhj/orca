@@ -17,6 +17,7 @@ export const PANEL_ACTION_REQUEST_TYPE = 'orca-panel-action'
 export const PANEL_ACTION_RESULT_TYPE = 'orca-panel-action-result'
 export const PANEL_GET_CAPABILITIES_ACTION = 'panel.getCapabilities'
 export const PANEL_LEFT_PLACEMENT_CAPABILITY = 'panel.placement.left.v1'
+export const PANEL_OPEN_EXTERNAL_CAPABILITY = 'panel.openExternal.v1'
 export const PANEL_PING_TYPE = 'orca-panel-ping'
 export const PANEL_PONG_TYPE = 'orca-panel-pong'
 export const PLUGIN_PANEL_FRAME_NAME_PREFIX = 'orca-plugin-panel:'
@@ -105,6 +106,8 @@ export type PluginPanelEntry = {
   sessionToken: string
   /** Absent on older hosts; never infer support from manifest placement alone. */
   supportedPlacements?: PluginPanelPlacement[]
+  /** Host features available to this panel's displaying client; absent on older hosts. */
+  hostCapabilities?: string[]
 }
 
 export type PanelActionRequestParseResult =
