@@ -1,5 +1,7 @@
 import type { AgentLaunchPreferences } from '../../../../shared/agent-session-host-authority'
 import {
+  TYPED_AGENT_LAUNCH_CODE_MAX,
+  TYPED_AGENT_LAUNCH_MESSAGE_MAX,
   TypedAgentLaunchChoice,
   type TypedAgentLaunchCheckResult
 } from '../../../../shared/typed-agent-launch-catalog'
@@ -13,14 +15,14 @@ export function resolveTypedTerminalLaunchChoice(
   return resolveWorkerLaunchPreferences(choice).preferences
 }
 
-/** Dry run: no session, record or terminal is touched. */
+/** Dry run of the agent/model/effort rules only: no target, record, session or terminal. */
 export function checkTypedTerminalLaunchChoice(input: unknown): TypedAgentLaunchCheckResult {
   const parsed = TypedAgentLaunchChoice.safeParse(input)
   if (!parsed.success) {
     return {
       valid: false,
       code: 'invalid_argument',
-      message: formatZodError(parsed.error).slice(0, 1024)
+      message: formatZodError(parsed.error).slice(0, TYPED_AGENT_LAUNCH_MESSAGE_MAX)
     }
   }
   try {
@@ -40,8 +42,11 @@ export function checkTypedTerminalLaunchChoice(input: unknown): TypedAgentLaunch
         : 'invalid_argument'
     return {
       valid: false,
-      code: code.slice(0, 64),
-      message: (error instanceof Error ? error.message : String(error)).slice(0, 1024)
+      code: code.slice(0, TYPED_AGENT_LAUNCH_CODE_MAX),
+      message: (error instanceof Error ? error.message : String(error)).slice(
+        0,
+        TYPED_AGENT_LAUNCH_MESSAGE_MAX
+      )
     }
   }
 }

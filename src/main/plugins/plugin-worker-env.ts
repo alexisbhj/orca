@@ -24,8 +24,7 @@ const WORKER_ENV_ALLOWLIST = [
   'PATHEXT',
   'PROCESSOR_ARCHITECTURE',
   'NUMBER_OF_PROCESSORS',
-  // Why: canonicalized at startup to this instance's profile, so a worker's
-  // `orca` CLI reaches the Orca hosting it. A path, never a credential.
+  // Why: the hosting profile path (set at startup), so a worker's `orca` CLI reaches this instance.
   'ORCA_USER_DATA_PATH'
 ] as const
 

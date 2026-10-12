@@ -63,12 +63,11 @@ describe('worker agent launch catalog', () => {
   })
 
   it('checks a valid choice without launching anything', async () => {
-    const services = hostServices()
-    const outcome = await call(
-      'agents.checkLaunch',
-      { agent: 'claude', model: 'opus', effort: 'max' },
-      { services }
-    )
+    const outcome = await call('agents.checkLaunch', {
+      agent: 'claude',
+      model: 'opus',
+      effort: 'max'
+    })
     expect(outcome).toEqual({
       ok: true,
       value: { valid: true, choice: { agent: 'claude', model: 'opus', effort: 'max' } }

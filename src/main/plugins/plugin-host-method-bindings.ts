@@ -1,3 +1,4 @@
+import type { z } from 'zod'
 import {
   agentsCheckLaunchParamsSchema,
   getPluginHostMethodSpec,
@@ -38,10 +39,10 @@ export type PluginHostServices = {
   invokeOwnCommand?: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
   /** Bound only for a panel shown by this host's own desktop renderer. */
   openExternal?: (pluginId: string, url: string) => Promise<void>
-  /** Bound only where this process launches typed terminals itself. */
+  /** Desktop and serve bind it; a binding that omits it answers `unavailable`. */
   agentLaunchCatalog?: {
     read(): TypedAgentLaunchCatalog
-    check(choice: { agent: string; model?: string; effort?: string }): TypedAgentLaunchCheckResult
+    check(choice: z.infer<typeof agentsCheckLaunchParamsSchema>): TypedAgentLaunchCheckResult
   }
   resolveActiveWorktreeContext(): Promise<PluginWorktreeContext | null>
   listWorktreeTerminals(worktreeId: string): Promise<{ id: string }[]>

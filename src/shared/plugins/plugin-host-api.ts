@@ -4,6 +4,7 @@ import { openExternalParamsSchema, openExternalResultSchema } from './plugin-ext
 import { PLUGIN_EVENT_NAMES, pluginCommandIdSchema } from './plugin-manifest'
 import type { PluginCapabilityKind } from './plugin-capabilities'
 import {
+  TYPED_AGENT_ID_MAX,
   typedAgentLaunchCatalogSchema,
   typedAgentLaunchCheckResultSchema
 } from '../typed-agent-launch-catalog'
@@ -112,9 +113,9 @@ const agentsReadCatalogParams = z.object({}).strict().optional()
 // a refusal carries its exact code and message instead of `invalid_params`.
 export const agentsCheckLaunchParamsSchema = z
   .object({
-    agent: z.string().max(64),
-    model: z.string().max(1024).optional(),
-    effort: z.string().max(1024).optional()
+    agent: z.string().max(TYPED_AGENT_ID_MAX),
+    model: z.string().max(PANEL_ACTION_TEXT_MAX_LENGTH).optional(),
+    effort: z.string().max(PANEL_ACTION_TEXT_MAX_LENGTH).optional()
   })
   .strict()
 

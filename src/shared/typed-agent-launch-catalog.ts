@@ -5,18 +5,17 @@ import { getAgentSessionOptionLaunchCatalog } from './agent-session-option-launc
 import { MAX_LAUNCH_PREFERENCE_LENGTH } from './rpc-contract/agent-session-params'
 import { TerminalTypedCreate } from './rpc-contract/terminal-typed-create-params'
 
-/**
- * Read-only projection of the native launch catalog that `terminal.createTyped`
- * validates against. It describes what Orca can pass to an agent CLI, never
- * what the signed-in account may actually run.
- */
+/** Read-only projection of the launch catalog `terminal.createTyped` validates against. */
 
 export const TYPED_AGENT_LAUNCH_CATALOG_VERSION = 1
-export const TYPED_AGENT_LAUNCH_CATALOG_AGENT_LIMIT = 16
-export const TYPED_AGENT_LAUNCH_CATALOG_MODEL_LIMIT = 64
-export const TYPED_AGENT_LAUNCH_CATALOG_EFFORT_LIMIT = 16
+const AGENT_LIMIT = 16
+const MODEL_LIMIT = 64
+const EFFORT_LIMIT = 16
 const ID_MAX = MAX_LAUNCH_PREFERENCE_LENGTH
 const LABEL_MAX = 256
+export const TYPED_AGENT_ID_MAX = 64
+export const TYPED_AGENT_LAUNCH_CODE_MAX = 64
+export const TYPED_AGENT_LAUNCH_MESSAGE_MAX = 1024
 
 /** Exactly the agent/model/effort fields `terminal.createTyped` accepts. */
 export const TypedAgentLaunchChoice = TerminalTypedCreate.pick({
@@ -32,7 +31,7 @@ const effortSchema = z.object({
 })
 
 const effortMenuSchema = z.object({
-  efforts: z.array(effortSchema).max(TYPED_AGENT_LAUNCH_CATALOG_EFFORT_LIMIT),
+  efforts: z.array(effortSchema).max(EFFORT_LIMIT),
   /** Preselected value; omitting effort sends no flag and the agent CLI decides. */
   defaultEffort: z.string().max(ID_MAX).nullable(),
   /** True only when the provider states `defaultEffort` is what its CLI runs. */
@@ -46,7 +45,7 @@ export const typedAgentLaunchCatalogSchema = z.object({
   agents: z
     .array(
       z.object({
-        id: z.string().min(1).max(64),
+        id: z.string().min(1).max(TYPED_AGENT_ID_MAX),
         /** False: the agent launches only with its own configured model. */
         modelSelection: z.boolean(),
         /** `--effort` is refused unless a model is chosen too. */
@@ -63,7 +62,7 @@ export const typedAgentLaunchCatalogSchema = z.object({
               label: z.string().max(LABEL_MAX)
             })
           )
-          .max(TYPED_AGENT_LAUNCH_CATALOG_MODEL_LIMIT),
+          .max(MODEL_LIMIT),
         /** Model ids absent from `models` the agent still accepts verbatim (e.g. Codex). */
         customModels: z.discriminatedUnion('accepted', [
           z.object({ accepted: z.literal(false) }),
@@ -74,7 +73,7 @@ export const typedAgentLaunchCatalogSchema = z.object({
         ])
       })
     )
-    .max(TYPED_AGENT_LAUNCH_CATALOG_AGENT_LIMIT)
+    .max(AGENT_LIMIT)
 })
 export type TypedAgentLaunchCatalog = z.infer<typeof typedAgentLaunchCatalogSchema>
 
@@ -82,15 +81,15 @@ export const typedAgentLaunchCheckResultSchema = z.discriminatedUnion('valid', [
   z.object({
     valid: z.literal(true),
     choice: z.object({
-      agent: z.string().max(64),
+      agent: z.string().max(TYPED_AGENT_ID_MAX),
       model: z.string().max(ID_MAX).nullable(),
       effort: z.string().max(ID_MAX).nullable()
     })
   }),
   z.object({
     valid: z.literal(false),
-    code: z.string().max(64),
-    message: z.string().max(1024)
+    code: z.string().max(TYPED_AGENT_LAUNCH_CODE_MAX),
+    message: z.string().max(TYPED_AGENT_LAUNCH_MESSAGE_MAX)
   })
 ])
 export type TypedAgentLaunchCheckResult = z.infer<typeof typedAgentLaunchCheckResultSchema>
@@ -101,7 +100,7 @@ function projectEffortMenu(option: CatalogOption | undefined): z.infer<typeof ef
   }
   return {
     efforts: option.kind.choices
-      .slice(0, TYPED_AGENT_LAUNCH_CATALOG_EFFORT_LIMIT)
+      .slice(0, EFFORT_LIMIT)
       .map((choice) => ({ id: choice.value, label: choice.label.slice(0, LABEL_MAX) })),
     defaultEffort: option.kind.defaultValue,
     defaultEffortIsCliDefault: option.kind.defaultIsCliDefault === true
@@ -128,7 +127,7 @@ export function buildTypedAgentLaunchCatalog(): TypedAgentLaunchCatalog {
         : { id: null, source: 'agent-config' as const },
       models:
         modelSelection && catalog
-          ? catalog.models.slice(0, TYPED_AGENT_LAUNCH_CATALOG_MODEL_LIMIT).map((model) => ({
+          ? catalog.models.slice(0, MODEL_LIMIT).map((model) => ({
               id: model.id,
               label: model.label.slice(0, LABEL_MAX),
               ...projectEffortMenu(findCatalogOption(model, 'effort'))
@@ -147,6 +146,6 @@ export function buildTypedAgentLaunchCatalog(): TypedAgentLaunchCatalog {
   return {
     version: TYPED_AGENT_LAUNCH_CATALOG_VERSION,
     accountAccessVerified: false,
-    agents: agents.slice(0, TYPED_AGENT_LAUNCH_CATALOG_AGENT_LIMIT)
+    agents: agents.slice(0, AGENT_LIMIT)
   }
 }

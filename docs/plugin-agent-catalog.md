@@ -25,14 +25,14 @@ export default function activate(orca) {
 
 ## Catalog (`version: 1`)
 
-| Field                          | Meaning                                                                                                                                         |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `accountAccessVerified: false` | Always false. See below.                                                                                                                        |
-| `agents[].id`                  | Exactly the agents `terminal.createTyped` accepts (today `codex`, `claude`).                                                                    |
-| `modelSelection`               | `false`: the agent only runs its own configured model; `--model` is refused.                                                                    |
-| `effortRequiresModel: true`    | An effort without a model is refused.                                                                                                           |
-| `defaultModel`                 | `{ id, source: 'cli-default' }` when Orca knows what the CLI runs with no model, else `{ id: null, source: 'agent-config' }`.                    |
-| `models[]`                     | Known ids with `efforts[]` (empty: effort refused for that model), `defaultEffort` and `defaultEffortIsCliDefault`.                              |
+| Field                          | Meaning                                                                                                                                              |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accountAccessVerified: false` | Always false. See below.                                                                                                                             |
+| `agents[].id`                  | Exactly the agents `terminal.createTyped` accepts (today `codex`, `claude`).                                                                         |
+| `modelSelection`               | `false`: the agent only runs its own configured model; `--model` is refused.                                                                         |
+| `effortRequiresModel: true`    | An effort without a model is refused.                                                                                                                |
+| `defaultModel`                 | `{ id, source: 'cli-default' }` when Orca knows what the CLI runs with no model, else `{ id: null, source: 'agent-config' }`.                        |
+| `models[]`                     | Known ids with `efforts[]` (empty: effort refused for that model), `defaultEffort` and `defaultEffortIsCliDefault`.                                  |
 | `customModels`                 | `{ accepted: true, maxLength, efforts, … }` when any other well-formed id is passed verbatim to the CLI (Codex, Claude), else `{ accepted: false }`. |
 
 `defaultEffort` is what a picker should preselect. Omitting `effort` sends no
@@ -42,8 +42,9 @@ flag: the agent CLI then applies its own default. Lists are capped at 16 agents,
 ## Dry run
 
 `agents.checkLaunch` runs the same function `terminal.createTyped` runs before
-spawning, and nothing else: no operation record, session, terminal or worktree
-is touched. It answers `{ valid: true, choice: { agent, model, effort } }` or
+spawning, and nothing else. It judges agent, model and effort only, not the
+worktree or target authorization, and touches no operation record, session, terminal or worktree.
+It answers `{ valid: true, choice: { agent, model, effort } }` or
 `{ valid: false, code, message }` with the code and message `terminal.createTyped`
 would raise (for example `invalid_argument` /
 `Agent claude model haiku does not support effort high.`). A non-string field or
@@ -63,17 +64,20 @@ that forked it, so the catalog is that instance's. Workers also receive
 `ORCA_USER_DATA_PATH` (a path, never a token) set to the hosting profile, so an
 `orca` CLI the worker runs reaches the same instance, for example a dev build
 started with `ORCA_DEV_USER_DATA_PATH`. Plugins run in the local desktop
-process, including for SSH workspaces; the catalog is the desktop's, which is
-also where `terminal.createTyped` validates.
+process, including for SSH workspaces: that same process validates
+`terminal.createTyped` for a CLI targeting this profile, so the answers agree.
+A CLI pointed at another Orca (`--environment`, a paired server) is validated by
+that host, possibly another version: treat the check as advisory there and the
+launch as authoritative.
 
 ## Detection and older hosts
 
-| Code                | Meaning                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `unknown_method`    | host predates Host API 1.3: unsupported                    |
-| `capability_denied` | `agents:read` not declared                                 |
-| `consent_required`  | plugin disabled or consent missing/stale                   |
-| `unavailable`       | this host process does not serve typed launches            |
+| Code                | Meaning                                                             |
+| ------------------- | ------------------------------------------------------------------- |
+| `unknown_method`    | host predates Host API 1.3: unsupported                             |
+| `capability_denied` | `agents:read` not declared                                          |
+| `consent_required`  | plugin disabled or consent missing/stale                            |
+| `unavailable`       | this host binding does not serve the catalog (desktop and serve do) |
 
 An older host also rejects a manifest declaring `agents:read`. No wire opcode
 or runtime RPC method was added.
