@@ -63,9 +63,14 @@ Host API calls travel over the worker's own IPC channel to the Orca process
 that forked it, so the catalog is that instance's. Workers also receive
 `ORCA_USER_DATA_PATH` (a path, never a token) set to the hosting profile, so an
 `orca` CLI the worker runs reaches the same instance, for example a dev build
-started with `ORCA_DEV_USER_DATA_PATH`. Plugins run in the local desktop
-process, including for SSH workspaces: that same process validates
-`terminal.createTyped` for a CLI targeting this profile, so the answers agree.
+started with `ORCA_DEV_USER_DATA_PATH`. That CLI uses the runtime token, so it
+bypasses plugin capabilities and the audit log: it is not a sanctioned plugin
+path, and `terminal.createTyped` is not a plugin capability.
+
+Plugins run in the Orca process that hosts them: the desktop app (also for SSH
+workspaces) or the server under `orca serve`, whose catalog then answers. That
+process also validates `terminal.createTyped` for a CLI targeting its profile,
+so the answers agree.
 A CLI pointed at another Orca (`--environment`, a paired server) is validated by
 that host, possibly another version: treat the check as advisory there and the
 launch as authoritative.
