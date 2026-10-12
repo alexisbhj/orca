@@ -19,6 +19,7 @@ import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { useSystemPrefersDark } from '@/components/terminal-pane/use-system-prefers-dark'
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
 import { LocalGitToolchainScanBanner } from './LocalGitToolchainScanBanner'
+import { SidebarPanelTabs } from './SidebarPanelTabs'
 
 // Why lazy: the Agents list pulls the whole activity pipeline (virtualizer, markdown
 // previews, thread derivation); users on the workspace view should not load or render any of it.
@@ -165,56 +166,54 @@ function Sidebar({
         style={leftSidebarStyle}
         {...dropHandlers}
       >
-        {sidebarOpen && (
-          <>
-            {/* Fixed controls */}
-            <SidebarNav />
-            <SidebarHeader
-              onWorkspaceBoardMenuOpenChange={setWorkspaceBoardMenuOpen}
-              activityOptionsTarget={setAgentOptionsTarget}
-            />
-            {sidebarBody === 'agents' ? (
-              <React.Suspense fallback={<div className="min-h-0 flex-1" />}>
-                <ActivityThreadCollapseContext.Provider value={agentsCollapseState}>
-                  <SidebarAgentsList
-                    readFilter={agentReadFilter}
-                    setReadFilter={setAgentReadFilter}
-                    groupBy={agentGroupBy}
-                    setGroupBy={setAgentGroupBy}
-                    query={agentQuery}
-                    setQuery={setAgentQuery}
-                    optionsTarget={agentOptionsTarget}
-                    scrollTopRef={agentsScrollTopRef}
-                  />
-                </ActivityThreadCollapseContext.Provider>
-              </React.Suspense>
-            ) : (
-              <>
-                <LocalGitToolchainScanBanner />
-                <WorktreeList
-                  scrollOffsetRef={worktreeScrollOffsetRef}
-                  scrollAnchorRef={worktreeScrollAnchorRef}
-                  workspaceBoardOpen={workspaceBoardOpen}
-                  onWorktreeCardClick={closeWorkspaceBoard}
-                  onWorkspaceBoardDragPreviewStart={previewWorkspaceBoardFromDrag}
-                  onWorkspaceBoardDragPreviewCommit={solidifyWorkspaceBoardFromDrag}
-                  onWorkspaceBoardDragPreviewCancel={cancelWorkspaceBoardDragPreview}
+        <SidebarPanelTabs open={sidebarOpen}>
+          {/* Fixed controls */}
+          <SidebarNav />
+          <SidebarHeader
+            onWorkspaceBoardMenuOpenChange={setWorkspaceBoardMenuOpen}
+            activityOptionsTarget={setAgentOptionsTarget}
+          />
+          {sidebarBody === 'agents' ? (
+            <React.Suspense fallback={<div className="min-h-0 flex-1" />}>
+              <ActivityThreadCollapseContext.Provider value={agentsCollapseState}>
+                <SidebarAgentsList
+                  readFilter={agentReadFilter}
+                  setReadFilter={setAgentReadFilter}
+                  groupBy={agentGroupBy}
+                  setGroupBy={setAgentGroupBy}
+                  query={agentQuery}
+                  setQuery={setAgentQuery}
+                  optionsTarget={agentOptionsTarget}
+                  scrollTopRef={agentsScrollTopRef}
                 />
-              </>
-            )}
-
-            <div className="relative shrink-0">
-              <SetupScriptPromptCard />
-
-              {/* Fixed bottom toolbar */}
-              <SidebarToolbar
+              </ActivityThreadCollapseContext.Provider>
+            </React.Suspense>
+          ) : (
+            <>
+              <LocalGitToolchainScanBanner />
+              <WorktreeList
+                scrollOffsetRef={worktreeScrollOffsetRef}
+                scrollAnchorRef={worktreeScrollAnchorRef}
                 workspaceBoardOpen={workspaceBoardOpen}
-                workspaceBoardDragPreviewOpen={workspaceBoardDragPreviewOpen}
-                onWorkspaceBoardToggle={toggleWorkspaceBoard}
+                onWorktreeCardClick={closeWorkspaceBoard}
+                onWorkspaceBoardDragPreviewStart={previewWorkspaceBoardFromDrag}
+                onWorkspaceBoardDragPreviewCommit={solidifyWorkspaceBoardFromDrag}
+                onWorkspaceBoardDragPreviewCancel={cancelWorkspaceBoardDragPreview}
               />
-            </div>
-          </>
-        )}
+            </>
+          )}
+
+          <div className="relative shrink-0">
+            <SetupScriptPromptCard />
+
+            {/* Fixed bottom toolbar */}
+            <SidebarToolbar
+              workspaceBoardOpen={workspaceBoardOpen}
+              workspaceBoardDragPreviewOpen={workspaceBoardDragPreviewOpen}
+              onWorkspaceBoardToggle={toggleWorkspaceBoard}
+            />
+          </div>
+        </SidebarPanelTabs>
 
         {sidebarOpen && affordance.visible ? (
           <div

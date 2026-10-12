@@ -36,6 +36,10 @@
     "failed": "Failed to open the file."
   },
   "sidebar": {
+    "panels": {
+      "label": "Sidebar panels",
+      "navigation": "Navigation"
+    },
     "revealFiltered": {
       "title": "Reveal hidden workspace?",
       "description": "The active workspace is hidden in the sidebar. Revealing it will adjust only the filters hiding it.",
@@ -17329,6 +17333,7 @@
         },
         "pluginPanelBridgeHost": {
           "actionsUnavailable": "Plugin actions are not available in this client.",
+          "capabilitiesTakeNoParams": "panel.getCapabilities accepts no parameters.",
           "messageTooLarge": "Message exceeds the size limit.",
           "tooManyRequests": "Too many requests."
         }

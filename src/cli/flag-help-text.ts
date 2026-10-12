@@ -40,6 +40,8 @@ export const FLAG_HELP_TEXT: Record<string, string> = {
   local: '--local                Target the current project instead of the global install',
   skill: '--skill <name>         Bundled skill to act on; repeat for several',
   mode: '--mode <mode>          Mode such as edit, diff, or both',
+  'operation-id': '--operation-id <id>  Persisted identity for typed terminal creation',
+  'attempt-id': '--attempt-id <id>    Identity of this transport attempt',
   model: '--model <id>          Provider model id for a new agent launch',
   effort: '--effort <level>      Reasoning effort for the selected model',
   'mouse-button': '--mouse-button <btn>   Mouse button: left, right, or middle',

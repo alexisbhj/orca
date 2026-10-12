@@ -109,6 +109,64 @@ async function renderPanel(tabKey: string): Promise<void> {
 }
 
 describe('PluginPanel', () => {
+  it.each([undefined, ['right'], ['left', 'right']])(
+    'reports only placement capabilities confirmed by the loaded host: %j',
+    async (supportedPlacements) => {
+      readPanelEntryMock.mockResolvedValue({
+        html: '<h1>Panel</h1>',
+        sessionToken: SESSION_TOKEN,
+        supportedPlacements
+      })
+      await renderPanel(dashboardPanel.tabKey)
+      const frame = container.querySelector('iframe')?.contentWindow
+      expect(frame).toBeTruthy()
+      const postMessage = vi.spyOn(frame!, 'postMessage')
+      const event = new MessageEvent('message', {
+        data: {
+          type: 'orca-panel-action',
+          requestId: 'capabilities',
+          action: 'panel.getCapabilities'
+        }
+      })
+      Object.defineProperty(event, 'source', { value: frame })
+      await act(async () => {
+        window.dispatchEvent(event)
+      })
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          type: 'orca-panel-action-result',
+          requestId: 'capabilities',
+          ok: true,
+          value: {
+            capabilities: supportedPlacements?.includes('left') ? ['panel.placement.left.v1'] : []
+          }
+        },
+        '*'
+      )
+      readPanelEntryMock.mockResolvedValue({
+        html: '<h1>Panel</h1>',
+        sessionToken: REFRESHED_SESSION_TOKEN
+      })
+      await act(async () => {
+        pluginChangedListener?.()
+        await waitForHappyDomTasks()
+      })
+      await act(async () => {
+        window.dispatchEvent(event)
+      })
+      expect(postMessage).toHaveBeenLastCalledWith(
+        {
+          type: 'orca-panel-action-result',
+          requestId: 'capabilities',
+          ok: true,
+          value: { capabilities: [] }
+        },
+        '*'
+      )
+      expect(panelActionMock).not.toHaveBeenCalled()
+    }
+  )
+
   it('renders the panel HTML in a scripts-only sandboxed iframe', async () => {
     readPanelEntryMock.mockResolvedValue({
       html: '<h1>Hello plugin</h1>',

@@ -1,5 +1,6 @@
 import {
   getPluginHostMethodSpec,
+  invokeOwnCommandParamsSchema,
   PLUGIN_HOST_API_V0,
   PLUGIN_TERMINAL_ID_MAX_LENGTH,
   PLUGIN_WORKSPACE_LABEL_MAX_LENGTH,
@@ -17,6 +18,7 @@ export type PluginWorktreeContext = {
 /** Structural service surface the facade delegates to. Desktop main binds it
  *  over runtime services; relay policy and conformance tests bind fakes. */
 export type PluginHostServices = {
+  invokeOwnCommand?: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
   resolveActiveWorktreeContext(): Promise<PluginWorktreeContext | null>
   listWorktreeTerminals(worktreeId: string): Promise<{ id: string }[]>
   sendTerminalText(
@@ -69,6 +71,13 @@ function definePluginMethod(
 }
 
 const HANDLERS = new Map<string, BoundPluginHostMethod>([
+  definePluginMethod('invokeOwnCommand', async (params, { pluginId, services }) => {
+    const { commandId, args } = invokeOwnCommandParamsSchema.parse(params)
+    if (!services.invokeOwnCommand) {
+      throw new Error('own commands are not available on this host')
+    }
+    return services.invokeOwnCommand(pluginId, commandId, args)
+  }),
   definePluginMethod('workspace.readContext', async (_params, { services }) => {
     const context = await services.resolveActiveWorktreeContext()
     if (!context) {

@@ -45,6 +45,35 @@ function serviceWith(
 }
 
 describe('buildPluginList consent identity', () => {
+  it('publishes requested panel placement while preserving legacy panel defaults', async () => {
+    const plugin: ValidDiscoveredPlugin = {
+      pluginKey: 'orca-samples.demo',
+      rootDir: join(tmpdir(), 'plugins', 'demo'),
+      manifest: pluginManifestSchema.parse({
+        ...manifest,
+        contributes: {
+          panels: [
+            { id: 'navigation', title: 'Navigation', entry: 'index.html', placement: 'left' },
+            { id: 'dashboard', title: 'Dashboard', entry: 'index.html' }
+          ]
+        }
+      }),
+      consentFingerprint: 'sha256-current',
+      contentHash: null,
+      isDev: true
+    }
+
+    expect((await buildPluginList(serviceWith(plugin), emptyPluginLockfile()))[0]?.panels).toEqual([
+      {
+        id: 'navigation',
+        title: 'Navigation',
+        tabKey: 'plugin:orca-samples.demo/navigation',
+        placement: 'left'
+      },
+      { id: 'dashboard', title: 'Dashboard', tabKey: 'plugin:orca-samples.demo/dashboard' }
+    ])
+  })
+
   it('projects the exact current fingerprint for an optimistic consent write', async () => {
     const plugin: ValidDiscoveredPlugin = {
       pluginKey: 'orca-samples.demo',

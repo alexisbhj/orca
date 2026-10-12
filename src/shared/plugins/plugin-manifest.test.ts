@@ -22,6 +22,18 @@ function manifest(overrides: Record<string, unknown> = {}): Record<string, unkno
 }
 
 describe('pluginManifestSchema boundaries', () => {
+  it('rejects panel placements the renderer cannot display', () => {
+    expect(
+      parsePluginManifest(
+        manifest({
+          contributes: {
+            panels: [{ id: 'demo', title: 'Demo', entry: 'index.html', placement: 'center' }]
+          }
+        })
+      ).ok
+    ).toBe(false)
+  })
+
   it('accepts documented dotted command namespaces with camel-case actions', () => {
     const result = parsePluginManifest(
       manifest({

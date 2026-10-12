@@ -4,6 +4,7 @@ import {
   createPanelMessageBudget,
   type PanelMessageBudget
 } from '../../../../shared/plugins/plugin-panel-message-budget'
+import { isPluginPanelAction } from '../../../../shared/plugins/plugin-host-api'
 import { createPanelBridgeMessageHandler } from './plugin-panel-bridge-host'
 
 type FakePanelWindow = Window & { postMessage: ReturnType<typeof vi.fn> }
@@ -42,6 +43,83 @@ function createHandler(
 }
 
 describe('createPanelBridgeMessageHandler', () => {
+  it('keeps capability probes inside frame identity, document lifetime and message budgets', () => {
+    const panelWindow = createFakePanelWindow()
+    const callPanelAction = vi.fn()
+    let active = true
+    const handler = createPanelBridgeMessageHandler({
+      sessionToken: SESSION_TOKEN,
+      getPanelWindow: () => panelWindow,
+      hostSupportsLeftPlacement: true,
+      callPanelAction,
+      isActive: () => active,
+      budget: createPanelMessageBudget({ maxMessages: 2, perMs: 10_000 })
+    })
+    const probe = { type: 'orca-panel-action', requestId: 'probe', action: 'panel.getCapabilities' }
+    handler(messageEvent(probe, createFakePanelWindow()))
+    expect(panelWindow.postMessage).not.toHaveBeenCalled()
+    handler(messageEvent({ ...probe, params: { pluginId: 'other' } }, panelWindow))
+    expect(panelWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ok: false, errorCode: 'invalid_params' }),
+      '*'
+    )
+    handler(messageEvent(probe, panelWindow))
+    expect(panelWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ok: true, value: { capabilities: ['panel.placement.left.v1'] } }),
+      '*'
+    )
+    handler(messageEvent(probe, panelWindow))
+    expect(panelWindow.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ok: false, errorCode: 'rate_limited' }),
+      '*'
+    )
+    panelWindow.postMessage.mockClear()
+    active = false
+    handler(messageEvent(probe, panelWindow))
+    expect(panelWindow.postMessage).not.toHaveBeenCalled()
+    expect(callPanelAction).not.toHaveBeenCalled()
+  })
+
+  it('keeps the capability probe outside the relayed catalog older renderers gate on', () => {
+    // Older renderers accept only catalog actions, so they refuse the probe as invalid_request.
+    expect(isPluginPanelAction('panel.getCapabilities')).toBe(false)
+  })
+
+  it('correlates own-command results even when the second request completes first', async () => {
+    const panelWindow = createFakePanelWindow()
+    let finishFirst!: (value: PluginPanelActionOutcome) => void
+    const handler = createPanelBridgeMessageHandler({
+      sessionToken: SESSION_TOKEN,
+      getPanelWindow: () => panelWindow,
+      callPanelAction: async (call) =>
+        call.params === 1
+          ? new Promise((resolve) => {
+              finishFirst = resolve
+            })
+          : { ok: true, value: 'second' }
+    })
+    for (const id of [1, 2]) {
+      handler(
+        messageEvent(
+          {
+            type: 'orca-panel-action',
+            requestId: String(id),
+            action: 'invokeOwnCommand',
+            params: id
+          },
+          panelWindow
+        )
+      )
+    }
+    await flush()
+    finishFirst({ ok: true, value: 'first' })
+    await flush()
+    expect(panelWindow.postMessage.mock.calls.map(([message]) => message)).toEqual([
+      { type: 'orca-panel-action-result', requestId: '2', ok: true, value: 'second' },
+      { type: 'orca-panel-action-result', requestId: '1', ok: true, value: 'first' }
+    ])
+  })
+
   it('relays a valid request and posts the success result back into the panel', async () => {
     const panelWindow = createFakePanelWindow()
     const { handler, callPanelAction } = createHandler(panelWindow)

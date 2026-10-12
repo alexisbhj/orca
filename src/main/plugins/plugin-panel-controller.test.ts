@@ -53,6 +53,7 @@ describe('PluginPanelController identity binding', () => {
     })
     const entry = await controller.open('runtime:one', plugin.pluginKey, 'dashboard')
     expect(entry).not.toBeNull()
+    expect(entry?.supportedPlacements).toEqual(['left', 'right'])
 
     await expect(
       controller.execute('runtime:one', {
@@ -71,9 +72,14 @@ describe('PluginPanelController identity binding', () => {
         params: { title: 'Hello' }
       })
     ).resolves.toMatchObject({ ok: true })
-    expect(executeHostCall).toHaveBeenCalledWith(plugin.pluginKey, 'notifications.show', {
-      title: 'Hello'
-    })
+    expect(executeHostCall).toHaveBeenCalledWith(
+      plugin.pluginKey,
+      'notifications.show',
+      {
+        title: 'Hello'
+      },
+      expect.any(Function)
+    )
     await expect(
       controller.execute('runtime:other', {
         sessionToken: entry!.sessionToken,

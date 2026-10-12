@@ -36,6 +36,16 @@ describe('resolvePluginPanelIcon', () => {
 })
 
 describe('getPluginPanelActivityItems', () => {
+  it('keeps default and explicit right panels together without duplicating left panels', () => {
+    expect(
+      getPluginPanelActivityItems([
+        panel,
+        { ...panel, tabKey: 'plugin:orca-samples.demo/left', placement: 'left' },
+        { ...panel, tabKey: 'plugin:orca-samples.demo/right', placement: 'right' }
+      ]).map((item) => item.id)
+    ).toEqual([panel.tabKey, 'plugin:orca-samples.demo/right'])
+  })
+
   it('projects watchdog failure into host-owned activity chrome', () => {
     expect(
       getPluginPanelActivityItems([panel], {

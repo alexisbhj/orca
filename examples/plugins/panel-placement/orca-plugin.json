@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "panel-placement",
+  "publisher": "orca-samples",
+  "name": "Panel placement fixture",
+  "version": "1.0.0",
+  "engines": { "orca": ">=1.4.0" },
+  "pluginApi": 1,
+  "contributes": {
+    "panels": [
+      { "id": "left", "title": "Left fixture", "placement": "left", "entry": "panel.html" },
+      { "id": "right", "title": "Right fixture", "entry": "panel.html" }
+    ]
+  },
+  "capabilities": []
+}

@@ -175,6 +175,7 @@ export async function buildPluginList(
           id: panel.id,
           title: panel.title,
           ...(panel.icon ? { icon: panel.icon } : {}),
+          ...(panel.placement ? { placement: panel.placement } : {}),
           tabKey: pluginPanelTabKey(plugin.pluginKey, panel.id)
         })),
         commands: service.contentPacks.commands.preview(plugin.pluginKey).map((command) => ({

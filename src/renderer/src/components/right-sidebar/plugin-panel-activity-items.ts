@@ -82,13 +82,15 @@ export function getPluginPanelActivityItems(
   panels: ActivePluginPanel[],
   panelErrors: Readonly<Record<string, true>> = {}
 ): ActivityBarItem[] {
-  return panels.map((panel) => ({
-    id: panel.tabKey,
-    icon: resolvePluginPanelIcon(panel.icon),
-    // Why: panel titles come from plugin manifests, not the app catalog, so
-    // they render untranslated by design.
-    title: panel.title,
-    shortcut: '',
-    ...(panelErrors[panel.tabKey] ? { statusIndicator: 'failure' as const } : {})
-  }))
+  return panels
+    .filter((panel) => panel.placement !== 'left')
+    .map((panel) => ({
+      id: panel.tabKey,
+      icon: resolvePluginPanelIcon(panel.icon),
+      // Why: panel titles come from plugin manifests, not the app catalog, so
+      // they render untranslated by design.
+      title: panel.title,
+      shortcut: '',
+      ...(panelErrors[panel.tabKey] ? { statusIndicator: 'failure' as const } : {})
+    }))
 }

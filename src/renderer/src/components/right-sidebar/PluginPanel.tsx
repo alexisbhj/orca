@@ -52,6 +52,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     ? (panels.find((entry) => entry.tabKey === tabKey) ?? null)
     : null
   const [entryState, setEntryState] = useState<PluginPanelEntryState>({ status: 'loading' })
+  const [hostSupportsLeftPlacement, setHostSupportsLeftPlacement] = useState(false)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [loadedFrameKey, setLoadedFrameKey] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
@@ -87,6 +88,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     let active = true
     const handler = createPanelBridgeMessageHandler({
       sessionToken,
+      hostSupportsLeftPlacement,
       getPanelWindow: () => iframeRef.current?.contentWindow ?? null,
       callPanelAction: callPanelActionViaPreload,
       isActive: () => active,
@@ -97,7 +99,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
       active = false
       window.removeEventListener('message', handler)
     }
-  }, [panelDocument, sessionToken, watchdog])
+  }, [hostSupportsLeftPlacement, panelDocument, sessionToken, watchdog])
 
   useEffect(() => {
     if (!panelFrameKey || loadedFrameKey !== panelFrameKey) {
@@ -118,6 +120,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
     let documentRevision = 0
     setEntryState({ status: 'loading' })
     setSessionToken(null)
+    setHostSupportsLeftPlacement(false)
     const pluginsApi = window.api?.plugins
     if (!pluginsApi) {
       setPanelHealth(tabKey, 'error')
@@ -143,6 +146,7 @@ function PluginPanel({ tabKey }: PluginPanelProps): React.JSX.Element {
           // Session rotation rebinds authority without replacing an unchanged
           // document or restarting its watchdog.
           setSessionToken(entry.sessionToken)
+          setHostSupportsLeftPlacement(entry.supportedPlacements?.includes('left') === true)
           setPanelHealth(tabKey, 'healthy')
           if (entry.html !== currentHtml) {
             currentHtml = entry.html

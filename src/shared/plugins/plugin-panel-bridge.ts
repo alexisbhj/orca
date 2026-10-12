@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isPluginPanelAction } from './plugin-host-api'
+import type { PluginPanelPlacement } from './plugin-manifest'
 
 /**
  * postMessage protocol between a sandboxed plugin panel iframe and the host
@@ -14,6 +15,8 @@ import { isPluginPanelAction } from './plugin-host-api'
 
 export const PANEL_ACTION_REQUEST_TYPE = 'orca-panel-action'
 export const PANEL_ACTION_RESULT_TYPE = 'orca-panel-action-result'
+export const PANEL_GET_CAPABILITIES_ACTION = 'panel.getCapabilities'
+export const PANEL_LEFT_PLACEMENT_CAPABILITY = 'panel.placement.left.v1'
 export const PANEL_PING_TYPE = 'orca-panel-ping'
 export const PANEL_PONG_TYPE = 'orca-panel-pong'
 export const PLUGIN_PANEL_FRAME_NAME_PREFIX = 'orca-plugin-panel:'
@@ -39,7 +42,13 @@ export const panelActionRequestSchema = z.object({
   type: z.literal(PANEL_ACTION_REQUEST_TYPE),
   /** Plugin-chosen correlation id echoed back on the result message. */
   requestId: z.string().min(1).max(128),
-  action: z.string().min(1).refine(isPluginPanelAction, 'not a panel-callable action'),
+  action: z
+    .string()
+    .min(1)
+    .refine(
+      (action) => action === PANEL_GET_CAPABILITIES_ACTION || isPluginPanelAction(action),
+      'not a panel-callable action'
+    ),
   params: z.unknown().optional()
 })
 
@@ -94,6 +103,8 @@ export type PluginPanelActionCall = z.infer<typeof panelActionCallSchema>
 export type PluginPanelEntry = {
   html: string
   sessionToken: string
+  /** Absent on older hosts; never infer support from manifest placement alone. */
+  supportedPlacements?: PluginPanelPlacement[]
 }
 
 export type PanelActionRequestParseResult =

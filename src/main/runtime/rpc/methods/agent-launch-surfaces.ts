@@ -52,7 +52,8 @@ export function agentLaunchSurfaceFactory(
   terminalSpawn: TerminalSpawnDispatch = trackTerminalSpawnDispatch(),
   // The tab shown before the launch ran; asked at spawn, since the window's answer and the user's
   // close can both land after admission.
-  earlyTab: Pick<EarlyAgentLaunchTab, 'windowShowsTab' | 'closedByUser'> | null = null
+  earlyTab: Pick<EarlyAgentLaunchTab, 'windowShowsTab' | 'closedByUser'> | null = null,
+  presentation?: 'background' | 'focused'
 ): AgentLaunchSurfaceFactory {
   const movesHostWindow = agentLaunchMovesHostWindow(context)
   return {
@@ -140,6 +141,7 @@ export function agentLaunchSurfaceFactory(
         // The agent id is not a shell command — `cursor` is the desktop app, its CLI is
         // `cursor-agent` — so the runtime builds the configured launcher.
         startupAgent: agent,
+        ...(presentation ? { presentation } : {}),
         // Offered to that launcher's startup plan; it rides only when the typed line can carry it,
         // and the runtime reports which so an uncarried prompt is pasted once the agent is ready.
         ...(startupPrompt

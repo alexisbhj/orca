@@ -144,7 +144,9 @@ export function decideAgentLaunchMode(args: {
       mode: 'terminal',
       preferred: 'terminal',
       reason: 'user_default',
-      detail: `Started ${vocabulary.terminal}, the default for new agent tabs in your settings.`
+      detail: args.terminalOnly
+        ? `Started ${vocabulary.terminal} for this terminal-only launch.`
+        : `Started ${vocabulary.terminal}, the default for new agent tabs in your settings.`
     }
   }
   // A worker placed on another runtime starts through federation, which creates terminal agents

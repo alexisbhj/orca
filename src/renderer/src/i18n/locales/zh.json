@@ -17100,6 +17100,7 @@
         },
         "pluginPanelBridgeHost": {
           "actionsUnavailable": "此客户端不支持插件操作。",
+          "capabilitiesTakeNoParams": "panel.getCapabilities 不接受参数。",
           "messageTooLarge": "消息超过大小限制。",
           "tooManyRequests": "请求过多。"
         }

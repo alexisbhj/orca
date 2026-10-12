@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { PLUGIN_EVENT_NAMES } from './plugin-manifest'
+import { pluginCommandJsonSchema } from './plugin-command-json'
+import { PLUGIN_EVENT_NAMES, pluginCommandIdSchema } from './plugin-manifest'
 import type { PluginCapabilityKind } from './plugin-capabilities'
 
 /**
@@ -64,6 +65,12 @@ const storageKeySchema = z
   .max(256)
   .refine((key) => !RESERVED_STORAGE_KEYS.has(key), 'reserved storage key')
 const pluginJsonValueSchema = z.json()
+export const invokeOwnCommandParamsSchema = z
+  .object({
+    commandId: pluginCommandIdSchema,
+    args: pluginCommandJsonSchema.optional()
+  })
+  .strict()
 /** Caps keep per-plugin storage an honest key-value store, not a database. */
 export const PLUGIN_STORAGE_VALUE_MAX_BYTES = 256 * 1024
 export const PLUGIN_STORAGE_TOTAL_MAX_BYTES = 5 * 1024 * 1024
@@ -120,6 +127,16 @@ const spec = <P extends z.ZodTypeAny, R extends z.ZodTypeAny>(
 ): PluginHostMethodSpec => ({ ...entry, stability: 'experimental' })
 
 export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
+  spec({
+    name: 'invokeOwnCommand',
+    since: '1.1',
+    scope: 'plugin-private',
+    capability: 'commands:invokeOwn',
+    mutation: true,
+    panel: true,
+    params: invokeOwnCommandParamsSchema,
+    result: pluginCommandJsonSchema
+  }),
   spec({
     name: 'workspace.readContext',
     since: '1.0',
