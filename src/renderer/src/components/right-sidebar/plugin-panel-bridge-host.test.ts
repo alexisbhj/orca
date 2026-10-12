@@ -4,6 +4,7 @@ import {
   createPanelMessageBudget,
   type PanelMessageBudget
 } from '../../../../shared/plugins/plugin-panel-message-budget'
+import { isPluginPanelAction } from '../../../../shared/plugins/plugin-host-api'
 import { createPanelBridgeMessageHandler } from './plugin-panel-bridge-host'
 
 type FakePanelWindow = Window & { postMessage: ReturnType<typeof vi.fn> }
@@ -77,6 +78,11 @@ describe('createPanelBridgeMessageHandler', () => {
     handler(messageEvent(probe, panelWindow))
     expect(panelWindow.postMessage).not.toHaveBeenCalled()
     expect(callPanelAction).not.toHaveBeenCalled()
+  })
+
+  it('keeps the capability probe outside the relayed catalog older renderers gate on', () => {
+    // Older renderers accept only catalog actions, so they refuse the probe as invalid_request.
+    expect(isPluginPanelAction('panel.getCapabilities')).toBe(false)
   })
 
   it('correlates own-command results even when the second request completes first', async () => {

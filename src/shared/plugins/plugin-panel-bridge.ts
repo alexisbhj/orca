@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isPluginPanelAction } from './plugin-host-api'
+import type { PluginPanelPlacement } from './plugin-manifest'
 
 /**
  * postMessage protocol between a sandboxed plugin panel iframe and the host
@@ -103,7 +104,7 @@ export type PluginPanelEntry = {
   html: string
   sessionToken: string
   /** Absent on older hosts; never infer support from manifest placement alone. */
-  supportedPlacements?: ('left' | 'right')[]
+  supportedPlacements?: PluginPanelPlacement[]
 }
 
 export type PanelActionRequestParseResult =

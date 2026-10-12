@@ -35,10 +35,15 @@ describe('plugin panel serve RPC identity', () => {
   })
 
   it('binds panel loading and actions to the same runtime connection owner', async () => {
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: The RPC handlers only call whenReady and these panel methods.
     const service = {
       whenReady: vi.fn().mockResolvedValue(undefined),
       panels: {
-        open: vi.fn().mockResolvedValue({ html: '<p>panel</p>', sessionToken: SESSION_TOKEN }),
+        open: vi.fn().mockResolvedValue({
+          html: '<p>panel</p>',
+          sessionToken: SESSION_TOKEN,
+          supportedPlacements: ['left', 'right']
+        }),
         execute: vi.fn().mockResolvedValue({ ok: true, value: { branch: 'main' } }),
         bindOwnerSignal: vi.fn(),
         revokeOwner: vi.fn()
@@ -52,7 +57,11 @@ describe('plugin panel serve RPC identity', () => {
         { pluginKey: 'orca-samples.demo', panelId: 'dashboard' },
         rpcContext
       )
-    ).resolves.toEqual({ html: '<p>panel</p>', sessionToken: SESSION_TOKEN })
+    ).resolves.toEqual({
+      html: '<p>panel</p>',
+      sessionToken: SESSION_TOKEN,
+      supportedPlacements: ['left', 'right']
+    })
     expect(service.panels.open).toHaveBeenCalledWith(
       'runtime:connection-one',
       'orca-samples.demo',

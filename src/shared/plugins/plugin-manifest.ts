@@ -41,13 +41,16 @@ const orcaEngineRangeSchema = z
   .max(64)
   .regex(/^>=\d+\.\d+\.\d+$/, 'must be a ">=x.y.z" version range')
 
+export const pluginPanelPlacementSchema = z.enum(['left', 'right'])
+export type PluginPanelPlacement = z.infer<typeof pluginPanelPlacementSchema>
+
 const panelContributionSchema = z.object({
   id: pluginIdSchema,
   title: z.string().min(1).max(256),
   /** Lucide icon name rendered in the right-sidebar activity bar. */
   icon: z.string().min(1).max(64).optional(),
   /** Omitted placement preserves the right-sidebar default. */
-  placement: z.enum(['left', 'right']).optional(),
+  placement: pluginPanelPlacementSchema.optional(),
   /** HTML entry rendered inside a sandboxed panel frame. */
   entry: pluginRelativePathSchema
 })

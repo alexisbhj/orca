@@ -50,8 +50,10 @@ requested left placement. Parameters must be omitted or `{}`.
 
 The renderer answers locally after the approved panel session has loaded. It
 intersects its own layout support with the optional `supportedPlacements` field
-returned by the execution host on `plugins.readPanelEntry` / the existing IPC
-surface. No new RPC method, stream opcode, permission or worker API is added.
+returned by the plugin host that served the panel entry (`plugins:readPanelEntry`
+IPC; the same field on the `plugins.readPanelEntry` RPC). On desktop that host is
+the renderer's own main process, so in practice the reply attests the build of
+the renderer displaying the panel. No new RPC method, stream opcode, permission or worker API is added.
 The guest supplies neither plugin identity nor session token. The usual iframe
 identity check, document lifetime, 64 KiB message limit and 30 messages/10 seconds
 budget still apply. Invalid parameters yield `invalid_params`; budget refusals
@@ -69,9 +71,10 @@ positive signal. Use a bounded timeout (for example 5 seconds) and repeat after
 remount/reconnect; do not cache a positive reply across sessions. An older client
 ignores the additive host field and keeps panels on the right. An older host
 strips unknown manifest placement, preserving the right default. Update both
-host and client for confirmed left placement. This applies to SSH-connected
-clients as well as local desktop clients; a worker alone cannot attest to the
-layout of a particular connected renderer.
+host and client for confirmed left placement. Plugins and their panels run in
+the local desktop process even when the workspace is on an SSH host, so the
+remote host's version does not affect this probe; a worker alone cannot attest
+to the layout of a particular renderer.
 
 ## Host fixture
 
