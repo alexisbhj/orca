@@ -28,7 +28,8 @@ the operating system, which does not prove a browser displayed it.
 
 ## Accepted URLs
 
-Only absolute `https://` URLs of at most 2,048 characters with a host. Refused,
+Only absolute `https://` URLs with a host, at most 2,048 characters both as
+sent and once normalized. Refused,
 with `invalid_params` and an explicit message prefixed by `url:`:
 
 - any other scheme (`http:`, `file:`, `javascript:`, `data:`…), an uppercase
@@ -53,7 +54,11 @@ The host opens the normalized form (`https://Example.com` → `https://example.c
 | `rate_limited`                     | more than 3 openings per plugin in 10 s                                |
 | `unavailable`                      | session invalidated, or this host/client cannot open links (see below) |
 
-Every attempt is recorded in the plugin audit log with the URL host only.
+Calls that pass the capability, consent and URL checks are recorded in the
+plugin audit log with the URL host only: `attempt`, then `ok` or `error` (a
+`rate_limited` or caller `unavailable` refusal is an `error`). Calls refused earlier
+(`capability_denied`, `consent_required`, `invalid_params`, panel message
+budgets) have no effect and are not audited, like every other mutating method.
 
 ## Detection and older hosts
 

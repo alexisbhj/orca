@@ -56,4 +56,13 @@ describe('parsePluginExternalUrl', () => {
       error: `URL exceeds ${PLUGIN_EXTERNAL_URL_MAX_LENGTH} characters`
     })
   })
+
+  it('bounds the normalized length, which percent-encoding can expand', () => {
+    const raw = `https://example.com/${'"'.repeat(1000)}`
+    expect(raw.length).toBeLessThanOrEqual(PLUGIN_EXTERNAL_URL_MAX_LENGTH)
+    expect(parsePluginExternalUrl(raw)).toEqual({
+      ok: false,
+      error: `URL exceeds ${PLUGIN_EXTERNAL_URL_MAX_LENGTH} characters once normalized`
+    })
+  })
 })

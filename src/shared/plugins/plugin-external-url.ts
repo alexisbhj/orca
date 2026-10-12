@@ -61,6 +61,13 @@ export function parsePluginExternalUrl(raw: string): PluginExternalUrlParseResul
   if (parsed.host !== authority.toLowerCase()) {
     return { ok: false, error: 'URL host must be in canonical form' }
   }
+  // Why: percent-encoding can expand a valid URL past the limit; the opened form is what counts.
+  if (parsed.href.length > PLUGIN_EXTERNAL_URL_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `URL exceeds ${PLUGIN_EXTERNAL_URL_MAX_LENGTH} characters once normalized`
+    }
+  }
   return { ok: true, url: parsed.href }
 }
 

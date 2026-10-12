@@ -118,6 +118,16 @@ it.each([
   expect(openExternalUrl).not.toHaveBeenCalled()
 })
 
+it('refuses a URL that only exceeds the size limit once normalized as invalid_params', async () => {
+  const { call, openExternalUrl } = await harness()
+  await expect(call({ url: `https://example.com/${'"'.repeat(2020)}` })).resolves.toEqual({
+    ok: false,
+    code: 'invalid_params',
+    error: 'url: URL exceeds 2048 characters once normalized'
+  })
+  expect(openExternalUrl).not.toHaveBeenCalled()
+})
+
 it('refuses identity or extra fields supplied by the panel', async () => {
   const { call, openExternalUrl } = await harness()
   await expect(call({ url: URL_OK, pluginKey: 'orca-samples.other' })).resolves.toMatchObject({
@@ -168,7 +178,7 @@ it('keeps the 64 KiB panel message budget', async () => {
   expect(openExternalUrl).not.toHaveBeenCalled()
 })
 
-it('answers unsupported without effect when this host cannot open links', async () => {
+it('answers unavailable without effect on a current host built without a link opener', async () => {
   const { call, entry } = await harness({ opener: false })
   expect(entry.hostCapabilities).toEqual([])
   await expect(call({ url: URL_OK })).resolves.toMatchObject({
