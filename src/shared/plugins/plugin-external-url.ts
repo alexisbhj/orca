@@ -71,17 +71,15 @@ export function parsePluginExternalUrl(raw: string): PluginExternalUrlParseResul
   return { ok: true, url: parsed.href }
 }
 
-export const openExternalParamsSchema = z
-  .object({
-    url: z.string().transform((raw, ctx) => {
-      const result = parsePluginExternalUrl(raw)
-      if (!result.ok) {
-        ctx.addIssue({ code: 'custom', message: result.error })
-        return z.NEVER
-      }
-      return result.url
-    })
+export const openExternalParamsSchema = z.strictObject({
+  url: z.string().transform((raw, ctx) => {
+    const result = parsePluginExternalUrl(raw)
+    if (!result.ok) {
+      ctx.addIssue({ code: 'custom', message: result.error })
+      return z.NEVER
+    }
+    return result.url
   })
-  .strict()
+})
 
-export const openExternalResultSchema = z.object({ opened: z.literal(true) }).strict()
+export const openExternalResultSchema = z.strictObject({ opened: z.literal(true) })
