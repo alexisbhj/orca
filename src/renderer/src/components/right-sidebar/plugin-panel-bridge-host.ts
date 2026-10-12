@@ -182,7 +182,10 @@ export function createPanelBridgeMessageHandler(
               requestId,
               ok: false,
               errorCode: 'invalid_params',
-              error: 'panel.getCapabilities accepts no parameters'
+              error: translate(
+                'auto.components.rightSidebar.pluginPanelBridgeHost.capabilitiesTakeNoParams',
+                'panel.getCapabilities accepts no parameters.'
+              )
             }
       )
       return

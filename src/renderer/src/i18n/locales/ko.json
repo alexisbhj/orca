@@ -17100,6 +17100,7 @@
         },
         "pluginPanelBridgeHost": {
           "actionsUnavailable": "이 클라이언트에서는 플러그인 작업을 사용할 수 없습니다.",
+          "capabilitiesTakeNoParams": "panel.getCapabilities는 매개변수를 받지 않습니다.",
           "messageTooLarge": "메시지가 크기 제한을 초과합니다.",
           "tooManyRequests": "요청이 너무 많습니다."
         }

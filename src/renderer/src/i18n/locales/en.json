@@ -17333,6 +17333,7 @@
         },
         "pluginPanelBridgeHost": {
           "actionsUnavailable": "Plugin actions are not available in this client.",
+          "capabilitiesTakeNoParams": "panel.getCapabilities accepts no parameters.",
           "messageTooLarge": "Message exceeds the size limit.",
           "tooManyRequests": "Too many requests."
         }
