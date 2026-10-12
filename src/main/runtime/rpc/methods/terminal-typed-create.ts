@@ -3,7 +3,7 @@ import { defineMethod } from '../core'
 import { runReplaySafeAgentLaunch } from './agent-launch'
 import { AgentLaunchExecutionError } from './agent-launch-execution-outcome'
 import { assertAgentLaunchTargetAuthorized } from './agent-launch-target-authorization'
-import { resolveWorkerLaunchPreferences } from './orchestration/worker/worker-launch-preferences'
+import { resolveTypedTerminalLaunchChoice } from './terminal-typed-launch-check'
 
 export const TERMINAL_TYPED_CREATE_METHODS = [
   defineMethod({
@@ -13,7 +13,7 @@ export const TERMINAL_TYPED_CREATE_METHODS = [
     handler: async (params, context) => {
       const target = { kind: 'existing' as const, worktree: params.worktree }
       assertAgentLaunchTargetAuthorized(target, context)
-      const selection = resolveWorkerLaunchPreferences(params)
+      const preferences = resolveTypedTerminalLaunchChoice(params)
       try {
         const launch = await runReplaySafeAgentLaunch(
           {
@@ -21,7 +21,7 @@ export const TERMINAL_TYPED_CREATE_METHODS = [
             target,
             operationId: params.operationId,
             terminalOnly: true,
-            ...(selection.preferences ? { sessionOptions: { ...selection.preferences } } : {}),
+            ...(preferences ? { sessionOptions: { ...preferences } } : {}),
             presentation: params.presentation ?? 'background'
           },
           context

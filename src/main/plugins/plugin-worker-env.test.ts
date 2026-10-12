@@ -18,4 +18,23 @@ describe('buildPluginWorkerEnv', () => {
       ELECTRON_RUN_AS_NODE: '1'
     })
   })
+
+  it('passes only the hosting profile path so the worker CLI targets this Orca instance', () => {
+    expect(
+      buildPluginWorkerEnv(
+        {
+          PATH: '/safe',
+          ORCA_USER_DATA_PATH: '/profiles/orca-dev',
+          ORCA_DEV_USER_DATA_PATH: '/profiles/other',
+          ORCA_RUNTIME_AUTH_TOKEN: 'secret',
+          GITHUB_TOKEN: 'secret'
+        },
+        'darwin'
+      )
+    ).toEqual({
+      PATH: '/safe',
+      ORCA_USER_DATA_PATH: '/profiles/orca-dev',
+      ELECTRON_RUN_AS_NODE: '1'
+    })
+  })
 })

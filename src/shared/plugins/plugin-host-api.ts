@@ -3,6 +3,10 @@ import { pluginCommandJsonSchema } from './plugin-command-json'
 import { openExternalParamsSchema, openExternalResultSchema } from './plugin-external-url'
 import { PLUGIN_EVENT_NAMES, pluginCommandIdSchema } from './plugin-manifest'
 import type { PluginCapabilityKind } from './plugin-capabilities'
+import {
+  typedAgentLaunchCatalogSchema,
+  typedAgentLaunchCheckResultSchema
+} from '../typed-agent-launch-catalog'
 
 /**
  * Host API v0 — the separately-versioned public facade plugins call. Every
@@ -103,12 +107,29 @@ const eventsSubscribeParams = z.object({
 })
 const eventsSubscribeResult = z.object({ subscribed: z.array(z.enum(PLUGIN_EVENT_NAMES)) })
 
+const agentsReadCatalogParams = z.object({}).strict().optional()
+// Why: loose string bounds only; createTyped's own rules judge the values so
+// a refusal carries its exact code and message instead of `invalid_params`.
+export const agentsCheckLaunchParamsSchema = z
+  .object({
+    agent: z.string().max(64),
+    model: z.string().max(1024).optional(),
+    effort: z.string().max(1024).optional()
+  })
+  .strict()
+
 export type PluginHostMethodSpec = {
   name: string
   /** pluginApi minor the method appeared in (`1.0` for the v0 set). */
   since: string
   /** Machine-readable resource boundary enforced by the host binding. */
-  scope: 'active-worktree' | 'explicit-terminal' | 'plugin-private' | 'desktop' | 'host-events'
+  scope:
+    | 'active-worktree'
+    | 'explicit-terminal'
+    | 'plugin-private'
+    | 'desktop'
+    | 'host-events'
+    | 'host-catalog'
   stability: 'experimental'
   capability: PluginCapabilityKind
   /** Mutations are audit-logged with actor `plugin:<id>`. */
@@ -147,6 +168,26 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     panel: true,
     params: openExternalParamsSchema,
     result: openExternalResultSchema
+  }),
+  spec({
+    name: 'agents.readCatalog',
+    since: '1.3',
+    scope: 'host-catalog',
+    capability: 'agents:read',
+    mutation: false,
+    panel: false,
+    params: agentsReadCatalogParams,
+    result: typedAgentLaunchCatalogSchema
+  }),
+  spec({
+    name: 'agents.checkLaunch',
+    since: '1.3',
+    scope: 'host-catalog',
+    capability: 'agents:read',
+    mutation: false,
+    panel: false,
+    params: agentsCheckLaunchParamsSchema,
+    result: typedAgentLaunchCheckResultSchema
   }),
   spec({
     name: 'workspace.readContext',

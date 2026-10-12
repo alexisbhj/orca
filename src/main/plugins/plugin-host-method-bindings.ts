@@ -1,4 +1,5 @@
 import {
+  agentsCheckLaunchParamsSchema,
   getPluginHostMethodSpec,
   invokeOwnCommandParamsSchema,
   PLUGIN_HOST_API_V0,
@@ -10,6 +11,10 @@ import {
 import type { PluginEventName } from '../../shared/plugins/plugin-manifest'
 import { openExternalParamsSchema } from '../../shared/plugins/plugin-external-url'
 import type { PluginPanelActionErrorCode } from '../../shared/plugins/plugin-panel-bridge'
+import type {
+  TypedAgentLaunchCatalog,
+  TypedAgentLaunchCheckResult
+} from '../../shared/typed-agent-launch-catalog'
 
 /** Handler failure that must surface with a specific public code, not `action_failed`. */
 export class PluginHostCallError extends Error {
@@ -33,6 +38,11 @@ export type PluginHostServices = {
   invokeOwnCommand?: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
   /** Bound only for a panel shown by this host's own desktop renderer. */
   openExternal?: (pluginId: string, url: string) => Promise<void>
+  /** Bound only where this process launches typed terminals itself. */
+  agentLaunchCatalog?: {
+    read(): TypedAgentLaunchCatalog
+    check(choice: { agent: string; model?: string; effort?: string }): TypedAgentLaunchCheckResult
+  }
   resolveActiveWorktreeContext(): Promise<PluginWorktreeContext | null>
   listWorktreeTerminals(worktreeId: string): Promise<{ id: string }[]>
   sendTerminalText(
@@ -84,6 +94,15 @@ function definePluginMethod(
   return [name, { spec, handler }]
 }
 
+function requireAgentLaunchCatalog(
+  services: PluginHostServices
+): NonNullable<PluginHostServices['agentLaunchCatalog']> {
+  if (!services.agentLaunchCatalog) {
+    throw new PluginHostCallError('unavailable', 'the agent launch catalog is not served here')
+  }
+  return services.agentLaunchCatalog
+}
+
 const HANDLERS = new Map<string, BoundPluginHostMethod>([
   definePluginMethod('invokeOwnCommand', async (params, { pluginId, services }) => {
     const { commandId, args } = invokeOwnCommandParamsSchema.parse(params)
@@ -102,6 +121,12 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
     }
     await services.openExternal(pluginId, url)
     return { opened: true }
+  }),
+  definePluginMethod('agents.readCatalog', async (_params, { services }) => {
+    return requireAgentLaunchCatalog(services).read()
+  }),
+  definePluginMethod('agents.checkLaunch', async (params, { services }) => {
+    return requireAgentLaunchCatalog(services).check(agentsCheckLaunchParamsSchema.parse(params))
   }),
   definePluginMethod('workspace.readContext', async (_params, { services }) => {
     const context = await services.resolveActiveWorktreeContext()

@@ -1,0 +1,18 @@
+{
+  "manifestVersion": 1,
+  "id": "agent-catalog",
+  "publisher": "orca-samples",
+  "name": "Agent catalog fixture",
+  "version": "1.0.0",
+  "engines": { "orca": ">=1.4.0" },
+  "pluginApi": 1,
+  "main": "worker.mjs",
+  "contributes": {
+    "commands": [
+      { "id": "catalog", "title": "Agent catalog fixture: read catalog" },
+      { "id": "check", "title": "Agent catalog fixture: check a choice" },
+      { "id": "profile", "title": "Agent catalog fixture: hosting profile" }
+    ]
+  },
+  "capabilities": [{ "kind": "agents:read" }]
+}

@@ -23,7 +23,10 @@ const WORKER_ENV_ALLOWLIST = [
   'COMSPEC',
   'PATHEXT',
   'PROCESSOR_ARCHITECTURE',
-  'NUMBER_OF_PROCESSORS'
+  'NUMBER_OF_PROCESSORS',
+  // Why: canonicalized at startup to this instance's profile, so a worker's
+  // `orca` CLI reaches the Orca hosting it. A path, never a credential.
+  'ORCA_USER_DATA_PATH'
 ] as const
 
 export function buildPluginWorkerEnv(

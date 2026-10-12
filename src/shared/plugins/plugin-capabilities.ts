@@ -15,6 +15,7 @@ import { z } from 'zod'
 export const PLUGIN_CAPABILITY_KINDS = [
   'commands:invokeOwn',
   'links:openExternal',
+  'agents:read',
   'workspace:read',
   'terminal:send',
   'notifications:show',
@@ -38,6 +39,8 @@ export const PLUGIN_CAPABILITY_DESCRIPTIONS: Record<PluginCapabilityKind, string
   'commands:invokeOwn': 'Run commands declared by this plugin from its panels and worker',
   'links:openExternal':
     'Open https links from its panels in your default browser on the computer showing Orca. A link can send data to any https site, including localhost and private network addresses',
+  'agents:read':
+    'Read which agents, models and reasoning levels Orca can launch, and check a choice without launching anything',
   'workspace:read': 'Read the name, branch, and terminal list of your focused worktree',
   'terminal:send': 'Type text into a terminal you can see (always a specific terminal)',
   'notifications:show': 'Show desktop notifications labeled with the plugin name',

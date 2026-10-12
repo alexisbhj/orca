@@ -4,6 +4,8 @@ import type { PluginHostServices } from './plugin-host-methods'
 import { PluginSecretsStore } from './plugin-secrets-store'
 import { PluginKvStore } from './plugin-storage-store'
 import type { TerminalInputKind } from '../../shared/terminal-input-kind'
+import { buildTypedAgentLaunchCatalog } from '../../shared/typed-agent-launch-catalog'
+import { checkTypedTerminalLaunchChoice } from '../runtime/rpc/methods/terminal-typed-launch-check'
 
 /** Structural subset of OrcaRuntimeService exposed to plugin facade bindings. */
 export type PluginRuntimeDelegate = {
@@ -41,6 +43,11 @@ export function bindPluginHostServices(input: {
   return {
     invokeOwnCommand: input.invokeOwnCommand,
     openExternal: input.openExternal,
+    // Why: the same process answers this worker's createTyped, so the catalog is its own.
+    agentLaunchCatalog: {
+      read: buildTypedAgentLaunchCatalog,
+      check: checkTypedTerminalLaunchChoice
+    },
     resolveActiveWorktreeContext: async () => {
       const context = await delegate.resolveActiveWorktreeContext()
       if (!context) {

@@ -39,6 +39,7 @@ export const NODE_RUNTIME_INCLUDE = [
   'src/main/runtime/terminal-tail-redraw-wall-time.test.ts',
   'src/main/agent-hooks/server-transport-interference.test.ts',
   'src/main/plugins/plugin-worker-supervision.integration.test.ts',
+  'src/main/plugins/plugin-agent-catalog-worker.integration.test.ts',
   'src/main/usage/usage-scan-worker-event-loop.test.ts',
   'src/main/computer/macos-native-provider-client.test.ts',
   'src/main/ai-vault-search/session-search-schema.test.ts',
